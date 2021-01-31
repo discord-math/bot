@@ -1,0 +1,5 @@
+[DB]
+# Database connection string
+dsn = dbname=db host=localhost port=12345
+# Directory with migration files
+migrations = migrations/
