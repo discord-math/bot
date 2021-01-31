@@ -90,7 +90,7 @@ class PluginLoader(importlib.machinery.SourceFileLoader):
         mod.__builtins__ = trace_builtins
         import_stack.append(name)
         try:
-            importlib.machinery.SourceFileLoader.exec_module(self, mod)
+            super().exec_module(self, mod)
         except:
             try:
                 finalize_module(name)
@@ -106,7 +106,7 @@ class PluginFinder(importlib.machinery.PathFinder):
         name_parts = name.split(".")
         if not is_plugin(name):
             return
-        spec = importlib.machinery.PathFinder.find_spec(name, path, target)
+        spec = super().find_spec(name, path, target)
         if spec == None:
             return
         spec.loader = PluginLoader(spec.loader.name, spec.loader.path)
@@ -209,9 +209,7 @@ def reload(name):
         try:
             ret = importlib.import_module(name)
             reload_success.add(name)
-        except:
+        finally:
             cont_reload()
-            raise
-        cont_reload()
         return ret
     return cont_unload()
