@@ -1,4 +1,6 @@
 import util.db as db
+import util.frozen_list
+import util.frozen_dict
 import json
 
 @db.init_for(__name__)
@@ -110,21 +112,39 @@ def set_defaults(namespace, dict, log_value=True):
     with db.connection() as conn:
         cur_set_defaults(conn.cursor(), namespace, dict, log_value=log_value)
 
-def json_encode(value):
-    return json.dumps(value) if value != None else None
+def json_freeze(value):
+    if isinstance(value, list):
+        return util.frozen_list.FrozenList(
+            json_freeze(v) for v in value)
+    elif isinstance(value, dict):
+        return util.frozen_dict.FrozenDict(
+            (k, json_freeze(v)) for k, v in value.items())
+    else:
+        return value
 
-def json_decode(value):
-    return json.loads(value) if value != None else None
-def json_encode(value):
-    return json.dumps(value) if value != None else None
+class ThawingJSONEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, util.frozen_list.FrozenList):
+            return obj.copy()
+        elif isinstance(obj, util.frozen_dict.FrozenDict):
+            return obj.copy()
+        else:
+            return super().default(obj)
 
-def json_decode(value):
-    return json.loads(value) if value != None else None
+def json_encode(value):
+    return json.dumps(value, cls=ThawingJSONEncoder) if value != None else None
+
+def json_decode(text):
+    return json_freeze(json.loads(text)) if text != None else None
 
 class Proxy:
     def __init__(self, namespace, log_value=False):
         self._namespace = namespace
         self._log_value = log_value
+
+    def __iter__(self):
+        for key, _ in get_key_values(self._namespace):
+            yield key
 
     def __getitem__(self, key):
         return json_decode(get_value(self._namespace, key))
@@ -151,11 +171,14 @@ class Config:
         self._log_value = log_value
         self._config = dict(get_key_values(self._namespace))
 
+    def __iter__(self):
+        return self._config.__iter__()
+
     def __getitem__(self, key):
         return json_decode(self._config.get(key))
 
     def __setitem__(self, key, value):
-        ev = json_encode(json.dumps(value))
+        ev = json_encode(value)
         self._config[key] = ev
         set_value(self._namespace, key, ev, log_value=self._log_value)
 
@@ -168,6 +191,6 @@ class Config:
         if key.startswith("_"):
             self.__dict__[key] = value
             return
-        ev = json_encode(json.dumps(value))
+        ev = json_encode(value)
         self._config[key] = ev
         set_value(self._namespace, key, ev, log_value=self._log_value)
