@@ -44,7 +44,7 @@ def cur_set_value(cur, namespace, key, value, log_value=True):
         cur.execute("""
             INSERT INTO kv (namespace, key, value)
             VALUES (%(ns)s, %(key)s, %(value)s)
-            ON CONFLICT (namespace, key) DO UPDATE SET value = %(value)s
+            ON CONFLICT (namespace, key) DO UPDATE SET value = EXCLUDED.value
             """, {"ns": namespace, "key": key, "value": value},
             log_data=True if log_value else {"ns", "key"})
 
@@ -71,7 +71,7 @@ def cur_set_values(cur, namespace, dict, log_value=False):
         cur.executemany("""
             INSERT INTO kv (namespace, key, value)
             VALUES (%(ns)s, %(key)s, %(value)s)
-            ON CONFLICT (namespace, key) DO UPDATE SET value = %(value)s
+            ON CONFLICT (namespace, key) DO UPDATE SET value = EXCLUDED.value
             """, additions, log_data=True if log_value else {"ns", "key"})
 
 def cur_set_defaults(cur, namespace, dict, log_value=False):
@@ -110,118 +110,64 @@ def set_defaults(namespace, dict, log_value=True):
     with db.connection() as conn:
         cur_set_defaults(conn.cursor(), namespace, dict, log_value=log_value)
 
-class ProxyClass:
-    def __init__(self, namespace, encode, decode, log_value=False):
-        self._namespace = namespace
-        self._log_value = log_value
-        self._encode = encode
-        self._decode = decode
+def json_encode(value):
+    return json.dumps(value) if value != None else None
 
-    def __getitem__(self, key):
-        return self._decode(get_value(self._namespace, key))
-
-    def __setitem__(self, key, value):
-        set_value(self._namespace, key, self._encode(value),
-            log_value=self._log_value)
-
-    def __getattr__(self, key):
-        if key.startswith("_"):
-            return
-        return self._decode(get_value(self._namespace, key))
-
-    def __setattr__(self, key, value):
-        if key.startswith("_"):
-            self.__dict__[key] = value
-            return
-        set_value(self._namespace, key, self._encode(value),
-            log_value=self._log_value)
-
-class ConfigClass:
-    def __init__(self, namespace, encode, decode, log_value=False):
-        self._namespace = namespace
-        self._log_value = log_value
-        self._encode = encode
-        self._decode = decode
-        self._config = dict(get_key_values(self._namespace))
-
-    def __getitem__(self, key):
-        return self._decode(self._config.get(key))
-
-    def __setitem__(self, key, value):
-        ev = self._encode(value)
-        self._config[key] = ev
-        set_value(self._namespace, key, ev, log_value=self._log_value)
-
-    def __getattr__(self, key):
-        if key.startswith("_"):
-            return
-        return self._decode(self._config.get(key))
-
-    def __setattr__(self, key, value):
-        if key.startswith("_"):
-            self.__dict__[key] = value
-            return
-        ev = self._encode(value)
-        self._config[key] = ev
-        set_value(self._namespace, key, ev, log_value=self._log_value)
-
-def string_code(value):
-    return value
-
-class StringProxy(ProxyClass):
-    def __init__(self, namespace, log_value=False):
-        super().__init__(namespace, string_code, string_code, log_value)
-
-class StringConfig(ConfigClass):
-    def __init__(self, namespace, log_value=False):
-        super().__init__(namespace, string_code, string_code, log_value)
-
-def basic_encode(value):
-    if value is None:
-        return None
-    elif type(value) is str:
-        return "s" + value
-    elif type(value) is int:
-        return "i" + str(value)
-    elif type(value) is float:
-        return "f" + str(value)
-    elif type(value) is bool:
-        return "b" + str(value)
-    else:
-        raise TypeError("Cannot encode {} object".format(type(value)))
-
-def basic_decode(value):
-    if value is None:
-        return None
-    elif value.startswith("s"):
-        return value[1:]
-    elif value.startswith("i"):
-        return int(value[1:])
-    elif value.startswith("f"):
-        return float(value[1:])
-    elif value.startswith("b"):
-        return value[1:] == "True"
-    else:
-        raise ValueError("Could not decode {}".format(value))
-
-class BasicProxy(ProxyClass):
-    def __init__(self, namespace, log_value=True):
-        super().__init__(namespace, basic_encode, basic_decode, log_value)
-
-class BasicConfig(ConfigClass):
-    def __init__(self, namespace, log_value=True):
-        super().__init__(namespace, basic_encode, basic_decode, log_value)
-
+def json_decode(value):
+    return json.loads(value) if value != None else None
 def json_encode(value):
     return json.dumps(value) if value != None else None
 
 def json_decode(value):
     return json.loads(value) if value != None else None
 
-class JsonProxy(ProxyClass):
+class Proxy:
     def __init__(self, namespace, log_value=False):
-        super().__init__(namespace, json_encode, json_decode, log_value)
+        self._namespace = namespace
+        self._log_value = log_value
 
-class JsonConfig(ConfigClass):
+    def __getitem__(self, key):
+        return json_decode(get_value(self._namespace, key))
+
+    def __setitem__(self, key, value):
+        set_value(self._namespace, key, json_encode(value),
+            log_value=self._log_value)
+
+    def __getattr__(self, key):
+        if key.startswith("_"):
+            return
+        return json_decode(get_value(self._namespace, key))
+
+    def __setattr__(self, key, value):
+        if key.startswith("_"):
+            self.__dict__[key] = value
+            return
+        set_value(self._namespace, key, json_encode(value),
+            log_value=self._log_value)
+
+class Config:
     def __init__(self, namespace, log_value=False):
-        super().__init__(namespace, json_encode, json_decode, log_value)
+        self._namespace = namespace
+        self._log_value = log_value
+        self._config = dict(get_key_values(self._namespace))
+
+    def __getitem__(self, key):
+        return json_decode(self._config.get(key))
+
+    def __setitem__(self, key, value):
+        ev = json_encode(json.dumps(value))
+        self._config[key] = ev
+        set_value(self._namespace, key, ev, log_value=self._log_value)
+
+    def __getattr__(self, key):
+        if key.startswith("_"):
+            return
+        return json_decode(self._config.get(key))
+
+    def __setattr__(self, key, value):
+        if key.startswith("_"):
+            self.__dict__[key] = value
+            return
+        ev = json_encode(json.dumps(value))
+        self._config[key] = ev
+        set_value(self._namespace, key, ev, log_value=self._log_value)
