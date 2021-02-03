@@ -5,7 +5,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-
 try:
     client
     logger.warn("Refusing to re-create the Discord client", stack_info=True)
