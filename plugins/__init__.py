@@ -13,6 +13,7 @@ import importlib.util
 import builtins
 import types
 import sys
+import atexit
 import util.digraph
 
 plugins_namespace = "plugins"
@@ -90,7 +91,7 @@ class PluginLoader(importlib.machinery.SourceFileLoader):
         mod.__builtins__ = trace_builtins
         import_stack.append(name)
         try:
-            super().exec_module(self, mod)
+            super().exec_module(mod)
         except:
             try:
                 finalize_module(name)
@@ -213,3 +214,15 @@ def reload(name):
             cont_reload()
         return ret
     return cont_unload()
+
+@atexit.register
+def atexit_unload():
+    unload_gen = list(deps.topo_sort_fwd()).__iter__()
+    def cont_unload():
+        try:
+            for dep in unload_gen:
+                unsafe_unload(dep)
+        except:
+            cont_unload()
+            raise
+    cont_unload()
