@@ -5,10 +5,15 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-client = discord.Client(
-    loop=asyncio.get_event_loop(),
-    max_messages=None,
-    intents=discord.Intents.all())
+
+try:
+    client
+    logger.warn("Refusing to re-create the Discord client", stack_info=True)
+except NameError:
+    client = discord.Client(
+        loop=asyncio.get_event_loop(),
+        max_messages=None,
+        intents=discord.Intents.all())
 
 async def main_task():
     try:
