@@ -2,6 +2,7 @@ import util.db as db
 import util.frozen_list
 import util.frozen_dict
 import json
+import weakref
 
 @db.init_for(__name__)
 def init():
@@ -165,11 +166,21 @@ class Proxy:
         set_value(self._namespace, key, json_encode(value),
             log_value=self._log_value)
 
+class ConfigStore(dict):
+    __slots__ = ("__weakref__",)
+
+config_stores = weakref.WeakValueDictionary()
+
 class Config:
     def __init__(self, namespace, log_value=False):
         self._namespace = namespace
         self._log_value = log_value
-        self._config = dict(get_key_values(self._namespace))
+
+        config = config_stores.get(namespace)
+        if config == None:
+            config = ConfigStore(get_key_values(namespace))
+            config_stores[namespace] = config
+        self._config = config
 
     def __iter__(self):
         return self._config.__iter__()
