@@ -1,5 +1,9 @@
+# A config with values that are very unlikely to change during execution
 [DB]
 # Database connection string
 dsn = dbname=db host=localhost port=12345
 # Directory with migration files
 migrations = migrations/
+[Discord]
+# Bot token
+token = AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
