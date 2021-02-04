@@ -86,6 +86,7 @@ def finalize_module(name):
     cont_finalizers()
 
 class PluginLoader(importlib.machinery.SourceFileLoader):
+    __slots__ = ()
     def exec_module(self, mod):
         name = mod.__name__
         mod.__builtins__ = trace_builtins
@@ -102,6 +103,7 @@ class PluginLoader(importlib.machinery.SourceFileLoader):
             import_stack.pop()
 
 class PluginFinder(importlib.machinery.PathFinder):
+    __slots__ = ()
     @classmethod
     def find_spec(self, name, path=None, target=None):
         name_parts = name.split(".")

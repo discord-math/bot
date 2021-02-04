@@ -124,6 +124,7 @@ def json_freeze(value):
         return value
 
 class ThawingJSONEncoder(json.JSONEncoder):
+    __slots__ = ()
     def default(self, obj):
         if isinstance(obj, util.frozen_list.FrozenList):
             return obj.copy()
@@ -139,6 +140,8 @@ def json_decode(text):
     return json_freeze(json.loads(text)) if text != None else None
 
 class Proxy:
+    __slots__ = "_namespace", "_log_value"
+
     def __init__(self, namespace, log_value=False):
         self._namespace = namespace
         self._log_value = log_value
@@ -161,17 +164,18 @@ class Proxy:
 
     def __setattr__(self, key, value):
         if key.startswith("_"):
-            self.__dict__[key] = value
-            return
+            return super().__setattr__(key, value)
         set_value(self._namespace, key, json_encode(value),
             log_value=self._log_value)
 
 class ConfigStore(dict):
-    __slots__ = ("__weakref__",)
+    __slots__ = "__weakref__"
 
 config_stores = weakref.WeakValueDictionary()
 
 class Config:
+    __slots__ = "_namespace", "_log_value", "_config"
+
     def __init__(self, namespace, log_value=False):
         self._namespace = namespace
         self._log_value = log_value
@@ -200,8 +204,7 @@ class Config:
 
     def __setattr__(self, key, value):
         if key.startswith("_"):
-            self.__dict__[key] = value
-            return
+            return super().__setattr__(key, value)
         ev = json_encode(value)
         self._config[key] = ev
         set_value(self._namespace, key, ev, log_value=self._log_value)

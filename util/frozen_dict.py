@@ -1,4 +1,8 @@
-class FrozenDict():
+class FrozenDict:
+    __slots__ = ("___iter__", "___getitem__", "___len__", "___str__",
+        "___repr__", "___eq__", "___ne__", "___or__", "___ror__",
+        "___contains__", "_copy", "_get", "_items", "_keys", "_values")
+
     def __init__(self, *args, **kwargs):
         dct = dict(*args, **kwargs)
         self.___iter__ = lambda: dct.__iter__()

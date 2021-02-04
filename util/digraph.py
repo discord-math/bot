@@ -1,5 +1,7 @@
-class Digraph():
+class Digraph:
     """A directed graph with no isolated vertices and no duplicate edges."""
+
+    __slots__ = "fwd", "bck"
 
     def __init__(self):
         """Create an empty graph."""

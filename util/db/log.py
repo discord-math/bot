@@ -2,6 +2,8 @@ import psycopg2
 import psycopg2.extensions
 
 class LoggingCursor(psycopg2.extensions.cursor):
+    __slots__ = "logger"
+
     def __init__(self, logger, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.logger = logger
@@ -54,7 +56,9 @@ class LoggingCursor(psycopg2.extensions.cursor):
 def make_logging_cursor(logger):
     return lambda *args, **kwargs: LoggingCursor(logger, *args, **kwargs)
 
-class LoggingNotices():
+class LoggingNotices:
+    __slots__ = "logger"
+
     def __init__(self, logger):
         self.logger = logger
 
@@ -62,6 +66,8 @@ class LoggingNotices():
         logger.info(text)
 
 class LoggingConnection(psycopg2.extensions.connection):
+    __slots__ = "logger"
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.logger = None
@@ -78,6 +84,7 @@ class LoggingConnection(psycopg2.extensions.connection):
     def ensure_init(self):
         if not self.logger:
             raise ValueError("LoggingConnection not initialized")
+
     def rollback(self):
         self.ensure_init()
         self.logger.info("Rollback {}".format(id(self)))

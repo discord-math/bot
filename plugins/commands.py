@@ -9,10 +9,12 @@ logger = logging.getLogger(__name__)
 conf = util.db.kv.Config(__name__)
 
 class TagArg:
+    __slots__ = "id"
     def __init__(self, id):
         self.id = id
 
 class UserMentionArg(TagArg):
+    __slots__ = "has_nick"
     def __init__(self, id, has_nick):
         self.id = id
         self.has_nick = has_nick
@@ -24,12 +26,14 @@ class ChannelArg(TagArg):
     pass
 
 class EmojiArg(TagArg):
+    __slots__ = "name", "animated"
     def __init__(self, id, name, animated):
         self.id = id
         self.name = name
         self.animated = animated
 
 class BracketedArg:
+    __slots__ = "contents"
     def __init__(self, contents):
         self.contents = contents
 
@@ -40,6 +44,7 @@ class InlineCodeArg(BracketedArg):
     pass
 
 class CodeBlockArg(BracketedArg):
+    __slots__ = "language"
     def __init__(self, contents, language):
         self.contents = contents
         self.language = language
@@ -48,6 +53,7 @@ class SpoilerArg(BracketedArg):
     pass
 
 class ArgParser:
+    __slots__ = "cmdline", "pos"
     def __init__(self, text):
         self.cmdline = text.lstrip()
         self.pos = 0

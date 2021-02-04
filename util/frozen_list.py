@@ -1,4 +1,9 @@
-class FrozenList():
+class FrozenList:
+    __slots__ = ("___iter__", "___getitem__", "___len__", "___str__",
+        "___repr__", "___gt__", "___lt__", "___ge__", "___le__", "___eq__",
+        "___ne__", "___mul__", "___rmul__", "___add__", "___radd__",
+        "___contains__", "_copy", "_index", "_count")
+
     def __init__(self, gen=(), /):
         lst = list(gen)
         self.___iter__ = lambda: lst.__iter__()
