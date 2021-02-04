@@ -12,15 +12,14 @@ logger = logging.getLogger(__name__)
 @atexit.register
 def atexit_restart_maybe():
     if will_restart:
-        logger.info("Re-executing {!r} {!r}".format(sys.interpreter, sys.argv))
+        logger.info("Re-executing {!r} {!r}".format(sys.executable, sys.argv))
         try:
-            os.execv(sys.interpreter, sys.argv)
+            os.execv(sys.executable, [sys.executable] + sys.argv)
         except:
             logger.critical("Restart failed", exc_info=True)
 
 def restart():
+    global will_restart
     logger.info("Restart requested", stack_info=True)
-    will_restart = True
-    if not discord_client.client.is_closed():
-        discord_client.client.close()
     asyncio.get_event_loop().stop()
+    will_restart = True

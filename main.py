@@ -16,4 +16,6 @@ except:
     logging.getLogger(__name__).critical("Exception during main event loop",
         exc_info=True)
 finally:
+    if not discord_client.client.is_closed():
+        loop.run_until_complete(discord_client.client.close())
     loop.close()
