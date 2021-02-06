@@ -6,10 +6,12 @@ import sys
 import types
 import traceback
 import plugins.commands
+import plugins.privileges
 import discord_client
 
 @plugins.commands.command("exec")
 @plugins.commands.command("eval")
+@plugins.privileges.priv("admin")
 async def run_code(msg, args):
     """
     Execute every code block in the commandline as python code. The code can

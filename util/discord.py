@@ -57,3 +57,53 @@ def event(name):
             unsafe_unhook_event(name, fun)
         return fun
     return decorator
+
+class Inline:
+    __slots__ = "text"
+
+    def __init__(self, text):
+        self.text = text
+
+    def __str__(self):
+        text = self.text
+        if "`" in text:
+            if "``" in text:
+                text = text.replace("`", "`\u200D")
+            return "``" + text + "``"
+        return "`" + text + "`"
+
+def smart_find(name_or_id, iterable):
+    """
+    Find an object by its name or id. We try an exact id match, then the
+    shortest prefix match, if unique among prefix matches of that length, then
+    an infix match, if unique.
+    """
+    try:
+        int_id = int(name_or_id)
+    except ValueError:
+        int_id = None
+    prefix_match = None
+    prefix_matches = []
+    infix_matches = []
+    for x in iterable:
+        if x.id == int_id:
+            return x
+        if x.name.startswith(name_or_id):
+            if prefix_matches and len(x.name) < len(prefix_matches[0]):
+                prefix_matches = []
+            prefix_matches.append(x.name)
+            prefix_match = x
+        elif getattr(x, "nick", None) != None and x.nick.startswith(name_or_id):
+            if prefix_matches and len(x.nick) < len(prefix_matches[0]):
+                prefix_matches = []
+            prefix_matches.append(x.nick)
+            prefix_match = x
+        elif name_or_id in x.name:
+            infix_matches.append(x)
+        elif getattr(x, "nick", None) != None and name_or_id in x.nick:
+            infix_matches.append(x)
+    if len(prefix_matches) == 1:
+        return prefix_match
+    if len(infix_matches) == 1:
+        return infix_matches[0]
+    return None

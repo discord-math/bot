@@ -69,10 +69,10 @@ class ArgParser:
     parse_re = r"""
         \s*
         (?: # tag:
-            <
+            (?P<tag><
                 (?P<type>@!?|@&|[#]{})
                 (?P<id>\d+)
-            >
+            >)
         |   # quoted string:
             "
                 (?P<string>(?:\\.|[^"])*)
@@ -130,6 +130,25 @@ class ArgParser:
         elif match["text"] != None:
             return match["text"]
 
+    def get_string_arg(self, emoji=False):
+        regex = self.parse_re_emoji if emoji else self.parse_re_no_emoji
+        match = regex.match(self.cmdline, self.pos)
+        if not match:
+            return None
+        self.pos = match.end()
+        if match["tag"] != None:
+            return match["tag"]
+        elif match["string"] != None:
+            return re.sub(r"\\(.)", match["text"], r"\1")
+        elif match["block"] != None:
+            return match["block"]
+        elif match["code1"] != None:
+            return match["code1"]
+        elif match["code2"] != None:
+            return match["code2"]
+        elif match["text"] != None:
+            return match["text"]
+
     def get_rest(self):
         return self.cmdline[self.pos:].lstrip()
 
@@ -171,6 +190,7 @@ def command(name):
     removes the command, so should only be called during plugin initialization.
     """
     def decorator(fun):
+        fun.__name__ = name
         unsafe_hook_command(name, fun)
         @plugins.finalizer
         def finalizer():
