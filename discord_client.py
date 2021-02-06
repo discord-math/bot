@@ -1,3 +1,8 @@
+"""
+This module defines the "client" singleton. It really should be a singleton so
+it should never be re-created.
+"""
+
 import discord
 import asyncio
 import static_config

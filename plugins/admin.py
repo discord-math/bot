@@ -11,6 +11,12 @@ import discord_client
 @plugins.commands.command("exec")
 @plugins.commands.command("eval")
 async def run_code(msg, args):
+    """
+    Execute every code block in the commandline as python code. The code can
+    be an expression or a series of statements. The code has all loaded modules
+    in scope, as well as "msg" and "client". The print function is redirected.
+    The code also can use top-level "await".
+    """
     outputs = []
     code_scope = dict(sys.modules)
     # Using real builtins to avoid dependency tracking

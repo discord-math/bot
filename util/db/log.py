@@ -1,3 +1,7 @@
+"""
+Utilities for logging SQL queries
+"""
+
 import psycopg2
 import psycopg2.extensions
 
@@ -9,6 +13,11 @@ class LoggingCursor(psycopg2.extensions.cursor):
         self.logger = logger
 
     def execute(self, sql, vars=None, log_data=True):
+        """
+        When log_data is a boolean, it controls whether we log the query with or
+        without parameters substituted in. Otherwise it's understood to be an
+        iterable that determines which indexes in "vars" are logged.
+        """
         if log_data:
             strip_vars = vars
             if type(log_data) is not bool:
@@ -25,6 +34,11 @@ class LoggingCursor(psycopg2.extensions.cursor):
         super().execute(sql, vars)
 
     def executemany(self, sql, var_list, log_data=False):
+        """
+        When log_data is a boolean, it controls whether we log the query with or
+        without parameters substituted in. Otherwise it's understood to be an
+        iterable that determines which indexes in "var_list" are logged.
+        """
         if log_data:
             strip_list = var_list
             if type(log_data) is not bool:

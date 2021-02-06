@@ -1,4 +1,9 @@
 class FrozenDict:
+    """
+    Immutable dict. Doesn't actually store the underlying dict as a field,
+    instead its methods are closed over the underlying dict object.
+    """
+
     __slots__ = ("___iter__", "___getitem__", "___len__", "___str__",
         "___repr__", "___eq__", "___ne__", "___or__", "___ror__",
         "___contains__", "_copy", "_get", "_items", "_keys", "_values")

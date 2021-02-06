@@ -1,3 +1,7 @@
+"""
+Some common utilities for interacting with discord.
+"""
+
 import asyncio
 import discord
 import logging
@@ -14,6 +18,8 @@ def unsafe_hook_event(name, fun):
     client = discord_client.client
 
     if not hasattr(client, method_name):
+        # Insert a hook that is actually a bound method of "of" a list. The list
+        # contains hooks that are to be executed.
         async def event_hook(hooks, *args, **kwargs):
             for hook in list(hooks):
                 try:
@@ -34,6 +40,16 @@ def unsafe_unhook_event(name, fun):
         getattr(client, method_name).__self__.remove(fun)
 
 def event(name):
+    """
+    discord.py doesn't allow multiple functions to register for the same event.
+    This decorator fixes that. Takes the event name without "on_" Example usage:
+
+        @event("message")
+        def func(msg):
+
+    This function registers a finalizer that removes the registered function,
+    and hence should only be called during plugin initialization.
+    """
     def decorator(fun):
         unsafe_hook_event(name, fun)
         @plugins.finalizer

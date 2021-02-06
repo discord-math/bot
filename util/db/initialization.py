@@ -1,3 +1,8 @@
+"""
+A simple database migration manager. A module can request to initialize
+something in the database with the @init_for and @init decorators.
+"""
+
 import static_config
 import hashlib
 import plugins
@@ -15,6 +20,20 @@ with db.connection() as conn:
             """)
 
 def init_for(name):
+    """
+    Decorate a function that returns a piece of SQL to initialize something in
+    the database.
+
+    @init_for("module name")
+    def init():
+        return "CREATE TABLE foo (bar TEXT)"
+
+    The returned SQL will be hashed. If a hash for this module doesn't yet exist
+    the SQL code will be executed and the hash saved. If the known hash for the
+    module matches the computed one, nothing happens. Otherwise we look for a
+    migration file in a configurable directory and run it, updating the known
+    hash.
+    """
     def init(fun):
         conn = db.connection()
         with conn.cursor() as cur:
@@ -51,4 +70,7 @@ def init_for(name):
     return init
 
 def init(fun):
+    """
+    Request database initialization for the current plugin.
+    """
     return init_for(plugins.current_plugin())(fun)

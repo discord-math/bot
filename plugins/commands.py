@@ -1,3 +1,8 @@
+"""
+Utilities for registering basic commands. Commands are triggered by a
+configurable prefix.
+"""
+
 import re
 import asyncio
 import logging
@@ -49,11 +54,14 @@ class CodeBlockArg(BracketedArg):
         self.contents = contents
         self.language = language
 
-class SpoilerArg(BracketedArg):
-    pass
-
 class ArgParser:
+    """
+    Parse a commandline into a sequence of words, quoted strings, code blocks,
+    user or role mentions, channel links, and optionally emojis.
+    """
+
     __slots__ = "cmdline", "pos"
+
     def __init__(self, text):
         self.cmdline = text.lstrip()
         self.pos = 0
@@ -156,6 +164,12 @@ def unsafe_unhook_command(name, fun):
     del commands[name]
 
 def command(name):
+    """
+    This decorator registers a function as a command with a given name. The
+    function receives the Message and an ArgParser arguments. Only one function
+    can be assigned to a given command name. This registers a finalizer that
+    removes the command, so should only be called during plugin initialization.
+    """
     def decorator(fun):
         unsafe_hook_command(name, fun)
         @plugins.finalizer

@@ -1,3 +1,9 @@
+"""
+A simple key-value store that associates to each module name and a string key a
+piece of JSON. If a module needs more efficient or structured storage it should
+probably have its own DB handling code.
+"""
+
 import util.db as db
 import util.frozen_list
 import util.frozen_dict
@@ -140,6 +146,11 @@ def json_decode(text):
     return json_freeze(json.loads(text)) if text != None else None
 
 class Proxy:
+    """
+    This object encapsulates access to the key-value store for a fixed module.
+    No efforts are made to cache anything: every __getitem__/__getattr__ and
+    __setitem__/__setattr__ and __iter__ makes a respective DB query.
+    """
     __slots__ = "_namespace", "_log_value"
 
     def __init__(self, namespace, log_value=False):
@@ -174,6 +185,13 @@ class ConfigStore(dict):
 config_stores = weakref.WeakValueDictionary()
 
 class Config:
+    """
+    This object encapsulates access to the key-value store for a fixed module.
+    Upon construction this makes a DB query fetching all the data. __iter__ and
+    __getitem__/__getattr__ will read from this in-memory copy,
+    __setitem__/__setattr__ will update the in-memory copy but also immediately
+    make a DB query to store the change.
+    """
     __slots__ = "_namespace", "_log_value", "_config"
 
     def __init__(self, namespace, log_value=False):

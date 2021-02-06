@@ -1,3 +1,7 @@
+"""
+Automatically load certain plugins after bot initialization.
+"""
+
 import importlib
 import logging
 import util.db.kv
