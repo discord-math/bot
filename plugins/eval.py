@@ -12,7 +12,7 @@ import discord_client
 
 @plugins.commands.command("exec")
 @plugins.commands.command("eval")
-@plugins.privileges.priv("admin")
+@plugins.privileges.priv("shell")
 async def run_code(msg, args):
     """
     Execute every code block in the commandline as python code. The code can

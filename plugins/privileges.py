@@ -59,7 +59,7 @@ def role_id_from_arg(guild, arg):
     return role.id
 
 @plugins.commands.command("priv")
-@priv("admin")
+@priv("shell")
 async def priv_command(msg, args):
     cmd = args.next_arg()
     if not isinstance(cmd, plugins.commands.StringArg): return
