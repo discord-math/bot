@@ -40,7 +40,7 @@ def user_id_from_arg(guild, arg):
     if isinstance(arg, plugins.commands.UserMentionArg):
         return arg.id
     if not isinstance(arg, plugins.commands.StringArg): return None
-    user = util.discord.smart_find(arg.text, guild.members)
+    user = util.discord.smart_find(arg.text, guild.members if guild else ())
     if user == None:
         raise util.discord.UserError(
             "Multiple or no results for user {}".format(
@@ -51,7 +51,7 @@ def role_id_from_arg(guild, arg):
     if isinstance(arg, plugins.commands.RoleMentionArg):
         return arg.id
     if not isinstance(arg, plugins.commands.StringArg): return None
-    role = util.discord.smart_find(arg.text, guild.roles)
+    role = util.discord.smart_find(arg.text, guild.roles if guild else ())
     if role == None:
         raise util.discord.UserError(
             "Multiple or no results for user {}".format(
@@ -94,8 +94,8 @@ async def priv_command(msg, args):
         output = []
         if "users" in obj:
             for id in obj["users"]:
-                member = discord.utils.find(
-                    lambda m: m.id == id, msg.guild.members)
+                member = discord.utils.find(lambda m: m.id == id,
+                    msg.guild.members if msg.guild else ())
                 if member:
                     member = "{}#{}({})".format(
                         member.nick or member.name,
@@ -105,8 +105,8 @@ async def priv_command(msg, args):
                 output.append("user {}".format(util.discord.Inline(member)))
         if "roles" in obj:
             for id in obj["roles"]:
-                role = discord.utils.find(
-                    lambda r: r.id == id, msg.guild.roles)
+                role = discord.utils.find(lambda r: r.id == id,
+                    msg.guild.roles if msg.guild else ())
                 if role:
                     role = "{}({})".format(role.name, role.id)
                 else:
