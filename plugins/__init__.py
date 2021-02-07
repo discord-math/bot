@@ -36,12 +36,11 @@ def current_plugin():
     return import_stack[-1]
 
 def trace_import(name, globals=None, locals=None, fromlist=(), level=0):
-    current = current_plugin()
     name_parts = name.split(".")
     for i in range(1, len(name_parts) + 1):
         parent = ".".join(name_parts[:i])
         if is_plugin(parent):
-            deps.add_edge(current, parent)
+            deps.add_edge(current_plugin(), parent)
     return builtins.__import__(name, globals, locals, fromlist, level)
 
 trace_builtins = types.ModuleType(builtins.__name__)
