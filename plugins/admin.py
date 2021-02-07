@@ -7,6 +7,7 @@ import types
 import traceback
 import plugins.commands
 import plugins.privileges
+import util.discord
 import discord_client
 
 @plugins.commands.command("exec")
@@ -30,17 +31,17 @@ async def run_code(msg, args):
             return print(*args, sep=sep, end=end, file=file, flush=flush)
         return code_print
     try:
-        while arg := args.get_arg():
+        for arg in args:
             if (isinstance(arg, plugins.commands.CodeBlockArg)
                 or isinstance(arg, plugins.commands.InlineCodeArg)):
                 fp = io.StringIO()
                 outputs.append(fp)
                 code_scope["print"] = mk_code_print(fp)
                 try:
-                    code = compile(arg.contents, "<msg {}>".format(msg.id),
+                    code = compile(arg.text, "<msg {}>".format(msg.id),
                         "eval", ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
                 except:
-                    code = compile(arg.contents, "<msg {}>".format(msg.id),
+                    code = compile(arg.text, "<msg {}>".format(msg.id),
                         "exec", ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
                 fun = types.FunctionType(code, code_scope)
                 ret = fun()

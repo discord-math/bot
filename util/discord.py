@@ -69,8 +69,19 @@ class Inline:
         if "`" in text:
             if "``" in text:
                 text = text.replace("`", "`\u200D")
+            if text.startswith("`"):
+                text = " " + text
+            if text.endswith("`"):
+                text = text + " "
             return "``" + text + "``"
         return "`" + text + "`"
+
+class UserError(Exception):
+    __slots__ = "text"
+
+    def __init__(self, text):
+        super().__init__(text)
+        self.text = text
 
 def smart_find(name_or_id, iterable):
     """

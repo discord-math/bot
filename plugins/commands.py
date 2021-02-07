@@ -13,45 +13,50 @@ import plugins
 logger = logging.getLogger(__name__)
 conf = util.db.kv.Config(__name__)
 
-class TagArg:
+class Arg:
+    __slots__ = "source", "rest"
+    def __init__(self, source, rest):
+        self.source = source
+        self.rest = rest
+
+class TagArg(Arg):
     __slots__ = "id"
-    def __init__(self, id):
+    def __init__(self, source, rest, id):
+        super().__init__(source, rest)
         self.id = id
 
 class UserMentionArg(TagArg):
     __slots__ = "has_nick"
-    def __init__(self, id, has_nick):
-        self.id = id
+    def __init__(self, source, rest, id, has_nick):
+        super().__init__(source, rest, id)
         self.has_nick = has_nick
 
 class RoleMentionArg(TagArg):
-    pass
+    __slots__ = ()
 
 class ChannelArg(TagArg):
-    pass
+    __slots__ = ()
 
 class EmojiArg(TagArg):
     __slots__ = "name", "animated"
-    def __init__(self, id, name, animated):
-        self.id = id
+    def __init__(self, source, rest, id, name, animated):
+        super().__init__(source, rest, id)
         self.name = name
         self.animated = animated
 
-class BracketedArg:
-    __slots__ = "contents"
-    def __init__(self, contents):
-        self.contents = contents
+class StringArg(Arg):
+    __slots__ = "text"
+    def __init__(self, source, rest, text):
+        super().__init__(source, rest)
+        self.text = text
 
-    def __str__(self):
-        return self.contents
+class InlineCodeArg(StringArg):
+    __slots__ = ()
 
-class InlineCodeArg(BracketedArg):
-    pass
-
-class CodeBlockArg(BracketedArg):
+class CodeBlockArg(StringArg):
     __slots__ = "language"
-    def __init__(self, contents, language):
-        self.contents = contents
+    def __init__(self, source, rest, text, language):
+        super().__init__(source, rest, text)
         self.language = language
 
 class ArgParser:
@@ -68,7 +73,7 @@ class ArgParser:
 
     parse_re = r"""
         \s*
-        (?: # tag:
+        (?P<source> # tag:
             (?P<tag><
                 (?P<type>@!?|@&|[#]{})
                 (?P<id>\d+)
@@ -99,58 +104,49 @@ class ArgParser:
         re.S | re.X)
     parse_re_no_emoji = re.compile(parse_re.format(r"", r""), re.S | re.X)
 
-    def get_arg(self, emoji=False):
-        regex = self.parse_re_emoji if emoji else self.parse_re_no_emoji
+    def __iter__(self):
+        while (arg := self.next_arg()) != None:
+            yield arg
+
+    def get_rest(self):
+        return self.cmdline[self.pos:].lstrip()
+
+    def next_arg(self, chunk_emoji=False):
+        regex = self.parse_re_emoji if chunk_emoji else self.parse_re_no_emoji
         match = regex.match(self.cmdline, self.pos)
-        if not match:
-            return None
+        if match == None: return None
         self.pos = match.end()
-        if emoji and match["emoji"] != None:
-            return EmojiArg(match["id"], match["emoji"],
-                match["animated"] != None)
+        if chunk_emoji and match["emoji"] != None:
+            return EmojiArg(match["source"], self.get_rest(), match["id"],
+                match["emoji"], match["animated"] != None)
         elif match["type"] != None:
             type = match["type"]
             id = int(match["id"])
             if type == "@":
-                return UserMentionArg(id, False)
+                return UserMentionArg(match["source"], self.get_rest(),
+                    id, False)
             elif type == "@!":
-                return UserMentionArg(id, True)
+                return UserMentionArg(match["source"], self.get_rest(),
+                    id, True)
             elif type == "@&":
-                return RoleMentionArg(id)
+                return RoleMentionArg(match["source"], self.get_rest(), id)
             elif type == "#":
-                return ChannelArg(id)
+                return ChannelArg(match["source"], self.get_rest(), id)
         elif match["string"] != None:
-            return re.sub(r"\\(.)", match["text"], r"\1")
+            return StringArg(match["source"], self.get_rest(),
+                re.sub(r"\\(.)", r"\1", match["string"]))
         elif match["block"] != None:
-            return CodeBlockArg(match["block"], match["language"])
+            return CodeBlockArg(match["source"], self.get_rest(),
+                match["block"], match["language"])
         elif match["code1"] != None:
-            return InlineCodeArg(match["code1"])
+            return InlineCodeArg(match["source"], self.get_rest(),
+                match["code1"])
         elif match["code2"] != None:
-            return InlineCodeArg(match["code2"])
+            return InlineCodeArg(match["source"], self.get_rest(),
+                match["code2"])
         elif match["text"] != None:
-            return match["text"]
-
-    def get_string_arg(self, emoji=False):
-        regex = self.parse_re_emoji if emoji else self.parse_re_no_emoji
-        match = regex.match(self.cmdline, self.pos)
-        if not match:
-            return None
-        self.pos = match.end()
-        if match["tag"] != None:
-            return match["tag"]
-        elif match["string"] != None:
-            return re.sub(r"\\(.)", match["text"], r"\1")
-        elif match["block"] != None:
-            return match["block"]
-        elif match["code1"] != None:
-            return match["code1"]
-        elif match["code2"] != None:
-            return match["code2"]
-        elif match["text"] != None:
-            return match["text"]
-
-    def get_rest(self):
-        return self.cmdline[self.pos:].lstrip()
+            return StringArg(match["source"], self.get_rest(), match["text"])
+        return None
 
 commands = {}
 
@@ -158,12 +154,14 @@ commands = {}
 async def message_find_command(msg):
     if conf.prefix and msg.content.startswith(conf.prefix):
         parser = ArgParser(msg.content[len(conf.prefix):])
-        name = parser.get_arg()
-        if isinstance(name, str):
-            name = name.lower()
+        cmd = parser.next_arg()
+        if isinstance(cmd, StringArg):
+            name = cmd.text.lower()
             if name in commands:
                 try:
                     await commands[name](msg, parser)
+                except util.discord.UserError as exc:
+                    await msg.channel.send("Error: {}".format(exc.text))
                 except:
                     logger.error(
                         "Error in command {} in <#{}> from <#{}>".format(
