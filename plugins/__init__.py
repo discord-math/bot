@@ -216,6 +216,18 @@ def reload(name):
         return ret
     return cont_unload()
 
+def load(name):
+    """
+    Load a single plugin. If it's already loaded, nothing is changed. If there
+    was an exception during initialization, the finalizers that managed to
+    registers will be run. Returns the module object if successful.
+    """
+    if not is_plugin(name):
+        raise ValueError(name + " is not a plugin")
+    if name in sys.modules:
+        return sys.modules[name]
+    return importlib.import_module(name)
+
 @atexit.register
 def atexit_unload():
     unload_gen = list(deps.topo_sort_fwd()).__iter__()

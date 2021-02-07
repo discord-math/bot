@@ -11,12 +11,18 @@ conf = util.db.kv.Config(__name__)
 if conf.autoload == None:
     conf.autoload = []
 
+def get_autoload():
+    return conf.autoload
+
+def set_autoload(autoload):
+    conf.autoload = autoload
+
 logger = logging.getLogger(__name__)
 
 for name in conf.autoload:
     try:
         # Sidestep plugin dependency tracking
-        importlib.__import__(plugins.plugins_namespace + "." + name)
+        plugins.load(name)
     except:
         logger.critical("Exception during autoload of {}".format(name),
             exc_info=True)

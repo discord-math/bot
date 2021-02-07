@@ -76,6 +76,17 @@ class Inline:
             return "``" + text + "``"
         return "`" + text + "`"
 
+class CodeBlock:
+    __slots__ = "text", "language"
+
+    def __init__(self, text, language=None):
+        self.text = text
+        self.language = language
+
+    def __str__(self):
+        text = self.text.replace("``", "`\u200D`")
+        return "```{}\n".format(self.language or "") + text + "```"
+
 class UserError(Exception):
     __slots__ = "text"
 

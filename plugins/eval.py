@@ -56,11 +56,9 @@ async def run_code(msg, args):
         del tb
 
     def format_block(fp):
-        text = fp.getvalue().replace("``", "`\u200D`")
-        if len(text):
-            return "```\n" + text + "```"
-        else:
-            return "\u2705"
+        text = fp.getvalue()
+        return "{}".format(
+            util.discord.CodeBlock(text) if len(text) else "\u2705")
 
     if len(outputs):
         output = "".join(format_block(fp) for fp in outputs)
