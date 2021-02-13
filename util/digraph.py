@@ -88,6 +88,8 @@ class Digraph:
         if x in self.fwd:
             for y in self.fwd[x]:
                 self.bck[y].discard(x)
+                if not self.bck[y]:
+                    del self.bck[y]
             del self.fwd[x]
 
     def del_edges_to(self, x):
@@ -97,4 +99,6 @@ class Digraph:
         if x in self.bck:
             for y in self.bck[x]:
                 self.fwd[y].discard(x)
+                if not self.fwd[y]:
+                    del self.fwd[y]
             del self.bck[x]
