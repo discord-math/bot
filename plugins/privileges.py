@@ -100,7 +100,7 @@ async def priv_command(msg, args):
                         member.discriminator, member.id)
                 else:
                     member = "{}".format(id)
-                output.append(discord.utils.format("user {!i}", member))
+                output.append(util.discord.format("user {!i}", member))
         if "roles" in obj:
             for id in obj["roles"]:
                 role = discord.utils.find(lambda r: r.id == id,
@@ -109,7 +109,7 @@ async def priv_command(msg, args):
                     role = "{}({})".format(role.name, role.id)
                 else:
                     role = "{}".format(id)
-                output.append(discord.utils.format("role {!i}", role))
+                output.append(util.discord.format("role {!i}", role))
         await msg.channel.send(util.discord.format(
             "Priv {!i} includes: {}", priv.text, "; ".join(output)))
 
