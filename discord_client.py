@@ -17,7 +17,8 @@ except NameError:
     client = discord.Client(
         loop=asyncio.get_event_loop(),
         max_messages=None,
-        intents=discord.Intents.all())
+        intents=discord.Intents.all(),
+        allowed_mentions=discord.AllowedMentions(everyone=False, roles=False))
 
 async def main_task():
     try:

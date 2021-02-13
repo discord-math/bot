@@ -4,6 +4,8 @@ Some common utilities for interacting with discord.
 
 import asyncio
 import discord
+import discord.abc
+import string
 import logging
 import discord_client
 import plugins
@@ -58,6 +60,17 @@ def event(name):
         return fun
     return decorator
 
+class CodeBlock:
+    __slots__ = "text", "language"
+
+    def __init__(self, text, language=None):
+        self.text = text
+        self.language = language
+
+    def __str__(self):
+        text = self.text.replace("``", "`\u200D`")
+        return "```{}\n".format(self.language or "") + text + "```"
+
 class Inline:
     __slots__ = "text"
 
@@ -76,21 +89,55 @@ class Inline:
             return "``" + text + "``"
         return "`" + text + "`"
 
-class CodeBlock:
-    __slots__ = "text", "language"
+class Formatter(string.Formatter):
+    """
+    A formatter class designed for discord messages. The following conversions
+    are understood:
 
-    def __init__(self, text, language=None):
-        self.text = text
-        self.language = language
+        {!i} -- turn into inline code
+        {!b} -- turn into a code block
+        {!b:lang} -- turn into a code block in the specified language
+        {!m} -- turn into mention
+        {!c} -- turn into channel link
+    """
 
-    def __str__(self):
-        text = self.text.replace("``", "`\u200D`")
-        return "```{}\n".format(self.language or "") + text + "```"
+    __slots__ = ()
+
+    def convert_field(self, value, conversion):
+        if conversion == "i":
+            return str(Inline(str(value)))
+        elif conversion == "b":
+            return CodeBlock(str(value))
+        elif conversion == "m":
+            if isinstance(value, discord.Role):
+                return "<@&{}>".format(role.id)
+            elif isinstance(value, discord.abc.User):
+                return "<@{}>".format(value.id)
+            elif isinstance(value, int):
+                return "<@{}>".format(value)
+        elif conversion == "c":
+            if isinstance(value, discord.abc.Messageable):
+                return "<#{}>".format(value.id)
+            elif isinstance(value, int):
+                return "<#{}>".format(value)
+        return super().convert_field(value, conversion)
+
+    def format_field(self, value, fmt):
+        if isinstance(value, CodeBlock):
+            if fmt:
+                value.language = fmt
+            return str(value)
+        return super().format_field(value, fmt)
+
+formatter = Formatter()
+format = formatter.format
 
 class UserError(Exception):
     __slots__ = "text"
 
-    def __init__(self, text):
+    def __init__(self, text, *args, **kwargs):
+        if args or kwargs:
+            text = format(text, *args, **kwargs)
         super().__init__(text)
         self.text = text
 

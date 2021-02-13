@@ -23,8 +23,8 @@ def plugin_from_arg(name):
 
 async def reply_exception(msg):
     _, exc, tb = sys.exc_info()
-    text = "{}".format(util.discord.CodeBlock(
-        "{}\n{}".format("".join(traceback.format_tb(tb)), repr(exc))))
+    text = util.discord.format("{!b:py}",
+        "{}\n{}".format("".join(traceback.format_tb(tb)), repr(exc)))
     del tb
     await msg.channel.send(text)
 
@@ -102,7 +102,7 @@ async def autoload_command(msg, args):
     cmd = args.next_arg()
     if cmd == None:
         return await msg.channel.send(", ".join(
-            "{}".format(util.discord.Inline(name))
+            util.discord.format("{!i}", name)
             for name in plugins.autoload.get_autoload()))
     if not isinstance(cmd, plugins.commands.StringArg): return None
     if cmd.text.lower() == "add":

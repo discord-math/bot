@@ -43,8 +43,7 @@ def user_id_from_arg(guild, arg):
     user = util.discord.smart_find(arg.text, guild.members if guild else ())
     if user == None:
         raise util.discord.UserError(
-            "Multiple or no results for user {}".format(
-                util.discord.Inline(arg.text)))
+            "Multiple or no results for user {!i}", arg.text)
     return user.id
 
 def role_id_from_arg(guild, arg):
@@ -54,8 +53,7 @@ def role_id_from_arg(guild, arg):
     role = util.discord.smart_find(arg.text, guild.roles if guild else ())
     if role == None:
         raise util.discord.UserError(
-            "Multiple or no results for user {}".format(
-                util.discord.Inline(arg.text)))
+            "Multiple or no results for role {!i}", arg.text)
     return role.id
 
 @plugins.commands.command("priv")
@@ -68,29 +66,29 @@ async def priv_command(msg, args):
         priv = args.next_arg()
         if not isinstance(priv, plugins.commands.StringArg): return
         if conf[priv.text] != None:
-            return await msg.channel.send(
-                "Priv {} already exists".format(util.discord.Inline(priv.text)))
+            return await msg.channel.send(util.discord.format(
+                "Priv {!i} already exists", priv.text))
         conf[priv.text] = {"users": [], "roles": []}
-        await msg.channel.send(
-            "Created priv {}".format(util.discord.Inline(priv.text)))
+        await msg.channel.send(util.discord.format(
+            "Created priv {!i}", priv.text))
 
     elif cmd.text.lower() == "delete":
         priv = args.next_arg()
         if not isinstance(priv, plugins.commands.StringArg): return
         if conf[priv.text] == None:
-            return await msg.channel.send(
-                "Priv {} does not exist".format(util.discord.Inline(priv.text)))
+            return await msg.channel.send(util.discord.format(
+                "Priv {!i} does not exist", priv.text))
         conf[priv.text] = None
-        await msg.channel.send(
-            "Removed priv {}".format(util.discord.Inline(priv.text)))
+        await msg.channel.send(util.discord.format(
+            "Removed priv {!i}", priv.text))
 
     elif cmd.text.lower() == "show":
         priv = args.next_arg()
         if not isinstance(priv, plugins.commands.StringArg): return
         obj = conf[priv.text]
         if obj == None:
-            await msg.channel.send(
-                "Priv {} does not exist".format(util.discord.Inline(priv.text)))
+            await msg.channel.send(util.discord.format(
+                "Priv {!i} does not exist", priv.text))
         output = []
         if "users" in obj:
             for id in obj["users"]:
@@ -102,7 +100,7 @@ async def priv_command(msg, args):
                         member.discriminator, member.id)
                 else:
                     member = "{}".format(id)
-                output.append("user {}".format(util.discord.Inline(member)))
+                output.append(discord.utils.format("user {!i}", member))
         if "roles" in obj:
             for id in obj["roles"]:
                 role = discord.utils.find(lambda r: r.id == id,
@@ -111,91 +109,82 @@ async def priv_command(msg, args):
                     role = "{}({})".format(role.name, role.id)
                 else:
                     role = "{}".format(id)
-                output.append("role {}".format(util.discord.Inline(role)))
-        await msg.channel.send(
-            "Priv {} includes: {}".format(util.discord.Inline(priv.text),
-                "; ".join(output)))
+                output.append(discord.utils.format("role {!i}", role))
+        await msg.channel.send(util.discord.format(
+            "Priv {!i} includes: {}", priv.text, "; ".join(output)))
 
     elif cmd.text.lower() == "add":
         priv = args.next_arg()
         if not isinstance(priv, plugins.commands.StringArg): return
         obj = conf[priv.text]
         if obj == None:
-            await msg.channel.send(
-                "Priv {} does not exist".format(util.discord.Inline(priv.text)))
+            await msg.channel.send(util.discord.format(
+                "Priv {!i} does not exist", priv.text))
         cmd = args.next_arg()
         if not isinstance(cmd, plugins.commands.StringArg): return
         if cmd.text.lower() == "user":
             user_id = user_id_from_arg(msg.guild, args.next_arg())
             if user_id == None: return
             if user_id in obj.get("users", []):
-                return await msg.channel.send(
-                    "User {} is already in priv {}".format(user_id,
-                        util.discord.Inline(priv.text)))
+                return await msg.channel.send(util.discord.format(
+                    "User {} is already in priv {!i}", user_id, priv.text))
 
             obj = dict(obj)
             obj["users"] = obj.get("users", []) + [user_id]
             conf[priv.text] = obj
 
-            await msg.channel.send(
-                "Added user {} to priv {}".format(user_id,
-                    util.discord.Inline(priv.text)))
+            await msg.channel.send(util.discord.format(
+                "Added user {} to priv {!i}", user_id, priv.text))
 
         elif cmd.text.lower() == "role":
             role_id = role_id_from_arg(msg.guild, args.next_arg())
             if role_id == None: return
             if role_id in obj.get("roles", []):
-                return await msg.channel.send(
-                    "Role {} is already in priv {}".format(role_id,
-                        util.discord.Inline(priv.text)))
+                return await msg.channel.send(util.discord.format(
+                    "Role {} is already in priv {!i}", role_id, priv.text))
 
             obj = dict(obj)
             obj["roles"] = obj.get("roles", []) + [role_id]
             conf[priv.text] = obj
 
-            await msg.channel.send(
-                "Added role {} to priv {}".format(role_id,
-                    util.discord.Inline(priv.text)))
+            await msg.channel.send(util.discord.format(
+                "Added role {} to priv {!i}", role_id, priv.text))
 
     elif cmd.text.lower() == "remove":
         priv = args.next_arg()
         if not isinstance(priv, plugins.commands.StringArg): return
         obj = conf[priv.text]
         if obj == None:
-            await msg.channel.send(
-                "Priv {} does not exist".format(util.discord.Inline(priv.text)))
+            await msg.channel.send(util.discord.format(
+                "Priv {!i} does not exist", priv.text))
         cmd = args.next_arg()
         if not isinstance(cmd, plugins.commands.StringArg): return
         if cmd.text.lower() == "user":
             user_id = user_id_from_arg(msg.guild, args.next_arg())
             if user_id == None: return
             if user_id not in obj.get("users", []):
-                return await msg.channel.send(
-                    "User {} is already not in priv {}".format(user_id,
-                        util.discord.Inline(priv.text)))
+                return await msg.channel.send(util.discord.format(
+                    "User {} is already not in priv {!i}", user_id, priv.text))
 
             obj = dict(obj)
             obj["users"] = list(filter(lambda i: i != user_id,
                 obj.get("users", [])))
             conf[priv.text] = obj
 
-            await msg.channel.send(
-                "Removed user {} from priv {}".format(user_id,
-                    util.discord.Inline(priv.text)))
+            await msg.channel.send(util.discord.format(
+                "Removed user {} from priv {!i}", user_id, priv.text))
 
         elif cmd.text.lower() == "role":
             role_id = role_id_from_arg(msg.guild, args.next_arg())
             if role_id == None: return
             if role_id not in obj.get("roles", []):
-                return await msg.channel.send(
-                    "Role {} is already not in priv {}".format(role_id,
-                        util.discord.Inline(priv.text)))
+                return await msg.channel.send(util.discord.format(
+                    "Role {} is already not in priv {!i}", role_id, priv.text))
 
             obj = dict(obj)
             obj["roles"] = list(filter(lambda i: i != role_id,
                 obj.get("roles", [])))
             conf[priv.text] = obj
 
-            await msg.channel.send(
-                "Removed role {} from priv {}".format(role_id,
-                    util.discord.Inline(priv.text)))
+            await msg.channel.send(util.discord.format(
+                "Removed role {} from priv {!i}", role_id, priv.text))
