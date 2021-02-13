@@ -30,7 +30,7 @@ class LoggingCursor(psycopg2.extensions.cursor):
             text = self.mogrify(sql.strip(), strip_vars).decode("utf")
         else:
             text = sql.strip()
-        self.logger.info("Execute {}: {}".format(id(self.connection), text))
+        self.logger.debug("Execute {}: {}".format(id(self.connection), text))
         super().execute(sql, vars)
 
     def executemany(self, sql, var_list, log_data=False):
@@ -50,18 +50,18 @@ class LoggingCursor(psycopg2.extensions.cursor):
                     strip_list = [[vars[i] if i in log_data else None
                         for i in range(len(vars))]
                         for vars in var_list]
-            self.logger.info("ExecuteMany {}: {}; {}".format(
+            self.logger.debug("ExecuteMany {}: {}; {}".format(
                 id(self.connection),
                 sql.strip(),
                 repr(strip_list)))
         else:
-            self.logger.info("ExecuteMany {}: {}".format(
+            self.logger.debug("ExecuteMany {}: {}".format(
                 id(self.connection),
                 sql.strip()))
         super().executemany(sql, var_list)
 
     def callproc(procname, *args):
-        self.logger.info("CallProc {}: {}{}".format(
+        self.logger.debug("CallProc {}: {}{}".format(
             id(self.connection),
             procname,
             repr(args)))
@@ -77,7 +77,7 @@ class LoggingNotices:
         self.logger = logger
 
     def append(self, text):
-        logger.info(text)
+        logger.debug(text)
 
 class LoggingConnection(psycopg2.extensions.connection):
     __slots__ = "logger"
@@ -88,7 +88,7 @@ class LoggingConnection(psycopg2.extensions.connection):
 
     def initialize(self, logger):
         self.logger = logger
-        self.logger.info("Connected to {}".format(self.dsn))
+        self.logger.debug("Connected to {}".format(self.dsn))
         self.cursor_factory = make_logging_cursor(self.logger)
         notices = self.notices
         self.notices = LoggingNotices(logger)
@@ -101,17 +101,17 @@ class LoggingConnection(psycopg2.extensions.connection):
 
     def rollback(self):
         self.ensure_init()
-        self.logger.info("Rollback {}".format(id(self)))
+        self.logger.debug("Rollback {}".format(id(self)))
         super().rollback()
 
     def commit(self):
         self.ensure_init()
-        self.logger.info("Commit {}".format(id(self)))
+        self.logger.debug("Commit {}".format(id(self)))
         super().commit()
 
     def cancel(self):
         self.ensure_init()
-        self.logger.info("Cancel {}".format(id(self)))
+        self.logger.debug("Cancel {}".format(id(self)))
         super().commit()
 
     def cursor(self, *args, **kwargs):

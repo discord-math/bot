@@ -153,19 +153,22 @@ commands = {}
 @util.discord.event("message")
 async def message_find_command(msg):
     if conf.prefix and msg.content.startswith(conf.prefix):
-        parser = ArgParser(msg.content[len(conf.prefix):])
+        cmdline = msg.content[len(conf.prefix):]
+        parser = ArgParser(cmdline)
         cmd = parser.next_arg()
         if isinstance(cmd, StringArg):
             name = cmd.text.lower()
             if name in commands:
                 try:
+                    logger.info("Command {!r} from <@{}> in <#{}>".format(
+                        cmdline, msg.author.id, msg.channel.id))
                     await commands[name](msg, parser)
                 except util.discord.UserError as exc:
                     await msg.channel.send("Error: {}".format(exc.text))
                 except:
                     logger.error(
-                        "Error in command {} in <#{}> from <#{}>".format(
-                            name, msg.channel.id, msg.author.id
+                        "Error in command {!r} from <@{}> in <#{}>".format(
+                            name, msg.author.id, msg.channel.id
                         ), exc_info=True)
 
 def unsafe_hook_command(name, fun):

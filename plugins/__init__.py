@@ -8,6 +8,7 @@ dependent plugins as well. We also provide a way for a plugin to hook a
 "finalizer" to be executed when the plugin is to be unloaded.
 """
 
+import logging
 import importlib.machinery
 import importlib.util
 import builtins
@@ -15,6 +16,8 @@ import types
 import sys
 import atexit
 import util.digraph
+
+logger = logging.getLogger(__name__)
 
 plugins_namespace = "plugins"
 def is_plugin(name):
@@ -41,6 +44,7 @@ def trace_import(name, globals=None, locals=None, fromlist=(), level=0):
         parent = ".".join(name_parts[:i])
         if is_plugin(parent):
             deps.add_edge(current_plugin(), parent)
+            logger.debug("{} depends on {}".format(current_plugin(), parent))
     return builtins.__import__(name, globals, locals, fromlist, level)
 
 trace_builtins = types.ModuleType(builtins.__name__)
@@ -71,6 +75,7 @@ def finalizer(fin):
     return fin
 
 def finalize_module(name):
+    logger.debug("Finalizing {}".format(name))
     if name not in finalizers:
         return
     gen = finalizers[name].__iter__()
@@ -79,6 +84,7 @@ def finalize_module(name):
             for fin in gen:
                 fin()
         except:
+            logger.error("Error in finalizer of {}".format(name), exc_info=True)
             cont_finalizers()
             raise
         del finalizers[name]
@@ -91,8 +97,11 @@ class PluginLoader(importlib.machinery.SourceFileLoader):
         mod.__builtins__ = trace_builtins
         import_stack.append(name)
         try:
+            logger.debug("Executing {}".format(name))
             super().exec_module(mod)
         except:
+            logger.error("Error during execution of {}".format(name),
+                exc_info=True)
             try:
                 finalize_module(name)
             finally:
@@ -127,6 +136,7 @@ def unsafe_unload(name):
     if not is_plugin(name):
         raise ValueError(name + " is not a plugin")
     try:
+        logger.debug("Unloading {}".format(name))
         finalize_module(name)
     finally:
         deps.del_edges_from(name)
@@ -138,12 +148,16 @@ def unload(name):
     it. All finalizers will be executed even if some raise exceptions, if there
     were any they will all be reraised together.
     """
+    logger.info("Unloading {} with dependencies: {}".format(name,
+        ", ".join(dep for dep in deps.subgraph_paths_to(name).topo_sort_fwd()
+            if dep != name)))
     gen = deps.subgraph_paths_to(name).topo_sort_fwd()
     def cont_unload():
         try:
             for dep in gen:
-                if dep != name:
-                    unsafe_unload(dep)
+                if dep == name:
+                    continue
+                unsafe_unload(dep)
         except:
             cont_unload()
             raise
@@ -163,6 +177,7 @@ def unsafe_reload(name):
     if not is_plugin(name):
         raise ValueError(name + " is not a plugin")
     try:
+        logger.info("Reloading {} inplace".format(name))
         finalize_module(name)
     finally:
         deps.del_edges_from(name)
@@ -180,6 +195,8 @@ def reload(name):
     the requested plugin if successful.
     """
     reloads = deps.subgraph_paths_to(name)
+    logger.info("Reloading {} with dependencies: {}".format(name,
+        ", ".join(dep for dep in reloads.topo_sort_fwd() if dep != name)))
     unload_success = set()
     reload_success = set()
     unload_gen = reloads.topo_sort_fwd()
@@ -187,8 +204,16 @@ def reload(name):
     def cont_reload():
         try:
             for dep in reload_gen:
-                if (dep in unload_success and
-                    all(m in reload_success for m in reloads.edges_from(dep))):
+                if dep == name:
+                    continue
+                elif dep not in unload_success:
+                    logger.info("Not reloading {} because it "
+                        "was not unloaded properly".format(name))
+                elif not all(m in reload_success
+                    for m in reloads.edges_from(dep)):
+                    logger.info("Not reloading {} because its dependencies "
+                        "were not reloaded properly".format(name))
+                else:
                     importlib.import_module(dep)
                     reload_success.add(dep)
         except:
@@ -197,9 +222,10 @@ def reload(name):
     def cont_unload():
         try:
             for dep in unload_gen:
-                if dep != name:
-                    unsafe_unload(dep)
-                    unload_success.add(dep)
+                if dep == name:
+                    continue
+                unsafe_unload(dep)
+                unload_success.add(dep)
         except:
             cont_unload()
             raise

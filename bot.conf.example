@@ -4,6 +4,9 @@
 dsn = dbname=db host=localhost port=12345
 # Directory with migration files
 migrations = migrations/
+[Log]
+# Log directory
+directory = logs/
 [Discord]
 # Bot token
 token = AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
