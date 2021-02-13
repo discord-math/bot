@@ -23,6 +23,7 @@ async def run_code(msg, args):
     outputs = []
     code_scope = dict(sys.modules)
     # Using real builtins to avoid dependency tracking
+    code_scope["__builtins__"] = builtins
     code_scope.update(builtins.__dict__)
     code_scope["msg"] = msg
     code_scope["client"] = discord_client.client
