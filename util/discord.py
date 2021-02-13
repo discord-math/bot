@@ -98,6 +98,7 @@ class Formatter(string.Formatter):
         {!b} -- turn into a code block
         {!b:lang} -- turn into a code block in the specified language
         {!m} -- turn into mention
+        {!M} -- turn into role mention
         {!c} -- turn into channel link
     """
 
@@ -110,13 +111,20 @@ class Formatter(string.Formatter):
             return CodeBlock(str(value))
         elif conversion == "m":
             if isinstance(value, discord.Role):
-                return "<@&{}>".format(role.id)
+                return "<@&{}>".format(value.id)
             elif isinstance(value, discord.abc.User):
                 return "<@{}>".format(value.id)
             elif isinstance(value, int):
                 return "<@{}>".format(value)
+        elif conversion == "M":
+            if isinstance(value, discord.Role):
+                return "<@&{}>".format(value.id)
+            elif isinstance(value, int):
+                return "<@&{}>".format(value)
         elif conversion == "c":
             if isinstance(value, discord.abc.Messageable):
+                return "<#{}>".format(value.id)
+            elif isinstance(value, discord.CategoryChannel):
                 return "<#{}>".format(value.id)
             elif isinstance(value, int):
                 return "<#{}>".format(value)

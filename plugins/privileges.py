@@ -95,23 +95,24 @@ async def priv_command(msg, args):
                 member = discord.utils.find(lambda m: m.id == id,
                     msg.guild.members if msg.guild else ())
                 if member:
-                    member = "{}#{}({})".format(
-                        member.nick or member.name,
-                        member.discriminator, member.id)
+                    member = util.discord.format("{!m}({!i} {!i})",
+                        member, member.name, member.id)
                 else:
-                    member = "{}".format(id)
-                output.append(util.discord.format("user {!i}", member))
+                    member = util.discord.format("{!m}({!i})", id, id)
+                output.append("user {}".format(member))
         if "roles" in obj:
             for id in obj["roles"]:
                 role = discord.utils.find(lambda r: r.id == id,
                     msg.guild.roles if msg.guild else ())
                 if role:
-                    role = "{}({})".format(role.name, role.id)
+                    role = util.discord.format("{!M}({!i} {!i})",
+                        role, role.name, role.id)
                 else:
-                    role = "{}".format(id)
-                output.append(util.discord.format("role {!i}", role))
+                    role = util.discord.format("{!M}({!i})", id, id)
+                output.append("role {}".format(role))
         await msg.channel.send(util.discord.format(
-            "Priv {!i} includes: {}", priv.text, "; ".join(output)))
+            "Priv {!i} includes: {}", priv.text, "; ".join(output)),
+            allowed_mentions=discord.AllowedMentions.none())
 
     elif cmd.text.lower() == "add":
         priv = args.next_arg()
@@ -127,28 +128,32 @@ async def priv_command(msg, args):
             if user_id == None: return
             if user_id in obj.get("users", []):
                 return await msg.channel.send(util.discord.format(
-                    "User {} is already in priv {!i}", user_id, priv.text))
+                    "User {!m} is already in priv {!i}", user_id, priv.text),
+                    allowed_mentions=discord.AllowedMentions.none())
 
             obj = dict(obj)
             obj["users"] = obj.get("users", []) + [user_id]
             conf[priv.text] = obj
 
             await msg.channel.send(util.discord.format(
-                "Added user {} to priv {!i}", user_id, priv.text))
+                "Added user {!m} to priv {!i}", user_id, priv.text),
+                allowed_mentions=discord.AllowedMentions.none())
 
         elif cmd.text.lower() == "role":
             role_id = role_id_from_arg(msg.guild, args.next_arg())
             if role_id == None: return
             if role_id in obj.get("roles", []):
                 return await msg.channel.send(util.discord.format(
-                    "Role {} is already in priv {!i}", role_id, priv.text))
+                    "Role {!M} is already in priv {!i}", role_id, priv.text),
+                    allowed_mentions=discord.AllowedMentions.none())
 
             obj = dict(obj)
             obj["roles"] = obj.get("roles", []) + [role_id]
             conf[priv.text] = obj
 
             await msg.channel.send(util.discord.format(
-                "Added role {} to priv {!i}", role_id, priv.text))
+                "Added role {!M} to priv {!i}", role_id, priv.text),
+                allowed_mentions=discord.AllowedMentions.none())
 
     elif cmd.text.lower() == "remove":
         priv = args.next_arg()
@@ -164,7 +169,9 @@ async def priv_command(msg, args):
             if user_id == None: return
             if user_id not in obj.get("users", []):
                 return await msg.channel.send(util.discord.format(
-                    "User {} is already not in priv {!i}", user_id, priv.text))
+                    "User {!m} is already not in priv {!i}",
+                    user_id, priv.text),
+                    allowed_mentions=discord.AllowedMentions.none())
 
             obj = dict(obj)
             obj["users"] = list(filter(lambda i: i != user_id,
@@ -172,14 +179,17 @@ async def priv_command(msg, args):
             conf[priv.text] = obj
 
             await msg.channel.send(util.discord.format(
-                "Removed user {} from priv {!i}", user_id, priv.text))
+                "Removed user {!m} from priv {!i}", user_id, priv.text),
+                allowed_mentions=discord.AllowedMentions.none())
 
         elif cmd.text.lower() == "role":
             role_id = role_id_from_arg(msg.guild, args.next_arg())
             if role_id == None: return
             if role_id not in obj.get("roles", []):
                 return await msg.channel.send(util.discord.format(
-                    "Role {} is already not in priv {!i}", role_id, priv.text))
+                    "Role {!M} is already not in priv {!i}",
+                    role_id, priv.text),
+                    allowed_mentions=discord.AllowedMentions.none())
 
             obj = dict(obj)
             obj["roles"] = list(filter(lambda i: i != role_id,
@@ -187,4 +197,5 @@ async def priv_command(msg, args):
             conf[priv.text] = obj
 
             await msg.channel.send(util.discord.format(
-                "Removed role {} from priv {!i}", role_id, priv.text))
+                "Removed role {!M} from priv {!i}", role_id, priv.text),
+                allowed_mentions=discord.AllowedMentions.none())
