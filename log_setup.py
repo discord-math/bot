@@ -1,5 +1,7 @@
 import logging
 import logging.handlers
+import time
+
 import static_config
 
 logging.basicConfig(handlers=[], force=True)
@@ -8,7 +10,8 @@ logger.setLevel(logging.NOTSET)
 
 class Formatter(logging.Formatter):
     """A formatter that formats multi-line messages in a greppable fashion"""
-    
+
+    converter = time.gmtime
     default_time_format = "%Y-%m-%dT%H:%M:%S"
     default_msec_format = "%s.%03d"
 
