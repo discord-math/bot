@@ -1,15 +1,31 @@
 import logging
 import logging.handlers
 import time
+import warnings
 
 import static_config
 
 logging.basicConfig(handlers=[], force=True)
+
+def closure():
+    old_showwarning = warnings.showwarning
+    def showwarning(message, category, filename, lineno, file=None, line=None):
+        if file is not None:
+            old_showwarning = warnings.showwarning
+        else:
+            text = warnings.formatwarning(message, category,
+                filename, lineno, line)
+            logging.getLogger("__builtins__").error(text)
+    warnings.showwarning = showwarning
+closure()
+
 logger = logging.getLogger()
 logger.setLevel(logging.NOTSET)
 
 class Formatter(logging.Formatter):
     """A formatter that formats multi-line messages in a greppable fashion"""
+
+    __slots__ = ()
 
     converter = time.gmtime
     default_time_format = "%Y-%m-%dT%H:%M:%S"
