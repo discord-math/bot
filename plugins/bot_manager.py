@@ -116,3 +116,10 @@ async def autoload_command(msg, args):
         plugins.autoload.set_autoload(list(filter(lambda n: n != name,
             plugins.autoload.get_autoload())))
         await msg.channel.send("\u2705")
+
+@plugins.commands.command("plugins")
+@plugins.privileges.priv("admin")
+async def plugins_command(msg, args):
+    await msg.channel.send(", ".join(
+        util.discord.format("{!i}", name)
+        for name in sys.modules if plugins.is_plugin(name)))
