@@ -184,3 +184,11 @@ def smart_find(name_or_id, iterable):
     if len(infix_matches) == 1:
         return infix_matches[0]
     return None
+
+class ChannelById(discord.abc.Messageable):
+    def __init__(self, client, id):
+        self.id = id
+        self._state = client._connection
+
+    async def _get_channel(self):
+        return self
