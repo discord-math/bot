@@ -185,7 +185,27 @@ def smart_find(name_or_id, iterable):
         return infix_matches[0]
     return None
 
+class TempMessage:
+    __slots__ = "sendable", "args", "kwargs", "message"
+
+    def __init__(self, sendable, *args, **kwargs):
+        self.sendable = sendable
+        self.args = args
+        self.kwargs = kwargs
+
+    async def __aenter__(self):
+        self.message = await self.sendable.send(*self.args, **self.kwargs)
+        return self.message
+
+    async def __aexit__(self, exc_type, exc_val, tb):
+        try:
+            await self.message.delete()
+        except (discord.Forbidden, discord.NotFound):
+            pass
+
 class ChannelById(discord.abc.Messageable):
+    __slots__ = "id", "_state"
+
     def __init__(self, client, id):
         self.id = id
         self._state = client._connection
