@@ -33,6 +33,7 @@ def priv(name):
             else:
                 logger.warn(
                     "Denied {} to {!r}".format(fun.__name__, msg.author))
+        check.__name__ = fun.__name__
         return check
     return decorator
 
@@ -87,7 +88,7 @@ async def priv_command(msg, args):
         if not isinstance(priv, plugins.commands.StringArg): return
         obj = conf[priv.text]
         if obj == None:
-            await msg.channel.send(util.discord.format(
+            return await msg.channel.send(util.discord.format(
                 "Priv {!i} does not exist", priv.text))
         output = []
         if "users" in obj:
@@ -119,7 +120,7 @@ async def priv_command(msg, args):
         if not isinstance(priv, plugins.commands.StringArg): return
         obj = conf[priv.text]
         if obj == None:
-            await msg.channel.send(util.discord.format(
+            return await msg.channel.send(util.discord.format(
                 "Priv {!i} does not exist", priv.text))
         cmd = args.next_arg()
         if not isinstance(cmd, plugins.commands.StringArg): return
@@ -160,7 +161,7 @@ async def priv_command(msg, args):
         if not isinstance(priv, plugins.commands.StringArg): return
         obj = conf[priv.text]
         if obj == None:
-            await msg.channel.send(util.discord.format(
+            return await msg.channel.send(util.discord.format(
                 "Priv {!i} does not exist", priv.text))
         cmd = args.next_arg()
         if not isinstance(cmd, plugins.commands.StringArg): return

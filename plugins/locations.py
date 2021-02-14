@@ -28,6 +28,7 @@ def location(name):
         async def check(msg, arg):
             if in_location(name, msg.channel):
                 await fun(msg, arg)
+        check.__name__ = fun.__name__
         return check
     return decorator
 
@@ -82,7 +83,7 @@ async def location_command(msg, args):
         if not isinstance(loc, plugins.commands.StringArg): return
         obj = conf[loc.text]
         if obj == None:
-            await msg.channel.send(util.discord.format(
+            return await msg.channel.send(util.discord.format(
                 "Location {!i} does not exist", loc.text))
         output = []
         if "channels" in obj:
@@ -113,7 +114,7 @@ async def location_command(msg, args):
         if not isinstance(loc, plugins.commands.StringArg): return
         obj = conf[loc.text]
         if obj == None:
-            await msg.channel.send(util.discord.format(
+            return await msg.channel.send(util.discord.format(
                 "Location {!i} does not exist", loc.text))
         cmd = args.next_arg()
         if not isinstance(cmd, plugins.commands.StringArg): return
@@ -152,7 +153,7 @@ async def location_command(msg, args):
         if not isinstance(loc, plugins.commands.StringArg): return
         obj = conf[loc.text]
         if obj == None:
-            await msg.channel.send(util.discord.format(
+            return await msg.channel.send(util.discord.format(
                 "Location {!i} does not exist", loc.text))
         cmd = args.next_arg()
         if not isinstance(cmd, plugins.commands.StringArg): return
