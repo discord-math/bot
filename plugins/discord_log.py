@@ -41,6 +41,10 @@ class DiscordHandler(logging.Handler):
         chan_id = conf.channel
         if chan_id == None:
             return
+        try:
+            chan_id = int(chan_id)
+        except ValueError:
+            return
 
         client = discord_client.client
         if client.is_closed():

@@ -11,11 +11,11 @@ conf = util.db.kv.Config(__name__)
 def in_location(loc, channel):
     obj = conf[loc]
     if obj and "channels" in obj:
-        if channel.id in obj["channels"]:
+        if str(channel.id) in obj["channels"]:
             return True
     if obj and "categories" in obj:
         if channel.category_id != None:
-            if channel.category_id in obj["categories"]:
+            if str(channel.category_id) in obj["categories"]:
                 return True
     return False
 
@@ -87,7 +87,7 @@ async def location_command(msg, args):
                 "Location {!i} does not exist", loc.text))
         output = []
         if "channels" in obj:
-            for id in obj["channels"]:
+            for id in map(int, obj["channels"]):
                 chan = discord.utils.find(lambda c: c.id == id,
                     msg.guild.channels if msg.guild else ())
                 if chan:
@@ -97,7 +97,7 @@ async def location_command(msg, args):
                     chan = util.discord.format("{!c}({!i})", id, id)
                 output.append("channel {}".format(chan))
         if "categories" in obj:
-            for id in obj["categories"]:
+            for id in map(int, obj["categories"]):
                 cat = discord.utils.find(lambda r: r.id == id,
                     msg.guild.categories if msg.guild else ())
                 if cat:
@@ -121,13 +121,13 @@ async def location_command(msg, args):
         if cmd.text.lower() == "channel":
             chan_id = chan_id_from_arg(msg.guild, args.next_arg())
             if chan_id == None: return
-            if chan_id in obj.get("channels", []):
+            if str(chan_id) in obj.get("channels", []):
                 return await msg.channel.send(util.discord.format(
                     "Channel {!c} is already in location {!i}",
                     chan_id, loc.text))
 
             obj = dict(obj)
-            obj["channels"] = obj.get("channels", []) + [chan_id]
+            obj["channels"] = obj.get("channels", []) + [str(chan_id)]
             conf[loc.text] = obj
 
             await msg.channel.send(util.discord.format(
@@ -136,13 +136,13 @@ async def location_command(msg, args):
         elif cmd.text.lower() == "category":
             cat_id = cat_id_from_arg(msg.guild, args.next_arg())
             if cat_id == None: return
-            if cat_id in obj.get("categories", []):
+            if str(cat_id) in obj.get("categories", []):
                 return await msg.channel.send(util.discord.format(
                     "Category {!c} is already in location {!i}",
                     cat_id, loc.text))
 
             obj = dict(obj)
-            obj["categories"] = obj.get("categories", []) + [cat_id]
+            obj["categories"] = obj.get("categories", []) + [str(cat_id)]
             conf[loc.text] = obj
 
             await msg.channel.send(util.discord.format(
@@ -160,13 +160,13 @@ async def location_command(msg, args):
         if cmd.text.lower() == "channel":
             chan_id = chan_id_from_arg(msg.guild, args.next_arg())
             if chan_id == None: return
-            if chan_id not in obj.get("channels", []):
+            if str(chan_id) not in obj.get("channels", []):
                 return await msg.channel.send(util.discord.format(
                     "Channel {!c} is already not in location {!i}",
                     chan_id, loc.text))
 
             obj = dict(obj)
-            obj["channels"] = list(filter(lambda i: i != chan_id,
+            obj["channels"] = list(filter(lambda i: i != str(chan_id),
                 obj.get("channels", [])))
             conf[loc.text] = obj
 
@@ -176,13 +176,13 @@ async def location_command(msg, args):
         elif cmd.text.lower() == "category":
             cat_id = cat_id_from_arg(msg.guild, args.next_arg())
             if cat_id == None: return
-            if cat_id not in obj.get("categories", []):
+            if str(cat_id) not in obj.get("categories", []):
                 return await msg.channel.send(util.discord.format(
                     "Category {!c} is already not in location {!i}",
                     cat_id, loc.text))
 
             obj = dict(obj)
-            obj["categories"] = list(filter(lambda i: i != cat_id,
+            obj["categories"] = list(filter(lambda i: i != str(cat_id),
                 obj.get("categories", [])))
             conf[loc.text] = obj
 

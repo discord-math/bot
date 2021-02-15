@@ -10,12 +10,12 @@ conf = util.db.kv.Config(__name__)
 def has_privilege(priv, user_or_member):
     obj = conf[priv]
     if obj and "users" in obj:
-        if user_or_member.id in obj["users"]:
+        if str(user_or_member.id) in obj["users"]:
             return True
     if obj and "roles" in obj:
         if hasattr(user_or_member, "roles"):
             for role in user_or_member.roles:
-                if role.id in obj["roles"]:
+                if str(role.id) in obj["roles"]:
                     return True
         # else we're in a DM or the user has left,
         # either way there's no roles to check
@@ -92,7 +92,7 @@ async def priv_command(msg, args):
                 "Priv {!i} does not exist", priv.text))
         output = []
         if "users" in obj:
-            for id in obj["users"]:
+            for id in map(int, obj["users"]):
                 member = discord.utils.find(lambda m: m.id == id,
                     msg.guild.members if msg.guild else ())
                 if member:
@@ -102,7 +102,7 @@ async def priv_command(msg, args):
                     member = util.discord.format("{!m}({!i})", id, id)
                 output.append("user {}".format(member))
         if "roles" in obj:
-            for id in obj["roles"]:
+            for id in map(int, obj["roles"]):
                 role = discord.utils.find(lambda r: r.id == id,
                     msg.guild.roles if msg.guild else ())
                 if role:
@@ -127,13 +127,13 @@ async def priv_command(msg, args):
         if cmd.text.lower() == "user":
             user_id = user_id_from_arg(msg.guild, args.next_arg())
             if user_id == None: return
-            if user_id in obj.get("users", []):
+            if str(user_id) in obj.get("users", []):
                 return await msg.channel.send(util.discord.format(
                     "User {!m} is already in priv {!i}", user_id, priv.text),
                     allowed_mentions=discord.AllowedMentions.none())
 
             obj = dict(obj)
-            obj["users"] = obj.get("users", []) + [user_id]
+            obj["users"] = obj.get("users", []) + [str(user_id)]
             conf[priv.text] = obj
 
             await msg.channel.send(util.discord.format(
@@ -143,13 +143,13 @@ async def priv_command(msg, args):
         elif cmd.text.lower() == "role":
             role_id = role_id_from_arg(msg.guild, args.next_arg())
             if role_id == None: return
-            if role_id in obj.get("roles", []):
+            if str(role_id) in obj.get("roles", []):
                 return await msg.channel.send(util.discord.format(
                     "Role {!M} is already in priv {!i}", role_id, priv.text),
                     allowed_mentions=discord.AllowedMentions.none())
 
             obj = dict(obj)
-            obj["roles"] = obj.get("roles", []) + [role_id]
+            obj["roles"] = obj.get("roles", []) + [str(role_id)]
             conf[priv.text] = obj
 
             await msg.channel.send(util.discord.format(
@@ -168,14 +168,14 @@ async def priv_command(msg, args):
         if cmd.text.lower() == "user":
             user_id = user_id_from_arg(msg.guild, args.next_arg())
             if user_id == None: return
-            if user_id not in obj.get("users", []):
+            if str(user_id) not in obj.get("users", []):
                 return await msg.channel.send(util.discord.format(
                     "User {!m} is already not in priv {!i}",
                     user_id, priv.text),
                     allowed_mentions=discord.AllowedMentions.none())
 
             obj = dict(obj)
-            obj["users"] = list(filter(lambda i: i != user_id,
+            obj["users"] = list(filter(lambda i: i != str(user_id),
                 obj.get("users", [])))
             conf[priv.text] = obj
 
@@ -186,14 +186,14 @@ async def priv_command(msg, args):
         elif cmd.text.lower() == "role":
             role_id = role_id_from_arg(msg.guild, args.next_arg())
             if role_id == None: return
-            if role_id not in obj.get("roles", []):
+            if str(role_id) not in obj.get("roles", []):
                 return await msg.channel.send(util.discord.format(
                     "Role {!M} is already not in priv {!i}",
                     role_id, priv.text),
                     allowed_mentions=discord.AllowedMentions.none())
 
             obj = dict(obj)
-            obj["roles"] = list(filter(lambda i: i != role_id,
+            obj["roles"] = list(filter(lambda i: i != str(role_id),
                 obj.get("roles", [])))
             conf[priv.text] = obj
 
