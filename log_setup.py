@@ -62,15 +62,18 @@ class Formatter(logging.Formatter):
 formatter = Formatter(
     "%(asctime)s %(name)s %(levelname)s%(symbol)s %(message)s")
 
-for level, name in (
-    [ (logging.DEBUG, "debug")
-    , (logging.INFO, "info")
-    , (logging.WARNING, "warning")
-    , (logging.ERROR, "error")
-    , (logging.CRITICAL, "critical") ]):
+for level, name, cond in (
+    [ (logging.DEBUG, "debug.discord", lambda r: r.name.startswith("discord.") )
+    , (logging.DEBUG, "debug", lambda r: not r.name.startswith("discord.") )
+    , (logging.INFO, "info", None)
+    , (logging.WARNING, "warning", None)
+    , (logging.ERROR, "error", None)
+    , (logging.CRITICAL, "critical", None) ]):
     handler = logging.handlers.TimedRotatingFileHandler(
         filename="{}/{}.log".format(static_config.Log["directory"], name),
         when="midnight", utc=True, encoding="utf", errors="replace")
     handler.setLevel(level)
     handler.setFormatter(formatter)
+    if cond:
+        handler.addFilter(cond)
     logger.addHandler(handler)
