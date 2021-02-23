@@ -28,7 +28,7 @@ async def respond(msg, embed):
 @util.discord.event("message")
 async def speyr_message(msg):
     try:
-        if msg.guild.id != int(conf.guild or 0):
+        if not msg.guild or msg.guild.id != int(conf.guild or 0):
             return
     except ValueError:
         return
