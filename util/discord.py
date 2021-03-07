@@ -212,3 +212,9 @@ class ChannelById(discord.abc.Messageable):
 
     async def _get_channel(self):
         return self
+
+class RoleById:
+    __slots__ = "id"
+
+    def __init__(self, id):
+        self.id = id
