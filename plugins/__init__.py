@@ -260,7 +260,9 @@ def load(name):
 
 @atexit.register
 def atexit_unload():
-    unload_gen = list(deps.topo_sort_fwd()).__iter__()
+    unload_list = list(deps.topo_sort_fwd())
+    unload_list.extend(name for name in finalizers if name not in unload_list)
+    unload_gen = unload_list.__iter__()
     def cont_unload():
         try:
             for dep in unload_gen:
