@@ -11,11 +11,15 @@ dependent plugins as well. We also provide a way for a plugin to hook a
 import logging
 import importlib.machinery
 import importlib.util
+import pkgutil
 import builtins
 import types
 import sys
 import atexit
 import util.digraph
+
+# Allow importing plugins from other directories on the path
+__path__ = pkgutil.extend_path(__path__, __name__)
 
 logger = logging.getLogger(__name__)
 
