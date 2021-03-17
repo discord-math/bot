@@ -18,6 +18,7 @@ import util.db
 import util.discord
 
 import plugins.commands as commands
+from plugins.reactions import ReactionMonitor
 import plugins.privileges as priv
 
 
@@ -1623,12 +1624,16 @@ def summarise_tickets(*tickets, title="Tickets", fmt=None):
 Page = namedtuple('Page', ('content', 'embed'), defaults=(None, None))
 
 
-async def pager(dest: discord.abc.Messageable, *pages):
+async def pager(dest: discord.abc.Messageable, pages):
     """
     Page a sequence of pages.
     """
     _next_reaction = '⏭️'
     _prev_reaction = '⏮️'
+    _all_reaction = '📜'
+    reactions = (_prev_reaction, _all_reaction, _next_reaction)
+
+    pages = list(pages)
 
     # Sanity check
     if not pages:
@@ -1641,37 +1646,53 @@ async def pager(dest: discord.abc.Messageable, *pages):
         return
 
     # Add reactions
-    await msg.add_reaction(_prev_reaction)
-    await msg.add_reaction(_next_reaction)
+    for r in reactions:
+        await msg.add_reaction(r)
 
     index = 0
     while True:
         try:
-            payload = await client.wait_for(
-                'raw_reaction_add', timeout=120,
-                check=lambda p: (
-                    p.message_id == msg.id
-                    and str(p.emoji) in [_next_reaction, _prev_reaction]
+            with ReactionMonitor(
+                message_id=msg.id,
+                event='add',
+                filter=lambda _, p: (
+                    str(p.emoji) in reactions
                     and p.user_id != msg.guild.me.id
-                )
-            )
-            if str(payload.emoji) == _next_reaction:
-                index += 1
-            elif str(payload.emoji) == _prev_reaction:
-                index -= 1
-            index %= len(pages)
-            await msg.edit(**pages[index]._asdict())
-            try:
-                await msg.remove_reaction(
-                    payload.emoji,
-                    discord.Object(payload.user_id)
-                )
-            except discord.HTTPException:
-                pass
+                ),
+                timeout_each=120
+            ) as mon:
+                _, payload = await mon
+                if str(payload.emoji) == _next_reaction:
+                    index += 1
+                elif str(payload.emoji) == _prev_reaction:
+                    index -= 1
+                elif str(payload.emoji) == _all_reaction:
+                    await msg.delete()
+                    msg = None
+                    for page in pages:
+                        await dest.send(**page._asdict())
+                    break
+                index %= len(pages)
+                await msg.edit(**pages[index]._asdict())
+                try:
+                    await msg.remove_reaction(
+                        payload.emoji,
+                        discord.Object(payload.user_id)
+                    )
+                except discord.HTTPException:
+                    pass
         except asyncio.TimeoutError:
             break
         except asyncio.CancelledError:
             break
+
+    # Remove the reactions
+    if msg is not None:
+        try:
+            for r in reactions:
+                await msg.clear_reaction(r)
+        except discord.HTTPException:
+            pass
 
 
 @commands.command("note")
@@ -1794,7 +1815,7 @@ async def cmd_ticket(msg: discord.Message, args):
             if embeds:
                 await pager(
                     msg.channel,
-                    *(Page(embed=embed) for embed in embeds)
+                    [Page(embed=embed) for embed in embeds]
                 )
             else:
                 await reply(
@@ -1980,7 +2001,7 @@ async def cmd_ticket(msg: discord.Message, args):
             if embeds:
                 await pager(
                     msg.channel,
-                    *(Page(embed=embed) for embed in embeds)
+                    [Page(embed=embed) for embed in embeds]
                 )
             else:
                 await reply("No tickets found for this user.")
@@ -2011,7 +2032,7 @@ async def cmd_ticket(msg: discord.Message, args):
             if embeds:
                 await pager(
                     msg.channel,
-                    *(Page(embed=embed) for embed in embeds)
+                    [Page(embed=embed) for embed in embeds]
                 )
             else:
                 await reply("No hidden tickets found for this user.")
