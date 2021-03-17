@@ -78,6 +78,7 @@ def init():
         CREATE TYPE TicketStatus AS ENUM (
             'NEW',
             'IN_EFFECT',
+            'EXPIRED',
             'REVERTED',
             'HIDDEN'
         );
@@ -297,7 +298,7 @@ class _rowInterface:
                     "{} {}".format(key, item.value)
                 )
             else:
-                conditional_strings.append("{}='%s'".format(key))
+                conditional_strings.append("{}=%s".format(key))
                 values.append(item)
 
         return (' AND '.join(conditional_strings), values)
