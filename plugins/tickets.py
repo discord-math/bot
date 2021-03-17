@@ -1712,28 +1712,49 @@ async def cmd_note(msg: discord.Message, args):
     note = None
     if maybe_note_arg is None:
         # Request the note dynamically
-        await msg.channel.send(
-            "Please enter the note contents, or send `c` to cancel:"
+        prompt = await msg.channel.send(
+            "Please enter the note:"
         )
-        try:
-            message = await client.wait_for(
+        _del_reaction = '❌'
+        await prompt.add_reaction(_del_reaction)
+        msg_task = asyncio.create_task(
+            client.wait_for(
                 'message',
-                timeout=300,
                 check=lambda msg_: (
                     (msg_.channel == msg.channel) and
                     (msg_.author == msg.author)
                 )
             )
+        )
+        reaction_task = asyncio.create_task(
+            client.wait_for(
+                'raw_reaction_add',
+                check=lambda p: (
+                    (p.message_id == prompt.id
+                     and str(p.emoji) == _del_reaction
+                     and p.user_id == msg.author.id)
+                )
+            )
+        )
+        try:
+            done, pending = await asyncio.wait(
+                (msg_task, reaction_task),
+                timeout=300,
+                return_when=asyncio.FIRST_COMPLETED
+            )
         except asyncio.TimeoutError:
             await msg.channel.send(
                 "Note prompt timed out, please try again."
             )
-        if message.content.lower() == 'c':
+
+        if msg_task in done:
+            reaction_task.cancel()
+            note = msg_task.result().content
+        elif reaction_task in done:
+            msg_task.cancel()
             await msg.channel.send(
                 "Note prompt cancelled, no note was created."
             )
-        else:
-            note = message.content
     elif isinstance(maybe_note_arg, commands.StringArg):
         note = maybe_note_arg.text
     else:
