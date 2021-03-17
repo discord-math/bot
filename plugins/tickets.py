@@ -1579,22 +1579,32 @@ def get_or_create_mod(modid) -> TicketMod:
 
 # ------------ Commands ------------
 
-def resolve_ticket(msg, ticketarg=None) -> Ticket:
-    if ticketarg is not None and isinstance(ticketarg, commands.StringArg):
-        maybe_id = int(ticketarg.text)
-        if maybe_id < 2147483647:
-            tickets = fetch_tickets_where(id=maybe_id)
-        else:
-            tickets = fetch_tickets_where(list_msgid=maybe_id)
-        return next(tickets, None)
-    elif ref := msg.reference:
+def resolve_ticket(msg, args, rewind=False) -> Ticket:
+    """
+    Resolves a ticket from the given message and command args, if possible.
+    Ticket is extracted from either the referenced message or the first arg.
+    """
+    ticket = None
+    if ref := msg.reference:
         if (ref_msg := ref.resolved) and isinstance(ref_msg, discord.Message):
             if ref_msg.author == client.user and ref_msg.embeds:
                 embed = ref_msg.embeds[0]
                 if (name := embed.author.name) and name.startswith("Ticket #"):
                     ticket_id = int(name[8:].split(' ', maxsplit=1)[0])
-                    tickets = fetch_tickets_where(id=ticket_id)
-                    return next(tickets, None)
+                    ticket = get_ticket(ticket_id)
+    if ticket is None:
+        rewind_pos = args.pos
+        ticketarg = args.next_arg()
+        if ticketarg is not None and isinstance(ticketarg, commands.StringArg):
+            maybe_id = int(ticketarg.text)
+            if maybe_id < 2147483647:  # Hack to differentiate msgid from tid
+                tickets = fetch_tickets_where(id=maybe_id)
+            else:
+                tickets = fetch_tickets_where(list_msgid=maybe_id)
+            ticket = next(tickets, None)
+        if rewind and ticket is None:
+            args.pos = rewind_pos
+    return ticket
 
 
 def summarise_tickets(*tickets, title="Tickets", fmt=None):
@@ -1707,9 +1717,8 @@ async def cmd_note(msg: discord.Message, args):
         return
     targetid = target_arg.id
 
-    maybe_note_arg = args.next_arg()
-    note = None
-    if maybe_note_arg is None:
+    note = args.get_rest()
+    if not note:
         # Request the note dynamically
         prompt = await msg.channel.send(
             "Please enter the note:"
@@ -1754,13 +1763,8 @@ async def cmd_note(msg: discord.Message, args):
             await msg.channel.send(
                 "Note prompt cancelled, no note was created."
             )
-    elif isinstance(maybe_note_arg, commands.StringArg):
-        note = maybe_note_arg.text
-    else:
-        # TODO: Usage
-        note = None
 
-    if note is not None:
+    if note:
         # Create the note ticket
         ticket = await create_ticket(
             type=TicketType.NOTE,
@@ -1790,8 +1794,11 @@ async def cmd_ticket(msg: discord.Message, args):
     reply = msg.channel.send
     no_mentions = discord.AllowedMentions.none()
 
+    S_Arg = commands.StringArg
+    UM_Arg = commands.UserMentionArg
+
     cmd_arg = args.next_arg()
-    if not isinstance(cmd_arg, commands.StringArg):
+    if not isinstance(cmd_arg, S_Arg):
         return
     cmd = cmd_arg.text.lower()
 
@@ -1818,7 +1825,7 @@ async def cmd_ticket(msg: discord.Message, args):
         Show the specified moderator's (or your own) ticket queue.
         """
         modarg = args.next_arg()
-        if modarg is None or isinstance(modarg, commands.UserMentionArg):
+        if modarg is None or isinstance(modarg, UM_Arg):
             modid = modarg.id if modarg is not None else user.id
             embeds = None
             if modid in _ticketmods:
@@ -1849,9 +1856,7 @@ async def cmd_ticket(msg: discord.Message, args):
         Usage: ticket take <ticket>
         Claim a ticket (i.e. set the responsible moderator to yourself).
         """
-        ticketarg = args.next_arg()
-        ticket = resolve_ticket(msg, ticketarg)
-        if not ticket:
+        if not (ticket := resolve_ticket(msg, args)):
             await reply("No ticket referenced or ticket could not be found.")
         elif ticket.modid == msg.author.id:
             await reply("This is already your ticket!")
@@ -1869,20 +1874,10 @@ async def cmd_ticket(msg: discord.Message, args):
         Usage: ticket assign <ticket> <modmention>
         Assign the specified ticket to the specified moderator.
         """
-        mod_arg = None
-        ticket_arg = None
-
-        arg1 = args.next_arg()
-        if arg1 is not None:
-            if (arg2 := args.next_arg()) is not None:
-                ticket_arg, mod_arg = arg1, arg2
-            else:
-                mod_arg = arg1
-
-        if mod_arg is None or not isinstance(mod_arg, commands.UserMentionArg):
+        if (ticket := resolve_ticket(msg, args)) is None:
+            await reply("No ticket referenced or ticket could not be found.")
+        elif not isinstance((mod_arg := args.next_arg()), UM_Arg):
             await reply("Please provide a moderator mention!")
-        elif (ticket := resolve_ticket(msg, ticket_arg)) is None:
-            await reply("No ticket referenced or ticket could not be found!")
         else:
             if mod_arg.id == ticket.modid:
                 await reply(
@@ -1920,19 +1915,31 @@ async def cmd_ticket(msg: discord.Message, args):
         """
         Append to the ticket reason.
         """
-        ticketarg = args.next_arg()
-        ticket = resolve_ticket(msg, ticketarg)
-        if not ticket:
+        if (ticket := resolve_ticket(msg, args)) is None:
             await reply("No ticket referenced or ticket could not be found.")
-        # TODO remember to check for max length
-        pass
+        elif not (text := args.get_rest()):
+            # TODO: Usage
+            pass
+        elif len(ticket.comment) + len(text) > 2000:
+            await reply("Cannot append, exceeds maximum comment length!")
+        else:
+            with ticket.batch_update():
+                ticket.comment = ticket.comment + '\n' + text
+                ticket.modified_by = msg.author.id
+            await ticket.publish()
+            await reply(
+                embed=discord.Embed(
+                    description="[#{}]({}): Ticket updated.".format(
+                        ticket.id,
+                        ticket.jump_link
+                    )
+                )
+            )
     elif cmd == "revert":
         """
         Manually revert a ticket.
         """
-        ticketarg = args.next_arg()
-        ticket = resolve_ticket(msg, ticketarg)
-        if not ticket:
+        if (ticket := resolve_ticket(msg, args)) is None:
             await reply("No ticket referenced or ticket could not be found.")
         elif not ticket.can_revert:
             await reply(
@@ -1962,9 +1969,7 @@ async def cmd_ticket(msg: discord.Message, args):
         """
         Hide (and revert) a ticket.
         """
-        ticketarg = args.next_arg()
-        ticket = resolve_ticket(msg, ticketarg)
-        if not ticket:
+        if (ticket := resolve_ticket(msg, args)) is None:
             await reply("No ticket referenced or ticket could not be found.")
         elif ticket.hidden:
             await reply(
@@ -1973,13 +1978,7 @@ async def cmd_ticket(msg: discord.Message, args):
                 )
             )
         else:
-            reason = None
-            if (reason_arg := args.next_arg()):
-                if isinstance(reason_arg, commands.StringArg):
-                    reason = reason_arg.text
-                else:
-                    # TODO: Usage
-                    return
+            reason = args.get_rest() or None
             await ticket.hide(msg.author.id, reason=reason)
             await reply(
                 embed=discord.Embed(
@@ -1991,7 +1990,7 @@ async def cmd_ticket(msg: discord.Message, args):
         Show ticket(s) by ticketid or userid
         """
         arg = args.next_arg()
-        if isinstance(arg, commands.UserMentionArg):
+        if isinstance(arg, UM_Arg):
             # Collect tickets for the mentioned user
             userid = arg.id
 
@@ -2027,7 +2026,7 @@ async def cmd_ticket(msg: discord.Message, args):
                 )
             else:
                 await reply("No tickets found for this user.")
-        elif isinstance(arg, commands.StringArg) and arg.text.isdigit():
+        elif isinstance(arg, S_Arg) and arg.text.isdigit():
             # Assume provided number is a ticket id
             if ticket := get_ticket(int(arg.text)):
                 await reply(embed=ticket.embed)
@@ -2038,7 +2037,7 @@ async def cmd_ticket(msg: discord.Message, args):
         Show hidden ticket(s) by ticketid or userid
         """
         arg = args.next_arg()
-        if isinstance(arg, commands.UserMentionArg):
+        if isinstance(arg, UM_Arg):
             # Collect hidden tickets for the mentioned user
             userid = arg.id
             tickets = fetch_tickets_where(
@@ -2058,7 +2057,7 @@ async def cmd_ticket(msg: discord.Message, args):
                 )
             else:
                 await reply("No hidden tickets found for this user.")
-        elif isinstance(arg, commands.StringArg) and arg.text.isdigit():
+        elif isinstance(arg, S_Arg) and arg.text.isdigit():
             # Assume provided number is a ticket id
             if ticket := get_ticket(int(arg.text)):
                 await reply(embed=ticket.embed)
