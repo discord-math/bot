@@ -420,7 +420,7 @@ class TicketStage(FieldEnum):
 
 
 class Ticket(_rowInterface):
-    __slots__ = tuple()
+    __slots__ = ()
 
     _table = 'tickets.tickets'
     _id_col = 0
@@ -1202,7 +1202,6 @@ def init_ticket_expiry():
     _expiring_tickets = {
         ticket.id: ticket.expiry for ticket in expiring_tickets
     }
-    # TODO: Log init
     logger.info("Loaded {} expiring tickets.".format(len(_expiring_tickets)))
     _reload_expiration()
 
