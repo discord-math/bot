@@ -1340,13 +1340,6 @@ class TicketMod(_rowInterface):
         )
         return next(ticket, None)
 
-    def perm_check(self):
-        """
-        Check that this user has moderator permissions.
-        """
-        # TODO
-        return True
-
     async def schedule_prompt(self):
         """
         Schedule or reschedule the reminder prompt.
@@ -1558,11 +1551,19 @@ async def reload_mods():
     Reload all moderators from data.
     """
     global _ticketmods
-
     logger.debug("Loading ticket moderators.")
-    [mod.unload() for mod in _ticketmods.values()]
+
+    # Unload mods
+    for mod in _ticketmods.values():
+        mod.unload()
+
+    # Rebuild ticketmod list
     _ticketmods = {row[0]: TicketMod(row) for row in TicketMod._select_where()}
-    [await mod.load() for mod in _ticketmods.values()]
+
+    # Load mods
+    for mod in _ticketmods.values():
+        await mod.load()
+
     logger.info("Loaded {} ticket moderators.".format(len(_ticketmods)))
 
 
