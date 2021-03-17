@@ -1517,25 +1517,29 @@ class TicketMod(_rowInterface):
                 self.last_read_msgid = message.id
 
                 # Notify the moderator, nullify the duration if required
+                msg = "Ticket comment set! "
                 if duration:
                     if not ticket.can_revert:
-                        msg = (
-                            "Ticket comment set! "
+                        msg += (
                             "Provided duration ignored since "
                             "this ticket type cannot expire."
                         )
                         duration = None
                     elif not ticket.active:
-                        msg = (
-                            "Ticket comment set! "
+                        msg += (
                             "Provided duration ignored since "
                             "this ticket is no longer in effect."
                         )
                         duration = None
                     else:
-                        msg = "Ticket comment and duration set!"
-                else:
-                    msg = "Ticket comment set!"
+                        expiry = ticket.expiry
+                        now = dt.datetime.utcnow()
+                        if expiry <= now:
+                            msg += "Ticket will expire immediately!"
+                        else:
+                            msg += "Ticket will expire in {}.".format(
+                                str(expiry - now).split('.')[0]
+                            )
 
                 await self.user.send(msg)
 
