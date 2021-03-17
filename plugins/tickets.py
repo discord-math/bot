@@ -1472,10 +1472,6 @@ class TicketMod(_rowInterface):
         If there is a current active ticket, treat it as a comment.
         Either way, update the last handled message in data.
         """
-        if not priv.has_privilege('mod', message.author):
-            # Don't process messages from non-moderators at all.
-            return
-
         prefix = commands.conf.prefix
         if not prefix or not message.content.startswith(prefix):
             content = message.content
