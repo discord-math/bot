@@ -54,10 +54,10 @@ time_expansion = {
 # ----------- Config -----------
 conf = util.db.kv.Config(__name__)  # General plugin configuration
 
-conf.guild: int  # ID of the guild the ticket system is managing
-conf.tracked_roles: List[int]  # List of roleids of tracked roles
-conf.last_audit_id: int  # ID of last audit event processed
-conf.ticket_list: int  # Channel id of the ticket list in the guild
+conf.guild: str  # ID of the guild the ticket system is managing
+conf.tracked_roles: List[str]  # List of roleids of tracked roles
+conf.last_audit_id: str  # ID of last audit event processed
+conf.ticket_list: str  # Channel id of the ticket list in the guild
 
 
 # ----------- Data -----------
@@ -525,11 +525,11 @@ class Ticket(_rowInterface):
 
     @property
     def target(self) -> discord.Member:
-        return client.get_guild(conf.guild).get_member(self.targetid)
+        return client.get_guild(int(conf.guild)).get_member(self.targetid)
 
     @property
     def role(self) -> discord.Role:
-        return client.get_guild(conf.guild).get_role(self.roleid)
+        return client.get_guild(int(conf.guild)).get_role(self.roleid)
 
     @property
     def jump_link(self) -> str:
@@ -571,7 +571,7 @@ class Ticket(_rowInterface):
 
         # Post to or update the ticket list
         if conf.ticket_list:
-            channel = client.get_channel(conf.ticket_list)
+            channel = client.get_channel(int(conf.ticket_list))
             if channel:
                 message = None
                 if self.list_msgid:
@@ -827,7 +827,7 @@ class BanTicket(Ticket):
         """
         Unban the acted user, if possible.
         """
-        guild = client.get_guild(conf.guild)
+        guild = client.get_guild(int(conf.guild))
         bans = await guild.bans()
         user = next(
             (entry.user for entry in bans if entry.user.id == self.targetid),
@@ -892,7 +892,7 @@ class VCMuteTicket(Ticket):
         """
         Attempt to unmute the target user.
         """
-        guild = client.get_guild(conf.guild)
+        guild = client.get_guild(int(conf.guild))
         member = guild.get_member(self.targetid)
         if member is None:
             # User is no longer in the guild, nothing to do
@@ -952,7 +952,7 @@ class VCDeafenTicket(Ticket):
         """
         Attempt to undeafen the target user.
         """
-        guild = client.get_guild(conf.guild)
+        guild = client.get_guild(int(conf.guild))
         member = guild.get_member(self.targetid)
         if member is None:
             # User is no longer in the guild, nothing to do
@@ -977,7 +977,7 @@ class AddRoleTicket(Ticket):
         """
         if audit_entry.changes.after.roles:
             for role in audit_entry.changes.after.roles:
-                if conf.tracked_roles and role.id in conf.tracked_roles:
+                if conf.tracked_roles and str(role.id) in conf.tracked_roles:
                     await cls._create(
                         type=cls._type,
                         stage=TicketStage.NEW,
@@ -998,7 +998,7 @@ class AddRoleTicket(Ticket):
         """
         if audit_entry.changes.before.roles:
             for role in audit_entry.changes.before.roles:
-                if conf.tracked_roles and role.id in conf.tracked_roles:
+                if conf.tracked_roles and str(role.id) in conf.tracked_roles:
                     # Select any relevant tickets
                     tickets = fetch_tickets_where(
                         type=cls._type,
@@ -1017,7 +1017,7 @@ class AddRoleTicket(Ticket):
         """
         Attempt to remove the associated role from the target.
         """
-        guild = client.get_guild(conf.guild)
+        guild = client.get_guild(int(conf.guild))
         role = guild.get_role(self.roleid)
         if role is None:
             return False
@@ -1034,7 +1034,7 @@ async def read_audit_log(*args):
     If there is no last read value, just reads the last value.
     """
     # TODO: Lock so we don't read simultaneously
-    if not conf.guild or not (guild := client.get_guild(conf.guild)):
+    if not conf.guild or not (guild := client.get_guild(int(conf.guild))):
         """
         Nothing we can do
         """
@@ -1050,7 +1050,7 @@ async def read_audit_log(*args):
             await guild.audit_logs(limit=100, oldest_first=True).flatten()
         ]
         # If there is more than one page of new entries, keep collecting them
-        while entries[-1][0].id > conf.last_auditid:
+        while entries[-1][0].id > int(conf.last_auditid):
             new_entries = await guild.audit_logs(
                 limit=100,
                 before=entries[0],
@@ -1061,7 +1061,7 @@ async def read_audit_log(*args):
                 break
             entries.append(new_entries)
         entries = filter(
-            lambda entry: entry.id > conf.last_auditid,
+            lambda entry: entry.id > int(conf.last_auditid),
             itertools.chain.from_iterable(reversed(entries))
         )
     else:
@@ -1074,7 +1074,7 @@ async def read_audit_log(*args):
         if entry.user != client.user and entry.action in _action_handlers:
             for handler in _action_handlers[entry.action]:
                 await handler(entry)
-        conf.last_auditid = entry.id
+        conf.last_auditid = str(entry.id)
 
 
 def fetch_tickets_where(**kwargs):
@@ -2077,7 +2077,7 @@ async def init_setup():
     # Wait until the caches have been populated
     await client.wait_until_ready()
 
-    if not conf.guild or not client.get_guild(conf.guild):
+    if not conf.guild or not client.get_guild(int(conf.guild)):
         """
         No guild, nothing we can do. Don't proceed with setup.
         """
