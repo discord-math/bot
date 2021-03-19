@@ -7,9 +7,9 @@ def getloop():
     except RuntimeError:
         return asyncio.get_event_loop()
 
-def run_async(coro):
+def run_async(coro, *args, **kwargs):
     """Schedule an asynchronous computation from synchronous code"""
-    getloop().create_task(coro())
+    getloop().create_task(coro(*args, **kwargs))
 
 def concurrently(fun, *args, **kwargs):
     """
@@ -21,13 +21,13 @@ def concurrently(fun, *args, **kwargs):
     return getloop().run_in_executor(None,
         lambda: fun(*args, **kwargs))
 
-def init_async(coro):
+def init_async(coro, *args, **kwargs):
     """
     Perform asynchronous initialization for a plugin. Can be used as a decorator
     around an async function. Cancels the initialization routine if the plugin
     is unloaded before it could complete.
     """
-    task = getloop().create_task(coro())
+    task = getloop().create_task(coro(*args, **kwargs))
     @plugins.finalizer
     def cancel_initialization():
         task.cancel()

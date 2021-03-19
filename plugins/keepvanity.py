@@ -3,6 +3,7 @@ import discord
 import discord_client
 import util.discord
 import util.db.kv
+import util.asyncio
 
 conf = util.db.kv.Config(__name__)
 
@@ -29,7 +30,7 @@ async def check_after_connect():
     for guild in discord_client.client.guilds:
         await check_guild_vanity(guild)
 
+@util.asyncio.init_async
 async def init_check_task():
     for guild in discord_client.client.guilds:
         await check_guild_vanity(guild)
-asyncio.get_event_loop().create_task(init_check_task())
