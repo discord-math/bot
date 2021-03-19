@@ -1,4 +1,4 @@
-import asyncio
+import asyncio.subprocess
 import plugins.commands
 import plugins.privileges
 import util.discord

@@ -8,6 +8,7 @@ import util.discord
 import discord_client
 import util.db
 import util.db.kv
+import util.asyncio
 
 @plugins.commands.command("config")
 @plugins.privileges.priv("shell")
@@ -62,14 +63,14 @@ async def config_command(msg, args):
                 if (isinstance(arg, plugins.commands.CodeBlockArg)
                     or isinstance(arg, plugins.commands.InlineCodeArg)):
                     try:
-                        # TODO: run concurrently
-                        cur.execute(arg.text)
+                        await util.asyncio.concurrently(cur.execute, arg.text)
                     except psycopg2.Error as e:
                         outputs.append(util.discord.format("{!b}", e.pgerror))
                     else:
                         outputs.append(cur.statusmessage)
                         try:
-                            results = cur.fetchmany(1000)
+                            results = await util.asyncio.concurrently(
+                                cur.fetchmany, 1000)
                         except psycopg2.ProgrammingError:
                             pass
                         else:
@@ -108,8 +109,11 @@ async def config_command(msg, args):
             # If we've been assigned a transaction ID, means we've changed
             # something. Prompt the user to commit.
             try:
-                cur.execute("SELECT txid_current_if_assigned()")
-                txid = cur.fetchone()[0]
+                @util.asyncio.concurrently
+                def txid():
+                    cur.execute("SELECT txid_current_if_assigned()")
+                    return cur.fetchone()[0]
+                txid = await txid
             except psycopg2.Error:
                 return
             if txid == None:
@@ -131,10 +135,13 @@ async def config_command(msg, args):
                 except asyncio.TimeoutError:
                     pass
 
-                if rollback:
-                    conn.rollback()
-                else:
-                    conn.commit()
+                @util.asyncio.concurrently
+                def finish():
+                    if rollback:
+                        conn.rollback()
+                    else:
+                        conn.commit()
+                await finish
                 await reply.remove_reaction(
                     "\u2705" if rollback else "\u21A9",
                     member=discord_client.client.user)
