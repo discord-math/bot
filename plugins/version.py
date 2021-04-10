@@ -4,7 +4,7 @@ import plugins.privileges
 import util.discord
 
 @plugins.commands.command("version")
-@plugins.privileges.priv("admin")
+@plugins.privileges.priv("mod")
 async def version_command(msg, args):
     git_log = await asyncio.subprocess.create_subprocess_exec(
         "git", "log", "--max-count=1", "--format=format:%H%d", "HEAD",
