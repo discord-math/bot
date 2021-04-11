@@ -29,8 +29,7 @@ logger = logging.getLogger(__name__)
 # ---------- Constants ----------
 ticket_comment_re = re.compile(
     r"""
-    (?i)\s*
-    ([\d.]+)
+    \s*([\d.]+)\s*
     (s(?:ec(?:ond)?s?)?
     |(?-i:m)|min(?:ute)?s?
     |h(?:(?:ou)?rs?)?
