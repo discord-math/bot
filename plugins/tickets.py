@@ -469,6 +469,8 @@ class Ticket(_rowInterface):
                 name="Duration",
                 value=str(dt.timedelta(seconds=self.duration))
             )
+        else:
+            embed.add_field(name="Duration", value="Permanent")
         return embed
 
     @property
