@@ -1654,17 +1654,14 @@ async def pager(dest: discord.abc.Messageable, pages):
         await msg.add_reaction(r)
 
     index = 0
-    while True:
+    with ReactionMonitor(
+        channel_id=msg.channel.id, message_id=msg.id, event='add',
+        filter=lambda _, p: (
+            p.emoji.name in reactions
+            and p.user_id != msg.guild.me.id),
+        timeout_each=120) as mon:
         try:
-            with ReactionMonitor(
-                message_id=msg.id,
-                event='add',
-                filter=lambda _, p: (
-                    str(p.emoji) in reactions
-                    and p.user_id != msg.guild.me.id
-                ),
-                timeout_each=120
-            ) as mon:
+            while True:
                 _, payload = await mon
                 if str(payload.emoji) == _next_reaction:
                     index += 1
@@ -1686,9 +1683,9 @@ async def pager(dest: discord.abc.Messageable, pages):
                 except discord.HTTPException:
                     pass
         except asyncio.TimeoutError:
-            break
+            pass
         except asyncio.CancelledError:
-            break
+            pass
 
     # Remove the reactions
     if msg is not None:
@@ -1718,44 +1715,39 @@ async def cmd_note(msg: discord.Message, args):
         )
         _del_reaction = '\u274C'
         await prompt.add_reaction(_del_reaction)
-        msg_task = asyncio.create_task(
-            client.wait_for(
-                'message',
-                check=lambda msg_: (
-                    (msg_.channel == msg.channel) and
-                    (msg_.author == msg.author)
+        with ReactionMonitor(
+            channel_id=msg.channel.id, message_id=prompt.id,
+            author_id=msg.author.id, event="add",
+            filter=lambda _, p: p.emoji.name == _del_reaction) as mon:
+            msg_task = asyncio.create_task(
+                client.wait_for(
+                    'message',
+                    check=lambda msg_: (
+                        (msg_.channel == msg.channel) and
+                        (msg_.author == msg.author)
+                    )
                 )
             )
-        )
-        reaction_task = asyncio.create_task(
-            client.wait_for(
-                'raw_reaction_add',
-                check=lambda p: (
-                    (p.message_id == prompt.id
-                     and str(p.emoji) == _del_reaction
-                     and p.user_id == msg.author.id)
+            reaction_task = asyncio.ensure_future(mon)
+            try:
+                done, pending = await asyncio.wait(
+                    (msg_task, reaction_task),
+                    timeout=300,
+                    return_when=asyncio.FIRST_COMPLETED
                 )
-            )
-        )
-        try:
-            done, pending = await asyncio.wait(
-                (msg_task, reaction_task),
-                timeout=300,
-                return_when=asyncio.FIRST_COMPLETED
-            )
-        except asyncio.TimeoutError:
-            await msg.channel.send(
-                "Note prompt timed out, please try again."
-            )
+            except asyncio.TimeoutError:
+                await msg.channel.send(
+                    "Note prompt timed out, please try again."
+                )
 
-        if msg_task in done:
-            reaction_task.cancel()
-            note = msg_task.result().content
-        elif reaction_task in done:
+            if msg_task in done:
+                note = msg_task.result().content
+            elif reaction_task in done:
+                await msg.channel.send(
+                    "Note prompt cancelled, no note was created."
+                )
             msg_task.cancel()
-            await msg.channel.send(
-                "Note prompt cancelled, no note was created."
-            )
+            reaction_task.cancel()
 
     if note:
         # Create the note ticket
