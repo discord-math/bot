@@ -66,7 +66,7 @@ def init():
     return r"""
         CREATE SCHEMA tickets;
 
-        CREATE TYPE TicketType AS ENUM (
+        CREATE TYPE tickets.TicketType AS ENUM (
             'NOTE',
             'KICK',
             'BAN',
@@ -75,7 +75,7 @@ def init():
             'ADD_ROLE'
         );
 
-        CREATE TYPE TicketStatus AS ENUM (
+        CREATE TYPE tickets.TicketStatus AS ENUM (
             'NEW',
             'IN_EFFECT',
             'EXPIRED',
@@ -83,20 +83,19 @@ def init():
             'HIDDEN'
         );
 
-        CREATE TYPE TicketStage AS ENUM (
+        CREATE TYPE tickets.TicketStage AS ENUM (
             'NEW',
             'DELIVERED',
             'COMMENTED'
         );
 
-
         CREATE TABLE tickets.tickets (
-            id            SERIAL        PRIMARY KEY,
-            type          TicketType    NOT NULL,
-            stage         TicketStage   NOT NULL,
-            status        TicketStatus  NOT NULL,
-            modid         BIGINT        NOT NULL,
-            targetid      BIGINT        NOT NULL,
+            id            SERIAL               PRIMARY KEY,
+            type          tickets.TicketType   NOT NULL,
+            stage         tickets.TicketStage  NOT NULL,
+            status        tickets.TicketStatus NOT NULL,
+            modid         BIGINT               NOT NULL,
+            targetid      BIGINT               NOT NULL,
             roleid        BIGINT,
             auditid       BIGINT,
             duration      INT,
@@ -113,17 +112,13 @@ def init():
             last_prompt_msgid   BIGINT
         );
 
-        CREATE TABLE tickets.tracked_roles(
-                roleid BIGINT PRIMARY KEY
-        );
-
         CREATE TABLE tickets.history (
             version             INT,
             last_modified_at    TIMESTAMP,
             id                  INT,
-            type                TicketType,
-            stage               TicketStage,
-            status              TicketStatus,
+            type                tickets.TicketType,
+            stage               tickets.TicketStage,
+            status              tickets.TicketStatus,
             modid               BIGINT,
             targetid            BIGINT,
             roleid              BIGINT,
