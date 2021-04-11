@@ -38,7 +38,7 @@ ticket_comment_re = re.compile(
     |y(?:(?:ea)?rs?)?
     )
     |p(?:erm(?:anent)?)?\W+
-    """, re.VERBOSE
+    """, re.VERBOSE | re.IGNORECASE
 )
 
 time_expansion = {
@@ -1386,7 +1386,7 @@ class TicketMod(_rowInterface):
             try:
                 ticket_msg = await self.get_ticket_message()
                 prompt_msg = await user.send(
-                    "Please comment on the above action!",
+                    "Please comment on the above!",
                     reference=ticket_msg
                 )
                 self.last_prompt_msgid = prompt_msg.id
@@ -1449,7 +1449,7 @@ class TicketMod(_rowInterface):
             )
             try:
                 self._current_msg = await self.user.send(
-                    content="Please comment on the below ticket!",
+                    content="Please comment on the following:",
                     embed=self.current_ticket.embed
                 )
             except discord.HTTPException:
@@ -1605,7 +1605,12 @@ def resolve_ticket(msg, args, rewind=False) -> Ticket:
         ticketarg = args.next_arg()
         if ticketarg is not None and isinstance(ticketarg, commands.StringArg):
             maybe_id = int(ticketarg.text)
-            if maybe_id < 2147483647:  # Hack to differentiate msgid from tid
+            # This is either a message snowflake (a big number) or a ticket
+            # id (small number). The leading 42 bits of a snowflake are the
+            # timestamp and we assume that if all of those are zero, it's
+            # probably not a snowflake as that would imply an epoch time of
+            # 0 milliseconds.
+            if maybe_id < 2**(10+12):
                 tickets = fetch_tickets_where(id=maybe_id)
             else:
                 tickets = fetch_tickets_where(list_msgid=maybe_id)
