@@ -6,6 +6,7 @@ import plugins
 import discord_client
 import util.discord
 import util.db.kv
+import util.asyncio
 
 logger = logging.getLogger(__name__)
 conf = util.db.kv.Config(__name__)
@@ -67,8 +68,7 @@ class DiscordHandler(logging.Handler):
                 self.queue.append(text)
             else:
                 self.queue.append(text)
-                asyncio.get_event_loop().create_task(
-                    self.log_discord(chan_id, client))
+                util.asyncio.run_async(self.log_discord, chan_id, client)
 
 handler = DiscordHandler(logging.ERROR)
 handler.setFormatter(logging.Formatter("%(name)s %(levelname)s: %(message)s"))

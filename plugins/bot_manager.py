@@ -118,7 +118,7 @@ async def autoload_command(msg, args):
         await msg.channel.send("\u2705")
 
 @plugins.commands.command("plugins")
-@plugins.privileges.priv("admin")
+@plugins.privileges.priv("mod")
 async def plugins_command(msg, args):
     await msg.channel.send(", ".join(
         util.discord.format("{!i}", name)

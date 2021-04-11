@@ -46,13 +46,21 @@ def init_for(name):
             if old_sha:
                 old_sha = bytes(old_sha[0])
                 if old_sha != sha:
-                    filename = "{}/{}-{}-{}.sql".format(
-                        static_config.DB["migrations"],
-                        name,
-                        old_sha.hex(),
-                        sha.hex())
-                    with open(filename, "r", encoding="utf") as f:
-                        cur.execute(f.read())
+                    for dirname in static_config.DB["migrations"].split(":"):
+                        filename = "{}/{}-{}-{}.sql".format(
+                            dirname, name, old_sha.hex(), sha.hex())
+                        try:
+                            fp = open(filename, "r", encoding="utf")
+                            break
+                        except FileNotFoundError:
+                            continue
+                    else:
+                        raise FileNotFoundError(
+                            "Could not find {}-{}-{}.sql in {}".format(
+                                name, old_sha.hex(), sha.hex(),
+                                static_config.DB["migrations"]))
+                    with fp:
+                        cur.execute(fp.read())
                     cur.execute("""
                         UPDATE meta.schema_hashes
                         SET sha1 = %(sha)s
