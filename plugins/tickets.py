@@ -586,7 +586,6 @@ class Ticket(_rowInterface):
                             await message.edit(embed=self.embed)
                         except discord.HTTPException:
                             message = None
-                            pass
                     else:
                         try:
                             await message.delete()
@@ -634,7 +633,6 @@ class Ticket(_rowInterface):
         Transparently re-raise exceptions.
         """
         raise NotImplementedError
-        pass
 
     async def expire(self, **kwargs):
         """
@@ -1222,7 +1220,6 @@ class TicketMod(_rowInterface):
     __slots__ = (
         'current_ticket',
         '_prompt_task',
-        '_delivery_task',
         '_current_msg'
     )
 
@@ -1240,7 +1237,6 @@ class TicketMod(_rowInterface):
         super().__init__(row)
         self.current_ticket = self.get_current_ticket()
         self._prompt_task = None
-        self._delivery_task = None
         self._current_msg = None
         logger.debug(
             "Initialised ticket mod {}. Next ticket: {}".format(
@@ -1334,9 +1330,9 @@ class TicketMod(_rowInterface):
         """
         Cancel TicketMod scheduled tasks.
         """
-        for task in (self._prompt_task, self._delivery_task):
-            if task and not task.cancelled() and not task.done():
-                task.cancel()
+        task = self._prompt_task
+        if task and not task.cancelled() and not task.done():
+            task.cancel()
 
     def get_current_ticket(self) -> Ticket:
         # Get current ticket
@@ -1587,7 +1583,7 @@ def get_or_create_mod(modid) -> TicketMod:
 
 # ------------ Commands ------------
 
-def resolve_ticket(msg, args, rewind=False) -> Ticket:
+def resolve_ticket(msg, args) -> Ticket:
     """
     Resolves a ticket from the given message and command args, if possible.
     Ticket is extracted from either the referenced message or the first arg.
@@ -1601,7 +1597,6 @@ def resolve_ticket(msg, args, rewind=False) -> Ticket:
                     ticket_id = int(name[8:].split(' ', maxsplit=1)[0])
                     ticket = get_ticket(ticket_id)
     if ticket is None:
-        rewind_pos = args.pos
         ticketarg = args.next_arg()
         if ticketarg is not None and isinstance(ticketarg, commands.StringArg):
             maybe_id = int(ticketarg.text)
@@ -1615,8 +1610,6 @@ def resolve_ticket(msg, args, rewind=False) -> Ticket:
             else:
                 tickets = fetch_tickets_where(list_msgid=maybe_id)
             ticket = next(tickets, None)
-        if rewind and ticket is None:
-            args.pos = rewind_pos
     return ticket
 
 
@@ -1652,9 +1645,9 @@ async def pager(dest: discord.abc.Messageable, pages):
     """
     Page a sequence of pages.
     """
-    _next_reaction = '⏭️'
-    _prev_reaction = '⏮️'
-    _all_reaction = '📜'
+    _next_reaction = '\u23ED'
+    _prev_reaction = '\u23EE'
+    _all_reaction = '\U0001F4DC'
     reactions = (_prev_reaction, _all_reaction, _next_reaction)
 
     pages = list(pages)
@@ -1736,7 +1729,7 @@ async def cmd_note(msg: discord.Message, args):
         prompt = await msg.channel.send(
             "Please enter the note:"
         )
-        _del_reaction = '❌'
+        _del_reaction = '\u274C'
         await prompt.add_reaction(_del_reaction)
         msg_task = asyncio.create_task(
             client.wait_for(
