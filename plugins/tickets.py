@@ -16,10 +16,12 @@ import discord
 from discord_client import client
 import util.db
 import util.discord
+import util.asyncio
 
 import plugins.commands as commands
 from plugins.reactions import ReactionMonitor
 import plugins.privileges as priv
+import plugins
 
 
 logger = logging.getLogger(__name__)
@@ -549,7 +551,7 @@ class Ticket(_rowInterface):
         Defers to the expiry and ticket mod update hooks.
         """
         # Reschedule or cancel ticket expiry if required
-        update_expiry_for(self)
+        _expiration_updated.release()
 
         # Post to or update the ticket list
         if conf.ticket_list:
@@ -881,7 +883,8 @@ class VCMuteTicket(Ticket):
         if member is None:
             # User is no longer in the guild, nothing to do
             return True
-        await member.edit(mute=True)
+        await member.edit(mute=False)
+        return True
 
 
 @_ticket_type
@@ -945,7 +948,8 @@ class VCDeafenTicket(Ticket):
         if member is None:
             # User is no longer in the guild, nothing to do
             return True
-        await member.edit(deafen=True)
+        await member.edit(deafen=False)
+        return True
 
 
 @_ticket_type
@@ -1111,88 +1115,57 @@ def get_ticket(ticketid):
 
 
 # ----------- Ticket expiry system -----------
-_expiring_tickets = {}
-_next_expiring = None
-_expiry_task = None
+_expiration_updated = asyncio.Semaphore(value=0)
 
-_refresh_event = asyncio.Event()
+async def _expire_tickets():
+    await client.wait_until_ready()
 
+    while True:
+        try:
+            expiring_tickets = fetch_tickets_where(
+                status=[TicketStatus.NEW, TicketStatus.IN_EFFECT],
+                duration=fieldConstants.NOTNULL,
+            )
+            now = dt.datetime.utcnow().timestamp()
+            next_expiring = None
+            for ticket in expiring_tickets:
+                if ticket.expiry.timestamp() < now:
+                    try:
+                        await ticket.expire()
+                    except asyncio.CancelledError:
+                        raise
+                    except:
+                        logger.error(
+                            "Exception when expiring Ticket #{}".format(
+                                ticket.id), exc_info=True)
+                elif (next_expiring == None or ticket.expiry.timestamp() <
+                    next_expiring.expiry.timestamp()):
+                    next_expiring = ticket
 
-async def _expire_next():
-    global _expiry_task
-    global _next_expiring
+            delay = 86400
+            if next_expiring:
+                delay = next_expiring.expiry.timestamp() - now
+                logger.debug(
+                    "Waiting for Ticket #{} to expire (in {} seconds)".format(
+                        next_expiring.id, delay))
+            try:
+                await asyncio.wait_for(_expiration_updated.acquire(),
+                    timeout=delay)
+                while True:
+                    await asyncio.wait_for(_expiration_updated.acquire(),
+                        timeout=1)
+            except asyncio.TimeoutError:
+                pass
+        except asyncio.CancelledError:
+            raise
+        except:
+            logger.error("Exception in ticket expiry task", exc_info=True)
+            await asyncio.sleep(60)
 
-    # Sleep until the next ticket is ready to expire
-    logger.debug(
-        "Waiting for Ticket #{} to expire. (Expires at {})".format(
-            _next_expiring[0],
-            _next_expiring[1]
-        )
-    )
-    try:
-        await asyncio.sleep(
-            _next_expiring[1].timestamp() - dt.datetime.utcnow().timestamp()
-        )
-    except asyncio.CancelledError:
-        return
-
-    # Retrieve the ticket and expire it
-    ticketid = _next_expiring[0]
-    ticket = get_ticket(ticketid)
-    asyncio.create_task(ticket.expire())
-    _expiring_tickets.pop(ticketid)
-
-    # Schedule the next expiry
-    if _expiring_tickets:
-        _next_expiring = min(_expiring_tickets.items(), key=lambda p: p[1])
-        _expiry_task = asyncio.create_task(_expire_next())
-
-
-def _reload_expiration():
-    global _expiry_task
-    global _next_expiring
-
-    if _expiring_tickets:
-        # Get next ticket
-        new_next = min(_expiring_tickets.items(), key=lambda p: p[1])
-        if new_next != _next_expiring:
-            if _expiry_task is not None:
-                _expiry_task.cancel()
-            _next_expiring = new_next
-            _expiry_task = asyncio.create_task(_expire_next())
-
-
-def update_expiry_for(ticket):
-    if ticket.active and ticket.duration:
-        logger.debug("Scheduling expiry for Ticket #{}.".format(ticket.id))
-        # Save ticket expiry
-        _expiring_tickets[ticket.id] = ticket.expiry
-
-        # Regenerate next expiry
-        _reload_expiration()
-    else:
-        if ticket.id in _expiring_tickets:
-            logger.debug("Cancelling expiry for Ticket #{}.".format(ticket.id))
-            _expiring_tickets.pop(ticket.id)
-            _reload_expiration()
-
-
-def init_ticket_expiry():
-    """
-    Refresh all ticket expiries from the database.
-    """
-    global _expiring_tickets
-
-    expiring_tickets = fetch_tickets_where(
-        status=[TicketStatus.NEW, TicketStatus.IN_EFFECT],
-        duration=fieldConstants.NOTNULL,
-    )
-    _expiring_tickets = {
-        ticket.id: ticket.expiry for ticket in expiring_tickets
-    }
-    logger.info("Loaded {} expiring tickets.".format(len(_expiring_tickets)))
-    _reload_expiration()
-
+_expiry_task = asyncio.create_task(_expire_tickets())
+@plugins.finalizer
+def _cancel_expiry():
+    _expiry_task.cancel()
 
 # ----------- Ticket Mods and queue management -----------
 _ticketmods = {}
@@ -1523,7 +1496,7 @@ class TicketMod(_rowInterface):
 
                 # Schedule ticket expiration, if required
                 if duration is not None:
-                    update_expiry_for(self.current_ticket)
+                    _expiration_updated.release()
 
                 # Deliver the next ticket
                 await self.deliver()
@@ -2073,6 +2046,7 @@ async def moderator_message(message):
 
 
 # Initial loading
+@util.asyncio.init_async
 async def init_setup():
     # Wait until the caches have been populated
     await client.wait_until_ready()
@@ -2088,11 +2062,5 @@ async def init_setup():
         return
     # Reload the TicketMods
     await reload_mods()
-    # Reload the expiring tickets
-    init_ticket_expiry()
     # Trigger a read of the audit log, catch up on anything we may have missed
     await read_audit_log()
-
-
-# Schedule the init task
-asyncio.get_event_loop().create_task(init_setup())
