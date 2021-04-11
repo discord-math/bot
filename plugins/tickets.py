@@ -1960,7 +1960,8 @@ async def cmd_ticket(msg: discord.Message, args):
             # Collect tickets for the mentioned user
             userid = arg.id
 
-            tickets = fetch_tickets_where(targetid=userid)
+            tickets = sorted(fetch_tickets_where(targetid=userid),
+                key=lambda t: t.id, reverse=True)
             shown, hidden = reduce(
                 lambda p, t: p[t.hidden].append(t) or p,
                 tickets,
