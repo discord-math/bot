@@ -289,14 +289,10 @@ class _rowInterface:
         conditional_strings = []
         for key, item in conditions.items():
             if isinstance(item, (list, tuple)):
-                conditional_strings.append(
-                    "{} IN ({})".format(key, ", ".join(['%s'] * len(item)))
-                )
-                values.extend(item)
+                conditional_strings.append("{} IN %s".format(key))
+                values.append(tuple(item))
             elif isinstance(item, fieldConstants):
-                conditional_strings.append(
-                    "{} {}".format(key, item.value)
-                )
+                conditional_strings.append("{} {}".format(key, item.value))
             else:
                 conditional_strings.append("{}=%s".format(key))
                 values.append(item)
@@ -324,17 +320,12 @@ class _rowInterface:
     def _insert(cls, **values):
         with cls._conn as conn:
             with conn.cursor() as cursor:
-                columns = ', '.join(values.keys())
-                value_str = ', '.join('%s' for _ in values)
-                values = tuple(values.values())
-
                 cursor.execute(
-                    "INSERT INTO {} ({}) VALUES ({}) RETURNING *".format(
+                    "INSERT INTO {} ({}) VALUES %s RETURNING *".format(
                         cls._table,
-                        columns,
-                        value_str
+                        ", ".join(values.keys()),
                     ),
-                    values
+                    (tuple(values.values()),)
                 )
                 return cursor.fetchone()
 
@@ -343,17 +334,13 @@ class _rowInterface:
         with cls._conn as conn:
             with conn.cursor() as cursor:
                 cond_str, cond_values = cls.format_conditions(conditions)
-                value_str = ', '.join('{}=%s'.format(key)
-                                      for key in values.keys())
-                values = tuple(values.values())
-
                 cursor.execute(
-                    "UPDATE {} SET {} WHERE {} RETURNING *".format(
+                    "UPDATE {} SET ({}) = %s WHERE {} RETURNING *".format(
                         cls._table,
-                        value_str,
+                        ", ".join(values.keys()),
                         cond_str
                     ),
-                    (*values, *cond_values)
+                    (tuple(values.values()), *cond_values)
                 )
                 return cursor.fetchall()
 
