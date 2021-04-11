@@ -1132,6 +1132,7 @@ async def _expire_tickets():
             for ticket in expiring_tickets:
                 if ticket.expiry.timestamp() < now:
                     try:
+                        logger.debug("Expiring Ticket #{}".format(ticket.id))
                         await ticket.expire()
                     except asyncio.CancelledError:
                         raise
@@ -1171,6 +1172,45 @@ def _cancel_expiry():
 # ----------- Ticket Mods and queue management -----------
 _ticketmods = {}
 
+def parse_ticket_comment(ticket, text):
+    if match := ticket_comment_re.match(text):
+        # Extract duration
+        if match[1]:
+            d = int(match[1])
+            token = match[2][0]
+            token = token.lower() if token != 'M' else token
+            duration = d * time_expansion[token]
+        else:
+            duration = None
+        comment = text[match.end():]
+    else:
+        duration = None
+        comment = text
+
+    msg = ""
+    if duration:
+        if not ticket.can_revert:
+            msg += (
+                "Provided duration ignored since "
+                "this ticket type cannot expire."
+            )
+            duration = None
+        elif not ticket.active:
+            msg += (
+                "Provided duration ignored since "
+                "this ticket is no longer in effect."
+            )
+            duration = None
+        else:
+            expiry = ticket.created_at + dt.timedelta(seconds=duration)
+            now = dt.datetime.utcnow()
+            if expiry <= now:
+                msg += "Ticket will expire immediately!"
+            else:
+                msg += "Ticket will expire in {}.".format(
+                    str(expiry - now).split('.')[0]
+                )
+    return duration, comment, msg
 
 class TicketMod(_rowInterface):
     __slots__ = (
@@ -1436,68 +1476,24 @@ class TicketMod(_rowInterface):
                 )
 
                 # Parse the message as a comment to the current ticket
-                if match := ticket_comment_re.match(content):
-                    # Extract duration
-                    if match[1]:
-                        d = int(match[1])
-                        token = match[2][0]
-                        token = token.lower() if token != 'M' else token
-                        duration = d * time_expansion[token]
-                    else:
-                        duration = None
-
-                    # Extract comment
-                    comment = content[match.end():]
-                else:
-                    duration = None
-                    comment = content
+                duration, comment, msg = parse_ticket_comment(ticket, content)
 
                 # Update the ticket
                 with ticket.batch_update():
                     ticket.stage = TicketStage.COMMENTED
                     ticket.comment = comment
                     ticket.modified_by = self.modid
-                    if ticket.can_revert and ticket.active:
-                        ticket.duration = duration
+                    ticket.duration = duration
                     if ticket.status == TicketStatus.NEW:
                         ticket.status = TicketStatus.IN_EFFECT
 
                 self.last_read_msgid = message.id
 
-                # Notify the moderator, nullify the duration if required
-                msg = "Ticket comment set! "
-                if duration:
-                    if not ticket.can_revert:
-                        msg += (
-                            "Provided duration ignored since "
-                            "this ticket type cannot expire."
-                        )
-                        duration = None
-                    elif not ticket.active:
-                        msg += (
-                            "Provided duration ignored since "
-                            "this ticket is no longer in effect."
-                        )
-                        duration = None
-                    else:
-                        expiry = ticket.expiry
-                        now = dt.datetime.utcnow()
-                        if expiry <= now:
-                            msg += "Ticket will expire immediately!"
-                        else:
-                            msg += "Ticket will expire in {}.".format(
-                                str(expiry - now).split('.')[0]
-                            )
-
-                await self.user.send(msg)
+                await self.user.send("Ticket comment set! " + msg)
 
                 # Publish the ticket
                 # Implicitly triggers update of the last ticket message
                 await self.current_ticket.publish()
-
-                # Schedule ticket expiration, if required
-                if duration is not None:
-                    _expiration_updated.release()
 
                 # Deliver the next ticket
                 await self.deliver()
@@ -1859,12 +1855,28 @@ async def cmd_ticket(msg: discord.Message, args):
                     )
                 )
                 await ticket.publish()
-    elif cmd == "comment":
+    elif cmd == "set":
         """
         Set or reset the duration and comment for a ticket.
         """
-        # TODO: This requires splitting TicketMod.process_message a bit
-        pass
+        if (ticket := resolve_ticket(msg, args)) is None:
+            await reply("No ticket referenced or ticket could not be found.")
+        else:
+            duration, comment, note = parse_ticket_comment(
+                ticket, args.get_rest())
+
+            # Update the ticket
+            with ticket.batch_update():
+                if comment:
+                    ticket.comment = comment
+                    note = "Ticket comment set! " + note
+                ticket.modified_by = msg.author.id
+                ticket.duration = duration
+
+            await ticket.publish()
+            await reply(embed=discord.Embed(
+                description="[#{}]({}): {}".format(
+                    ticket.id, ticket.jump_link, note)))
     elif cmd == "append":
         """
         Append to the ticket reason.
