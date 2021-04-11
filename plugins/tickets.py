@@ -855,6 +855,8 @@ class VCMuteTicket(Ticket):
         """
         Handle a VC mute event.
         """
+        if not hasattr(audit_entry.before, "mute"):
+            return
         if not audit_entry.before.mute and audit_entry.after.mute:
             await cls._create(
                 type=cls._type,
@@ -874,6 +876,8 @@ class VCMuteTicket(Ticket):
         """
         Handle a VC unmute event
         """
+        if not hasattr(audit_entry.before, "mute"):
+            return
         if audit_entry.before.mute and not audit_entry.after.mute:
             # Select any relevant tickets
             tickets = fetch_tickets_where(
@@ -915,6 +919,8 @@ class VCDeafenTicket(Ticket):
         """
         Handle a VC deafen event.
         """
+        if not hasattr(audit_entry.before, "deaf"):
+            return
         if not audit_entry.before.deaf and audit_entry.after.deaf:
             await cls._create(
                 type=cls._type,
@@ -934,6 +940,8 @@ class VCDeafenTicket(Ticket):
         """
         Handle a VC undeafen event
         """
+        if not hasattr(audit_entry.before, "deaf"):
+            return
         if audit_entry.before.deaf and not audit_entry.after.deaf:
             # Select any relevant tickets
             tickets = fetch_tickets_where(
