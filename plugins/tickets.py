@@ -335,7 +335,7 @@ class _rowInterface:
             with conn.cursor() as cursor:
                 cond_str, cond_values = cls.format_conditions(conditions)
                 cursor.execute(
-                    "UPDATE {} SET ({}) = %s WHERE {} RETURNING *".format(
+                    "UPDATE {} SET ({}) = ROW %s WHERE {} RETURNING *".format(
                         cls._table,
                         ", ".join(values.keys()),
                         cond_str
