@@ -1037,6 +1037,9 @@ async def read_audit_log(*args):
         )
         return
 
+    # TODO: refactor this
+    await asyncio.sleep(1)
+
     logger.debug("Reading audit entries since {}".format(conf.last_auditid))
     if conf.last_auditid:
         entries = [
