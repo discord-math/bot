@@ -9,6 +9,10 @@ logger = logging.getLogger(__name__)
 conf = util.db.kv.Config(__name__)
 
 class ModMailClient(discord.Client):
+    async def on_ready(self):
+        await self.change_presence(activity=discord.Activity(
+            type=discord.ActivityType.watching, name="DMs"))
+
     async def on_message(self, msg):
         if not msg.guild:
             try:
