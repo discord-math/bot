@@ -437,6 +437,7 @@ class Ticket(_rowInterface):
         """
         The discord embed describing this ticket.
         """
+        user = client.get_user(self.modid)
         embed = discord.Embed(
             title=self.title,
             description=self.comment or "No comment",
@@ -447,7 +448,7 @@ class Ticket(_rowInterface):
                 TicketStatus(self.status).desc
             )
         ).set_footer(
-            text="Moderator: {}".format(self.mod.user or self.modid)
+            text="Moderator: {}".format(user or self.modid)
         ).add_field(
             name="Target",
             value=util.discord.format("{0!m}\n({0})", self.targetid)
@@ -1266,13 +1267,13 @@ class TicketMod(_rowInterface):
             _extra="ORDER BY stage DESC, id ASC"
         )
 
-    @property
-    def user(self):
+    async def find_user(self):
         """
-        The Discord User object associated to this moderator.
-        May be None if the user cannot be found.
+        Return the discord User object associated to this moderator.
         """
-        return client.get_user(self.modid)
+        if not (user := client.get_user(self.modid)):
+            user = await client.fetch_user(self.modid)
+        return user
 
     async def get_ticket_message(self):
         """
@@ -1282,7 +1283,8 @@ class TicketMod(_rowInterface):
         if ticket and (msgid := ticket.delivered_id):
             if not self._current_msg or self._current_msg.id != msgid:
                 # Update the cached message
-                self._current_msg = await self.user.fetch_message(msgid)
+                user = await self.find_user()
+                self._current_msg = await user.fetch_message(msgid)
             return self._current_msg
 
     async def load(self):
@@ -1307,14 +1309,17 @@ class TicketMod(_rowInterface):
 
                 # Collect the missed messages
                 mod_messages = []
-                if self.user:
-                    messages = await self.user.history(
+                try:
+                    user = await self.find_user()
+                    messages = await user.history(
                         after=last_read,
                         limit=None
                     ).flatten()
                     mod_messages = [
                         msg for msg in messages if msg.author.id == self.modid
                     ]
+                except discord.NotFound:
+                    pass
 
                 if mod_messages:
                     logger.debug(
@@ -1382,25 +1387,24 @@ class TicketMod(_rowInterface):
             except asyncio.CancelledError:
                 return
 
-        user = self.user
-        if user is not None:
-            if msgid and msgid != self.current_ticket.delivered_id:
-                # Delete last prompt
-                try:
-                    old_prompt = await user.fetch_message(msgid)
-                    await old_prompt.delete()
-                except discord.HTTPException:
-                    pass
-            # Send new prompt
+        user = await self.find_user()
+        if msgid and msgid != self.current_ticket.delivered_id:
+            # Delete last prompt
             try:
-                ticket_msg = await self.get_ticket_message()
-                prompt_msg = await user.send(
-                    "Please comment on the above!",
-                    reference=ticket_msg
-                )
-                self.last_prompt_msgid = prompt_msg.id
+                old_prompt = await user.fetch_message(msgid)
+                await old_prompt.delete()
             except discord.HTTPException:
-                self.last_prompt_msgid = None
+                pass
+        # Send new prompt
+        try:
+            ticket_msg = await self.get_ticket_message()
+            prompt_msg = await user.send(
+                "Please comment on the above!",
+                reference=ticket_msg
+            )
+            self.last_prompt_msgid = prompt_msg.id
+        except discord.HTTPException:
+            self.last_prompt_msgid = None
 
         # Schedule the next reminder task
         self._prompt_task = asyncio.create_task(self._prompt())
@@ -1434,7 +1438,8 @@ class TicketMod(_rowInterface):
         """
         if self.current_ticket and self.current_ticket.id == ticket.id:
             # Post the reason
-            await self.user.send(
+            user = await self.fetch_user()
+            await user.send(
                 reason or
                 "Ticket #{} was removed from your queue!".format(ticket.id)
             )
@@ -1457,7 +1462,8 @@ class TicketMod(_rowInterface):
                 )
             )
             try:
-                self._current_msg = await self.user.send(
+                user = await self.find_user()
+                self._current_msg = await user.send(
                     content="Please comment on the following:",
                     embed=self.current_ticket.embed
                 )
@@ -1506,7 +1512,8 @@ class TicketMod(_rowInterface):
 
                 self.last_read_msgid = message.id
 
-                await self.user.send("Ticket comment set! " + msg)
+                user = await self.find_user()
+                await user.send("Ticket comment set! " + msg)
 
                 # Publish the ticket
                 # Implicitly triggers update of the last ticket message
@@ -1804,7 +1811,7 @@ async def cmd_ticket(msg: discord.Message, args):
                     title='Queue for {}'.format(modid),
                     fmt=(
                         "[#{id}]({jump_link}): "
-                        "({status}) **{type}** for {targetid!m}>"
+                        "({status}) **{type}** for {targetid!m}"
                     )
                 )
 
