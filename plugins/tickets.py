@@ -1020,58 +1020,72 @@ class AddRoleTicket(Ticket):
         await target.remove_roles(role)
         return True
 
+_audit_log_updated = asyncio.Semaphore(value=0)
 
-async def read_audit_log(*args):
+async def update_audit_log(*args):
+    _audit_log_updated.release()
+
+async def _read_audit_log():
     """
-    Read the audit log from the last read value and process new audit events.
-    If there is no last read value, just reads the last value.
+    Whenever this task is woken up via _audit_log_updated, it will read any new
+    audit log events and process them.
     """
-    # TODO: Lock so we don't read simultaneously
+    await client.wait_until_ready()
     if not conf.guild or not (guild := client.get_guild(int(conf.guild))):
-        """
-        Nothing we can do
-        """
         logger.error(
             "Guild not configured, or can't find the configured guild! "
             "Cannot read audit log."
         )
         return
 
-    # TODO: refactor this
-    await asyncio.sleep(1)
+    last = conf.last_auditid and int(conf.last_auditid)
+    while True:
+        try:
+            try:
+                await asyncio.wait_for(_audit_log_updated.acquire(),
+                    timeout=600)
+                await asyncio.sleep(1)
+                while True:
+                    await asyncio.wait_for(_audit_log_updated.acquire(),
+                        timeout=0)
+            except asyncio.TimeoutError:
+                pass
 
-    logger.debug("Reading audit entries since {}".format(conf.last_auditid))
-    if conf.last_auditid:
-        entries = [
-            await guild.audit_logs(limit=100, oldest_first=True).flatten()
-        ]
-        # If there is more than one page of new entries, keep collecting them
-        while entries[-1][0].id > int(conf.last_auditid):
-            new_entries = await guild.audit_logs(
-                limit=100,
-                before=entries[0],
-                oldest_first=True
-            ).flatten()
+            logger.debug("Reading audit entries since {}".format(last))
+            # audit_logs(after) is currently broken so we read the entire audit
+            # log in reverse chronological order and reverse it
+            entries = []
+            async for entry in guild.audit_logs(
+                limit=None if last else 1, oldest_first=False):
+                if last and entry.id <= last:
+                    break
+                entries.append(entry)
+            for entry in reversed(entries):
+                try:
+                    logger.debug("Processing audit entry {}".format(entry))
+                    last = entry.id
+                    if entry.user != client.user:
+                        if entry.action in _action_handlers:
+                            for handler in _action_handlers[entry.action]:
+                                await handler(entry)
+                except asyncio.CancelledError:
+                    raise
+                except:
+                    logger.error("Processing audit entry {}".format(entry),
+                        exc_info=True)
 
-            if not new_entries:
-                break
-            entries.append(new_entries)
-        entries = filter(
-            lambda entry: entry.id > int(conf.last_auditid),
-            itertools.chain.from_iterable(reversed(entries))
-        )
-    else:
-        # With no know last auditid, just read the last entry
-        entries = await guild.audit_logs(limit=1).flatten()
+        except asyncio.CancelledError:
+            raise
+        except:
+            logger.error("Exception in audit log task", exc_info=True)
+            await asyncio.sleep(60)
+        finally:
+            conf.last_auditid = last and str(last)
 
-    # Process each audit entry
-    for entry in entries:
-        logger.debug("Processing audit entry {}".format(entry))
-        if entry.user != client.user and entry.action in _action_handlers:
-            for handler in _action_handlers[entry.action]:
-                await handler(entry)
-        conf.last_auditid = str(entry.id)
-
+_audit_log_task = asyncio.create_task(_read_audit_log())
+@plugins.finalizer
+def _cancel_expiry():
+    _audit_log_task.cancel()
 
 def fetch_tickets_where(**kwargs):
     """
@@ -2044,15 +2058,15 @@ async def cmd_ticket(msg: discord.Message, args):
 
 # ------------ Event handlers ------------
 
-util.discord.event("voice_state_update")(read_audit_log)
-util.discord.event("member_ban")(read_audit_log)
-util.discord.event("member_kick")(read_audit_log)
+util.discord.event("voice_state_update")(update_audit_log)
+util.discord.event("member_ban")(update_audit_log)
+util.discord.event("member_kick")(update_audit_log)
 
 
 @util.discord.event("member_update")
 async def process_member_update(before, after):
     if before.roles != after.roles:
-        await read_audit_log()
+        await update_audit_log()
 
 
 @util.discord.event("message")
@@ -2080,4 +2094,4 @@ async def init_setup():
     # Reload the TicketMods
     await reload_mods()
     # Trigger a read of the audit log, catch up on anything we may have missed
-    await read_audit_log()
+    await update_audit_log()
