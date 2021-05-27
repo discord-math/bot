@@ -78,11 +78,7 @@ async def run_code(msg, args):
         return util.discord.format("{!b:py}", text) if len(text) else "\u2705"
     
     def short_heuristic(fp): 
-        initial_pos = fp.tell() 
-        fp.seek(0, os.SEEK_END) 
-        fp_len = fp.tell() 
-        fp.seek(initial_pos) 
-        return fp_len <= 2000 and len(format_block(fp)) <= 2000
+        return len(format_block(fp)) <= 2000
     
     def make_file_output(idx, fp): 
         fp.seek(0)
