@@ -94,14 +94,12 @@ async def run_code(msg, args):
     message_outputs_chunked = chunk_concat(message_outputs, 2000) 
 
     enumeration_readable = enumerate(outputs, start = 1) 
-    file_outputs = [m for m in enumeration_readable if not short_heuristic(m[1])]
+    file_info = [m for m in enumeration_readable if not short_heuristic(m[1])] 
+    file_outputs = [make_file_output(*info) for info in file_info]
     file_outputs_chunked = chunk(file_outputs, 10) 
 
     output_messages = itertools.zip_longest(message_outputs_chunked, file_outputs_chunked)
     
-    for text, file_info in output_messages:
-        file_output = None
-        if file_info: 
-            file_output = [make_file_output(*args) for args in file_info]
+    for text, file_output in output_messages:
         await msg.channel.send(text, files = file_output)
 
