@@ -7,8 +7,11 @@ import types
 import traceback
 import plugins.commands
 import plugins.privileges
+import discord
 import util.discord
 import discord_client
+import itertools 
+import os
 
 @plugins.commands.command("exec")
 @plugins.commands.command("eval")
@@ -56,10 +59,49 @@ async def run_code(msg, args):
         mk_code_print(fp)(repr(exc))
         del tb
 
+    def chunk(l, n): 
+        chunk_pos = range(0, len(l), n)
+        return [l[i:i+n] for i in chunk_pos]
+
+    # greedily concatenate strings into groups of at most a certain length
+    def chunk_concat(l, n): 
+        chunks_concat = [""] if len(l) else [] 
+        for text in l:
+            new_len = len(chunks_concat[-1] + text)
+            if new_len > n: 
+                chunks_concat.append("") 
+            chunks_concat[-1] = chunks_concat[-1] + text 
+        return chunks_concat      
+
     def format_block(fp):
         text = fp.getvalue()
         return util.discord.format("{!b:py}", text) if len(text) else "\u2705"
+    
+    def short_heuristic(fp): 
+        initial_pos = fp.tell() 
+        fp.seek(0, os.SEEK_END) 
+        fp_len = fp.tell() 
+        fp.seek(initial_pos) 
+        return fp_len <= 2000 and len(format_block(fp)) <= 2000
+    
+    def make_file_output(idx, fp): 
+        fp.seek(0)
+        discord_filename = "output{:d}.txt".format(idx)
+        discord_file = discord.File(fp, filename = discord_filename)
+        return discord_file
 
-    if len(outputs):
-        output = "".join(format_block(fp) for fp in outputs)
-        await msg.channel.send(output)
+    message_outputs = [format_block(m) for m in outputs if short_heuristic(m)] 
+    message_outputs_chunked = chunk_concat(message_outputs, 2000) 
+
+    enumeration_readable = enumerate(outputs, start = 1) 
+    file_outputs = [m for m in enumeration_readable if not short_heuristic(m[1])]
+    file_outputs_chunked = chunk(file_outputs, 10) 
+
+    output_messages = itertools.zip_longest(message_outputs_chunked, file_outputs_chunked)
+    
+    for text, file_info in output_messages:
+        file_output = None
+        if file_info: 
+            file_output = [make_file_output(*args) for args in file_info]
+        await msg.channel.send(text, files = file_output)
+
