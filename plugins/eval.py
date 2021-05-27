@@ -86,16 +86,9 @@ async def run_code(msg, args):
         discord_file = discord.File(fp, filename = discord_filename)
         return discord_file
 
-    message_outputs = [format_block(m) for m in outputs if short_heuristic(m)] 
-    message_outputs_chunked = chunk_concat(message_outputs, 2000) 
-
-    enumeration_readable = enumerate(outputs, start = 1) 
-    file_info = [m for m in enumeration_readable if not short_heuristic(m[1])] 
-    file_outputs = [make_file_output(*info) for info in file_info]
-    file_outputs_chunked = chunk(file_outputs, 10) 
-
-    output_messages = itertools.zip_longest(message_outputs_chunked, file_outputs_chunked)
+    message_outputs = chunk_concat([format_block(m) for m in outputs if short_heuristic(m)], 2000) 
+    file_outputs = chunk([make_file_output(*m) for m in enumerate(outputs, start = 1) if not short_heuristic(m[1])], 10)  
     
-    for text, file_output in output_messages:
+    for text, file_output in itertools.zip_longest(message_outputs, file_outputs):
         await msg.channel.send(text, files = file_output)
 
