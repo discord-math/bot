@@ -69,8 +69,7 @@ async def run_code(msg, args):
         inhabited = False 
         for text in l:
             inhabited = True 
-            new_len = len(current_value + text)
-            if new_len > n: 
+            if len(current_value + text) > n: 
                 yield current_value 
                 current_value = "" 
             current_value = current_value + text 
@@ -86,9 +85,7 @@ async def run_code(msg, args):
     
     def make_file_output(idx, fp): 
         fp.seek(0)
-        discord_filename = "output{:d}.txt".format(idx)
-        discord_file = discord.File(fp, filename = discord_filename)
-        return discord_file
+        return discord.File(fp, filename = "output{:d}.txt".format(idx))
 
     message_outputs = chunk_concat((format_block(m) for m in outputs if short_heuristic(m)), 2000) 
     file_outputs = chunk((make_file_output(*m) for m in enumerate(outputs, start = 1) if not short_heuristic(m[1])), 10)  
