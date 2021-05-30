@@ -60,36 +60,40 @@ async def run_code(msg, args):
         del tb
 
     def chunk(l, n):
-        value_iterator = iter(l) 
+        value_iterator = iter(l)
         return iter(lambda: list(islice(value_iterator, n)), [])
 
     # greedily concatenate short strings into groups of at most a certain length
-    def chunk_concat(l, n): 
-        current_value = "" 
-        inhabited = False 
+    def chunk_concat(l, n):
+        current_value = ""
+        inhabited = False
         for text in l:
-            inhabited = True 
-            if len(current_value + text) > n: 
-                yield current_value 
-                current_value = "" 
-            current_value = current_value + text 
-        if inhabited: 
-            yield current_value 
+            inhabited = True
+            if len(current_value + text) > n:
+                yield current_value
+                current_value = ""
+            current_value = current_value + text
+        if inhabited:
+            yield current_value
 
     def format_block(fp):
         text = fp.getvalue()
         return util.discord.format("{!b:py}", text) if len(text) else "\u2705"
-    
-    def short_heuristic(fp): 
+
+    def short_heuristic(fp):
         return len(format_block(fp)) <= 2000
-    
-    def make_file_output(idx, fp): 
+
+    def make_file_output(idx, fp):
         fp.seek(0)
-        return discord.File(fp, filename = "output{:d}.txt".format(idx))
+        return discord.File(fp, filename="output{:d}.txt".format(idx))
 
-    message_outputs = chunk_concat((format_block(m) for m in outputs if short_heuristic(m)), 2000) 
-    file_outputs = chunk((make_file_output(*m) for m in enumerate(outputs, start = 1) if not short_heuristic(m[1])), 10)  
-    
+    message_outputs = chunk_concat(
+        (format_block(m) for m in outputs if short_heuristic(m)),
+        2000)
+    file_outputs = chunk(
+        (make_file_output(idx, fp) for idx, fp in enumerate(outputs, start = 1)
+            if not short_heuristic(fp)),
+        10)
+
     for text, file_output in zip_longest(message_outputs, file_outputs):
-        await msg.channel.send(text, files = file_output)
-
+        await msg.channel.send(text, files=file_output)
