@@ -213,7 +213,7 @@ class Config:
     def __setitem__(self, key, value):
         ev = json_encode(value)
         if value is None:
-            self._config.pop(key)
+            del self._config[key]
         else:
             self._config[key] = ev
         set_value(self._namespace, key, ev, log_value=self._log_value)
@@ -228,7 +228,7 @@ class Config:
             return super().__setattr__(key, value)
         ev = json_encode(value)
         if value is None:
-            self._config.pop(key)
+            del self._config[key]
         else:
             self._config[key] = ev
         set_value(self._namespace, key, ev, log_value=self._log_value)
