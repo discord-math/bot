@@ -1,7 +1,7 @@
 import util.db.kv
 import sys
 
-def usage():
+def usage() -> None:
     print("Usage:", file=sys.stderr)
     print("    python -m util.db.kv", file=sys.stderr)
     print("        ( --delete <namespace> <key>", file=sys.stderr)

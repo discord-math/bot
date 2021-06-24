@@ -2,24 +2,25 @@ import logging
 import logging.handlers
 import time
 import warnings
-
+from typing import List, Tuple, Any, Optional, Callable
 import static_config
 
 logging.basicConfig(handlers=[], force=True)
 
-def closure():
+@(lambda f: f())
+def closure() -> None:
     old_showwarning = warnings.showwarning
-    def showwarning(message, category, filename, lineno, file=None, line=None):
+
+    def showwarning(message, category, filename, lineno, file=None, line=None) -> None: # type: ignore
         if file is not None:
             old_showwarning = warnings.showwarning
         else:
-            text = warnings.formatwarning(message, category,
-                filename, lineno, line)
+            text = warnings.formatwarning(message, category, filename, lineno, line)
             logging.getLogger("__builtins__").error(text)
-    warnings.showwarning = showwarning
-closure()
 
-logger = logging.getLogger()
+    warnings.showwarning = showwarning
+
+logger: logging.Logger = logging.getLogger()
 logger.setLevel(logging.NOTSET)
 
 class Formatter(logging.Formatter):
@@ -31,7 +32,7 @@ class Formatter(logging.Formatter):
     default_time_format = "%Y-%m-%dT%H:%M:%S"
     default_msec_format = "%s.%03d"
 
-    def format(self, record):
+    def format(self, record: Any) -> str:
         record.asctime = self.formatTime(record, self.datefmt)
         if record.exc_info:
             if not record.exc_text:
@@ -59,19 +60,20 @@ class Formatter(logging.Formatter):
             output.append(self.formatMessage(record))
         return "\n".join(output)
 
-formatter = Formatter(
-    "%(asctime)s %(name)s %(levelname)s%(symbol)s %(message)s")
+formatter: logging.Formatter = Formatter("%(asctime)s %(name)s %(levelname)s%(symbol)s %(message)s")
 
-for level, name, cond in (
+targets: List[Tuple[int, str, Optional[Callable[[logging.LogRecord], bool]]]] = (
     [ (logging.DEBUG, "debug.discord", lambda r: r.name.startswith("discord.") )
     , (logging.DEBUG, "debug", lambda r: not r.name.startswith("discord.") )
     , (logging.INFO, "info", None)
     , (logging.WARNING, "warning", None)
     , (logging.ERROR, "error", None)
-    , (logging.CRITICAL, "critical", None) ]):
+    , (logging.CRITICAL, "critical", None) ])
+
+for level, name, cond in targets:
     handler = logging.handlers.TimedRotatingFileHandler(
         filename="{}/{}.log".format(static_config.Log["directory"], name),
-        when="midnight", utc=True, encoding="utf", errors="replace")
+        when="midnight", utc=True, encoding="utf", errors="replace") # type: ignore
     handler.setLevel(level)
     handler.setFormatter(formatter)
     if cond:

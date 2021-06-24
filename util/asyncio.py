@@ -1,33 +1,39 @@
 import asyncio
 import plugins
+from typing import Any, Callable, Awaitable, TypeVar
 
-def getloop():
+R = TypeVar("R")
+
+def __await__(fun: Callable[..., Awaitable[R]]) -> Callable[..., Any]:
+    """Decorate a class's __await__ with this to be able to write it as an async def."""
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        return fun(*args, **kwargs).__await__()
+    return wrapper
+
+def getloop() -> asyncio.AbstractEventLoop:
     try:
         return asyncio.get_running_loop()
     except RuntimeError:
         return asyncio.get_event_loop()
 
-def run_async(coro, *args, **kwargs):
+def run_async(coro: Callable[..., Awaitable[R]], *args: Any, **kwargs: Any) -> asyncio.Task[R]:
     """Schedule an asynchronous computation from synchronous code"""
-    getloop().create_task(coro(*args, **kwargs))
+    return getloop().create_task(coro(*args, **kwargs))
 
-def concurrently(fun, *args, **kwargs):
+def concurrently(fun: Callable[..., R], *args: Any, **kwargs: Any) -> Awaitable[R]:
     """
-    Run a synchronous blocking computation in a different python thread,
-    avoiding blocking the current async thread. This function starts the
-    computation and returns a future referring to its result. Beware of (actual)
-    thread-safety.
+    Run a synchronous blocking computation in a different python thread, avoiding blocking the current async thread.
+    This function starts the computation and returns a future referring to its result. Beware of (actual) thread-safety.
     """
     return getloop().run_in_executor(None,
         lambda: fun(*args, **kwargs))
 
-def init_async(coro, *args, **kwargs):
+def init_async(coro: Callable[..., Awaitable[None]], *args: Any, **kwargs: Any) -> None:
     """
-    Perform asynchronous initialization for a plugin. Can be used as a decorator
-    around an async function. Cancels the initialization routine if the plugin
-    is unloaded before it could complete.
+    Perform asynchronous initialization for a plugin. Can be used as a decorator around an async function. Cancels the
+    initialization routine if the plugin is unloaded before it could complete.
     """
     task = getloop().create_task(coro(*args, **kwargs))
     @plugins.finalizer
-    def cancel_initialization():
+    def cancel_initialization() -> None:
         task.cancel()

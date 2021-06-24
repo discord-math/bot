@@ -1,12 +1,13 @@
 """
-A simple database migration manager. A module can request to initialize
-something in the database with the @init_for and @init decorators.
+A simple database migration manager. A module can request to initialize something in the database with the @init_for
+and @init decorators.
 """
 
 import static_config
 import hashlib
 import plugins
 import util.db as db
+from typing import Callable
 
 with db.connection() as conn:
     with conn.cursor() as cur:
@@ -19,36 +20,32 @@ with db.connection() as conn:
             , sha1 BYTEA NOT NULL )
             """)
 
-def init_for(name):
+def init_for(name: str) -> Callable[[Callable[[], str]], Callable[[], str]]:
     """
-    Decorate a function that returns a piece of SQL to initialize something in
-    the database.
+    Decorate a function that returns a piece of SQL to initialize something in the database.
 
     @init_for("module name")
     def init():
         return "CREATE TABLE foo (bar TEXT)"
 
-    The returned SQL will be hashed. If a hash for this module doesn't yet exist
-    the SQL code will be executed and the hash saved. If the known hash for the
-    module matches the computed one, nothing happens. Otherwise we look for a
-    migration file in a configurable directory and run it, updating the known
-    hash.
+    The returned SQL will be hashed. If a hash for this module doesn't yet exist the SQL code will be executed and the
+    hash saved. If the known hash for the module matches the computed one, nothing happens. Otherwise we look for a
+    migration file in a configurable directory and run it, updating the known hash.
     """
-    def init(fun):
+    def init(fun: Callable[[], str]) -> Callable[[], str]:
         conn = db.connection()
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT sha1 FROM meta.schema_hashes WHERE name = %(name)s
                 """, {"name": name})
-            old_sha = cur.fetchone()
+            old_row = cur.fetchone()
             sql = fun()
             sha = hashlib.sha1(sql.encode("utf")).digest()
-            if old_sha:
-                old_sha = bytes(old_sha[0])
+            if old_row is not None:
+                old_sha = bytes(old_row[0])
                 if old_sha != sha:
                     for dirname in static_config.DB["migrations"].split(":"):
-                        filename = "{}/{}-{}-{}.sql".format(
-                            dirname, name, old_sha.hex(), sha.hex())
+                        filename = "{}/{}-{}-{}.sql".format(dirname, name, old_sha.hex(), sha.hex())
                         try:
                             fp = open(filename, "r", encoding="utf")
                             break
@@ -56,8 +53,7 @@ def init_for(name):
                             continue
                     else:
                         raise FileNotFoundError(
-                            "Could not find {}-{}-{}.sql in {}".format(
-                                name, old_sha.hex(), sha.hex(),
+                            "Could not find {}-{}-{}.sql in {}".format(name, old_sha.hex(), sha.hex(),
                                 static_config.DB["migrations"]))
                     with fp:
                         cur.execute(fp.read())
@@ -77,7 +73,7 @@ def init_for(name):
         return fun
     return init
 
-def init(fun):
+def init(fun: Callable[[], str]) -> Callable[[], str]:
     """
     Request database initialization for the current plugin.
     """

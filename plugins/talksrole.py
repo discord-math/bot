@@ -1,12 +1,18 @@
 import re
 import discord
+from typing import Optional, Protocol, cast
 import util.discord
 import util.db.kv
 
-conf = util.db.kv.Config(__name__)
+class TalksConf(Protocol):
+    channel: Optional[str]
+    role: Optional[str]
+    regex: Optional[str]
+
+conf = cast(TalksConf, util.db.kv.Config(__name__))
 
 @util.discord.event("message")
-async def notification_message(msg):
+async def notification_message(msg: discord.Message) -> None:
     try:
         if not msg.channel or msg.channel.id != int(conf.channel or 0):
             return
@@ -27,7 +33,5 @@ async def notification_message(msg):
     if not re.search(regex, msg.content, re.IGNORECASE | re.DOTALL):
         return
 
-    await msg.channel.send(
-        util.discord.format("{!m} {!M}", msg.author, role_id),
-        allowed_mentions=discord.AllowedMentions(
-            roles=[util.discord.RoleById(role_id)]))
+    await msg.channel.send(util.discord.format("{!m} {!M}", msg.author, role_id),
+        allowed_mentions=discord.AllowedMentions(roles=[discord.Object(role_id)]))

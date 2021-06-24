@@ -1,6 +1,7 @@
 import asyncio
 import re
 import discord
+from typing import Dict, Pattern
 import plugins.commands
 import plugins.privileges
 import plugins.locations
@@ -8,9 +9,8 @@ import plugins.reactions
 import discord_client
 import util.discord
 
-msg_link_re = re.compile(r"https?://(?:\w*\.)?(?:discord.com|discordapp.com)"
-    r"/channels/(\d+)/(\d+)/(\d+)")
-int_re = re.compile(r"\d+")
+msg_link_re: Pattern[str] = re.compile(r"https?://(?:\w*\.)?(?:discord.com|discordapp.com)/channels/(\d+)/(\d+)/(\d+)")
+int_re: Pattern[str] = re.compile(r"\d+")
 
 class AbortDueToUnpin(Exception):
     pass
@@ -18,17 +18,18 @@ class AbortDueToUnpin(Exception):
 class AbortDueToOtherPin(Exception):
     pass
 
-unpin_requests = {}
+unpin_requests: Dict[int, plugins.reactions.ReactionMonitor[discord.RawReactionActionEvent]] = {}
 
 @plugins.commands.command("pin")
 @plugins.privileges.priv("pin")
 @plugins.locations.location("pin")
-async def pin_command(msg, args):
-    if msg.reference != None:
+async def pin_command(msg: discord.Message, args: plugins.commands.ArgParser) -> None:
+    if not isinstance(msg, discord.abc.GuildChannel) or msg.guild is None:
+        return
+    if msg.reference is not None:
         if msg.reference.guild_id != msg.guild.id: return
         if msg.reference.channel_id != msg.channel.id: return
-        to_pin = discord.PartialMessage(
-            channel=msg.channel, id=msg.reference.message_id)
+        to_pin = msg.channel.get_partial_message(msg.reference.message_id)
     else:
         arg = args.next_arg()
         if not isinstance(arg, plugins.commands.StringArg): return
@@ -61,8 +62,7 @@ async def pin_command(msg, args):
 
         while True:
             try:
-                await to_pin.pin(
-                    reason=util.discord.format("Requested by {!m}", msg.author))
+                await to_pin.pin(reason=util.discord.format("Requested by {!m}", msg.author))
                 break
             except (discord.Forbidden, discord.NotFound):
                 break
@@ -78,27 +78,20 @@ async def pin_command(msg, args):
                 oldest_pin = pins[-1]
 
                 async with util.discord.TempMessage(msg.channel,
-                    "No space in pins. Unpin or press \u267B to remove oldest"
-                    ) as confirm_msg:
+                    "No space in pins. Unpin or press \u267B to remove oldest") as confirm_msg:
                     await confirm_msg.add_reaction("\u267B")
                     await confirm_msg.add_reaction("\u274C")
 
-                    with plugins.reactions.ReactionMonitor(
-                        guild_id=msg.guild.id, channel_id=msg.channel.id,
-                        message_id=confirm_msg.id, author_id=msg.author.id,
-                        event="add",
-                        filter=lambda _, p: p.emoji.name in ["\u267B","\u274C"],
-                        timeout_each=60) as mon:
+                    with plugins.reactions.ReactionMonitor(guild_id=msg.guild.id, channel_id=msg.channel.id,
+                        message_id=confirm_msg.id, author_id=msg.author.id, event="add",
+                        filter=lambda _, p: p.emoji.name in ["\u267B","\u274C"], timeout_each=60) as mon:
                         try:
                             if msg.author.id in unpin_requests:
-                                unpin_requests[msg.author.id].cancel(
-                                    AbortDueToOtherPin())
+                                unpin_requests[msg.author.id].cancel(AbortDueToOtherPin())
                             unpin_requests[msg.author.id] = mon
                             _, p = await mon
                             if p.emoji.name == "\u267B":
-                                await oldest_pin.unpin(
-                                    reason=util.discord.format(
-                                        "Requested by {!m}", msg.author))
+                                await oldest_pin.unpin(reason=util.discord.format("Requested by {!m}", msg.author))
                             else:
                                 break
                         except AbortDueToUnpin:
@@ -121,12 +114,13 @@ async def pin_command(msg, args):
 @plugins.commands.command("unpin")
 @plugins.privileges.priv("pin")
 @plugins.locations.location("pin")
-async def unpin_command(msg, args):
+async def unpin_command(msg: discord.Message, args: plugins.commands.ArgParser) -> None:
+    if not isinstance(msg, discord.abc.GuildChannel) or msg.guild is None:
+        return
     if msg.reference != None:
         if msg.reference.guild_id != msg.guild.id: return
         if msg.reference.channel_id != msg.channel.id: return
-        to_unpin = discord.PartialMessage(
-            channel=msg.channel, id=msg.reference.message_id)
+        to_unpin = discord.PartialMessage(channel=msg.channel, id=msg.reference.message_id)
     else:
         arg = args.next_arg()
         if not isinstance(arg, plugins.commands.StringArg): return
@@ -152,8 +146,7 @@ async def unpin_command(msg, args):
                     timeout=300))
 
         try:
-            await to_unpin.unpin(
-                reason=util.discord.format("Requested by {!m}", msg.author))
+            await to_unpin.unpin(reason=util.discord.format("Requested by {!m}", msg.author))
             if msg.author.id in unpin_requests:
                 unpin_requests[msg.author.id].cancel(AbortDueToUnpin())
 
@@ -168,7 +161,7 @@ async def unpin_command(msg, args):
             else:
                 raise
     finally:
-        async def cleanup():
+        async def cleanup() -> None:
             try:
                 await cmd_delete_task
                 if confirm_msg:
