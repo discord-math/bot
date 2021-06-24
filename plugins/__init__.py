@@ -18,7 +18,7 @@ from typing import Any, List, Dict, Optional, Union, Callable, Iterable, Sequenc
 import util.digraph
 
 # Allow importing plugins from other directories on the path
-__path__: Iterable[str]
+__path__: List[str]
 __path__  = pkgutil.extend_path(__path__, __name__)
 
 logger: logging.Logger

@@ -73,7 +73,7 @@ targets: List[Tuple[int, str, Optional[Callable[[logging.LogRecord], bool]]]] = 
 for level, name, cond in targets:
     handler = logging.handlers.TimedRotatingFileHandler(
         filename="{}/{}.log".format(static_config.Log["directory"], name),
-        when="midnight", utc=True, encoding="utf", errors="replace") # type: ignore
+        when="midnight", utc=True, encoding="utf", errors="replace")
     handler.setLevel(level)
     handler.setFormatter(formatter)
     if cond:

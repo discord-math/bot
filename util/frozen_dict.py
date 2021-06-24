@@ -37,8 +37,7 @@ class FrozenDict(Generic[K, V]):
         self.___or__ = lambda other: FrozenDict(
             other.___ror__(dct) if isinstance(other, FrozenDict) else dct.__or__(other))
         self.___ror__ = lambda other: FrozenDict(
-            other.___or__(dct) if isinstance(other, FrozenDict) else other.__ror__(dct)) # type: ignore
-        # ^ typeshed doesn't know about dict.__ror__
+            other.___or__(dct) if isinstance(other, FrozenDict) else other.__ror__(dct))
 
         self.___contains__: Callable[[K], bool]
         self._copy: Callable[[], Dict[K, V]]
