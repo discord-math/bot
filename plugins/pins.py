@@ -24,11 +24,13 @@ unpin_requests: Dict[int, plugins.reactions.ReactionMonitor[discord.RawReactionA
 @plugins.privileges.priv("pin")
 @plugins.locations.location("pin")
 async def pin_command(msg: discord.Message, args: plugins.commands.ArgParser) -> None:
-    if not isinstance(msg, discord.abc.GuildChannel) or msg.guild is None:
+    if not isinstance(msg.channel, discord.abc.GuildChannel) or msg.guild is None:
         return
+    guild = msg.guild
     if msg.reference is not None:
-        if msg.reference.guild_id != msg.guild.id: return
+        if msg.reference.guild_id != guild.id: return
         if msg.reference.channel_id != msg.channel.id: return
+        if msg.reference.message_id is None: return
         to_pin = msg.channel.get_partial_message(msg.reference.message_id)
     else:
         arg = args.next_arg()
@@ -37,25 +39,25 @@ async def pin_command(msg: discord.Message, args: plugins.commands.ArgParser) ->
             guild_id = int(match[1])
             chan_id = int(match[2])
             msg_id = int(match[3])
-            if guild_id != msg.guild.id or chan_id != msg.channel.id: return
-            to_pin = discord.PartialMessage(channel=msg.channel, id=msg_id)
+            if guild_id != guild.id or chan_id != msg.channel.id: return
+            to_pin = discord.PartialMessage(channel=msg.channel, id=msg_id) # type: ignore
         elif match := int_re.match(arg.text):
             msg_id = int(match[0])
-            to_pin = discord.PartialMessage(channel=msg.channel, id=msg_id)
+            to_pin = discord.PartialMessage(channel=msg.channel, id=msg_id) # type: ignore
         else:
             return
 
     try:
         pin_msg_task = asyncio.create_task(
                 discord_client.client.wait_for("message",
-                    check=lambda m: m.guild.id == msg.guild.id
+                    check=lambda m: m.guild is not None and m.guild.id == guild.id
                     and m.channel.id == msg.channel.id
                     and m.type == discord.MessageType.pins_add
-                    and m.reference and m.reference.message_id == to_pin.id,
+                    and m.reference is not None and m.reference.message_id == to_pin.id,
                     timeout=60))
         cmd_delete_task = asyncio.create_task(
                 discord_client.client.wait_for("raw_message_delete",
-                    check=lambda m: m.guild_id == msg.guild.id
+                    check=lambda m: m.guild_id == guild.id
                     and m.channel_id == msg.channel.id
                     and m.message_id == msg.id,
                     timeout=300))
@@ -82,7 +84,7 @@ async def pin_command(msg: discord.Message, args: plugins.commands.ArgParser) ->
                     await confirm_msg.add_reaction("\u267B")
                     await confirm_msg.add_reaction("\u274C")
 
-                    with plugins.reactions.ReactionMonitor(guild_id=msg.guild.id, channel_id=msg.channel.id,
+                    with plugins.reactions.ReactionMonitor(guild_id=guild.id, channel_id=msg.channel.id,
                         message_id=confirm_msg.id, author_id=msg.author.id, event="add",
                         filter=lambda _, p: p.emoji.name in ["\u267B","\u274C"], timeout_each=60) as mon:
                         try:
@@ -101,7 +103,7 @@ async def pin_command(msg: discord.Message, args: plugins.commands.ArgParser) ->
                         finally:
                             del unpin_requests[msg.author.id]
     finally:
-        async def cleanup():
+        async def cleanup() -> None:
             try:
                 pin_msg = await pin_msg_task
                 await cmd_delete_task
@@ -115,12 +117,13 @@ async def pin_command(msg: discord.Message, args: plugins.commands.ArgParser) ->
 @plugins.privileges.priv("pin")
 @plugins.locations.location("pin")
 async def unpin_command(msg: discord.Message, args: plugins.commands.ArgParser) -> None:
-    if not isinstance(msg, discord.abc.GuildChannel) or msg.guild is None:
+    if not isinstance(msg.channel, discord.abc.GuildChannel) or msg.guild is None:
         return
-    if msg.reference != None:
-        if msg.reference.guild_id != msg.guild.id: return
+    guild = msg.guild
+    if msg.reference is not None:
+        if msg.reference.guild_id != guild.id: return
         if msg.reference.channel_id != msg.channel.id: return
-        to_unpin = discord.PartialMessage(channel=msg.channel, id=msg.reference.message_id)
+        to_unpin = discord.PartialMessage(channel=msg.channel, id=msg.reference.message_id) # type: ignore
     else:
         arg = args.next_arg()
         if not isinstance(arg, plugins.commands.StringArg): return
@@ -128,11 +131,11 @@ async def unpin_command(msg: discord.Message, args: plugins.commands.ArgParser) 
             guild_id = int(match[1])
             chan_id = int(match[2])
             msg_id = int(match[3])
-            if guild_id != msg.guild.id or chan_id != msg.channel.id: return
-            to_unpin = discord.PartialMessage(channel=msg.channel, id=msg_id)
+            if guild_id != guild.id or chan_id != msg.channel.id: return
+            to_unpin = discord.PartialMessage(channel=msg.channel, id=msg_id) # type: ignore
         elif match := int_re.match(arg.text):
             msg_id = int(match[0])
-            to_unpin = discord.PartialMessage(channel=msg.channel, id=msg_id)
+            to_unpin = discord.PartialMessage(channel=msg.channel, id=msg_id) # type: ignore
         else:
             return
 
@@ -140,7 +143,7 @@ async def unpin_command(msg: discord.Message, args: plugins.commands.ArgParser) 
         confirm_msg = None
         cmd_delete_task = asyncio.create_task(
                 discord_client.client.wait_for("raw_message_delete",
-                    check=lambda m: m.guild_id == msg.guild.id
+                    check=lambda m: m.guild_id == guild.id
                     and m.channel_id == msg.channel.id
                     and m.message_id == msg.id,
                     timeout=300))
