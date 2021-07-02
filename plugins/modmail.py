@@ -142,8 +142,7 @@ client: discord.Client = ModMailClient(
 
 async def run_modmail() -> None:
     try:
-        await client.login(conf.token)
-        await client.connect(reconnect=True)
+        await client.start(conf.token, reconnect=True)
     except asyncio.CancelledError:
         pass
     except:

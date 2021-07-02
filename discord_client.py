@@ -21,8 +21,8 @@ except NameError:
 
 async def main_task() -> None:
     try:
-        await client.login(static_config.Discord["token"])
-        await client.connect(reconnect=True)
+        await client.start(static_config.Discord["token"], reconnect=True)
     except:
         logger.critical("Exception in main Discord task", exc_info=True)
-        client.loop.stop()
+    finally:
+        await client.close()

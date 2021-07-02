@@ -13,8 +13,8 @@ import util.restart
 @plugins.commands.command("restart")
 @plugins.privileges.priv("admin")
 async def restart_command(msg: discord.Message, args: plugins.commands.ArgParser) -> None:
-    util.restart.restart()
     await msg.channel.send("Restarting...")
+    util.restart.restart()
 
 def plugin_from_arg(name: Optional[plugins.commands.Arg]) -> Optional[str]:
     if not isinstance(name, plugins.commands.StringArg): return None
