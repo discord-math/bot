@@ -126,8 +126,8 @@ def get_payload_role(guild: discord.Guild, payload: discord.RawReactionActionEve
     else:
         if payload.emoji.name is None: return None
         emoji = payload.emoji.name
-    if emoji not in obj['rolereacts']: return None
-    return discord.utils.find(lambda r: str(r.id) == obj['rolereacts'][emoji], guild.roles)
+    if (emoji_id := obj['rolereacts'].get(emoji)) is None: return None
+    return discord.utils.find(lambda r: str(r.id) == emoji_id, guild.roles)
 
 @util.discord.event("raw_reaction_add")
 async def rolereact_add(payload: discord.RawReactionActionEvent) -> None:
@@ -186,7 +186,8 @@ async def rolereact_command(msg: discord.Message, args: plugins.commands.ArgPars
         _, _, role_msg = role_msg_info
         obj = conf[role_msg]
         if obj is None:
-            return await msg.channel.send("Role reactions do not exist on {}".format(format_msg(*role_msg_info)))
+            await msg.channel.send("Role reactions do not exist on {}".format(format_msg(*role_msg_info)))
+            return
         await msg.channel.send("Role reactions on {} include: {}".format(retrieve_msg_link(role_msg),
                 "; ".join(("{} for {}".format(format_emoji(emoji), format_role(msg.guild, role))
                     for emoji, role in obj['rolereacts'].items()))),
@@ -227,8 +228,9 @@ async def rolereact_command(msg: discord.Message, args: plugins.commands.ArgPars
         if emoji is None: return
         obj = conf[role_msg]
         if obj is None:
-            return await msg.channel.send("Role reactions do not exist on {}"
+            await msg.channel.send("Role reactions do not exist on {}"
                 .format(format_msg(*role_msg_info)))
+            return
         if emoji not in obj['rolereacts']:
             await msg.channel.send("Role reactions for emoji {} do not exist on {}".format(
                 format_emoji(emoji), retrieve_msg_link(role_msg)))
