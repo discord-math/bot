@@ -164,12 +164,13 @@ async def modmail_reply(msg: discord.Message) -> None:
             try:
                 chan = await client.fetch_channel(dm_chan_id)
                 if not isinstance(chan, discord.DMChannel):
-                    await msg.channel.send("Could not deliver DM")
+                    await msg.channel.send("Could not deliver DM (DM closed)")
                     return
                 await chan.send(header + msg.content,
-                    reference=discord.MessageReference(message_id=dm_msg_id, channel_id=dm_chan_id))
+                    reference=discord.MessageReference(
+                        message_id=dm_msg_id, channel_id=dm_chan_id, fail_if_not_exists=False))
             except (discord.NotFound, discord.Forbidden):
-                await msg.channel.send("Could not deliver DM")
+                await msg.channel.send("Could not deliver DM (User left guild?)")
             else:
                 await msg.channel.send("Message delivered")
 
