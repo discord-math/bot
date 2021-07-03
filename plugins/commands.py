@@ -185,7 +185,7 @@ async def on_command_error(ctx: discord.ext.commands.Context, exc: Exception) ->
     if isinstance(exc, discord.ext.commands.CommandNotFound):
         return
     elif isinstance(exc, util.discord.UserError):
-        await ctx.channel.send("Error: {}".format(exc.text))
+        await ctx.send("Error: {}".format(exc.text))
         return
     else:
         return

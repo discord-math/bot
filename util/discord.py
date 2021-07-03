@@ -3,11 +3,14 @@ Some common utilities for interacting with discord.
 """
 
 import asyncio
+import re
+import math
 import discord
 import discord.abc
 import string
 import logging
-from typing import Any, List, Callable, Iterable, Optional, Union, Coroutine, TypeVar, Protocol, AsyncContextManager
+from typing import (Any, List, Sequence, Callable, Iterable, Optional, Union, Coroutine, AsyncContextManager, Generic,
+    TypeVar, Type, Protocol, cast)
 import discord_client
 import plugins
 
@@ -146,9 +149,9 @@ class NicknamedType(Protocol):
     name: str
     nick: str
 
-T = TypeVar("T", bound=Union[NamedType, NicknamedType])
+M = TypeVar("M", bound=Union[NamedType, NicknamedType])
 
-def smart_find(name_or_id: str, iterable: Iterable[T]) -> Optional[T]:
+def smart_find(name_or_id: str, iterable: Iterable[M]) -> Optional[M]:
     """
     Find an object by its name or id. We try an exact id match, then the
     shortest prefix match, if unique among prefix matches of that length, then
@@ -159,9 +162,9 @@ def smart_find(name_or_id: str, iterable: Iterable[T]) -> Optional[T]:
         int_id = int(name_or_id)
     except ValueError:
         int_id = None
-    prefix_match: Optional[T] = None
+    prefix_match: Optional[M] = None
     prefix_matches: List[str] = []
-    infix_matches: List[T] = []
+    infix_matches: List[M] = []
     for x in iterable:
         if x.id == int_id:
             return x
@@ -186,6 +189,26 @@ def smart_find(name_or_id: str, iterable: Iterable[T]) -> Optional[T]:
     if len(infix_matches) == 1:
         return infix_matches[0]
     return None
+
+T = TypeVar("T")
+
+def priority_find(predicate: Callable[[T], Union[float, int, None]], iterable: Iterable[T]) -> List[T]:
+    results = []
+    cur_rank = None
+    for x in iterable:
+        rank = predicate(x)
+        if rank is None:
+            continue
+        elif rank is math.inf:
+            return [x]
+        elif cur_rank is None or rank > cur_rank:
+            cur_rank = rank
+            results = [x]
+        elif rank == cur_rank:
+            results.append(x)
+        elif rank < cur_rank:
+            continue
+    return results
 
 class TempMessage(AsyncContextManager[discord.Message]):
     __slots__ = "sendable", "args", "kwargs", "message"
@@ -222,3 +245,209 @@ class ChannelById(discord.abc.Messageable):
 
     async def _get_channel(self) -> discord.abc.Messageable:
         return self
+
+def nicknamed_priority(u: Union[NamedType, NicknamedType], s: str) -> Optional[int]:
+    name = u.name
+    nick = getattr(u, "nick", None)
+    if s == name:
+        return 3
+    elif nick is not None and s == nick:
+        return 3
+    elif s.lower() == name.lower():
+        return 2
+    elif nick is not None and s.lower() == nick.lower():
+        return 2
+    elif name.lower().startswith(s.lower()):
+        return 1
+    elif nick is not None and nick.lower().startswith(s.lower()):
+        return 1
+    elif s.lower() in name.lower():
+        return 0
+    elif nick is not None and s.lower() in nick.lower():
+        return 0
+    else:
+        return None
+
+def named_priority(x: NamedType, s: str) -> Optional[int]:
+    name = x.name
+    if s == name:
+        return 3
+    elif s.lower() == name.lower():
+        return 2
+    elif name.lower().startswith(s.lower()):
+        return 1
+    elif s.lower() in name.lower():
+        return 0
+    else:
+        return None
+
+# We inherit XCoverter from X, so that given a declaration x: XConverter could be used with the assumption that really
+# at runtime x: X
+class PartialUserConverter(discord.abc.Snowflake):
+    mention_re: re.Pattern[str] = re.compile(r"<@!?(\d+)>")
+    id_re: re.Pattern[str] = re.compile(r"\d{15,}")
+    discrim_re: re.Pattern[str] = re.compile(r"(.*)#(\d{4})")
+
+    @classmethod
+    async def convert(cls, ctx: discord.ext.commands.Context, arg: str) -> discord.abc.Snowflake:
+        if match := cls.mention_re.fullmatch(arg):
+            return discord.Object(int(match[1]))
+        elif match := cls.id_re.fullmatch(arg):
+            return discord.Object(int(match[0]))
+
+        user_list: Sequence[Union[discord.User, discord.Member]]
+        if ctx.guild is not None:
+            user_list = ctx.guild.members
+        else:
+            user_list = [cast(discord.User, ctx.bot.user), ctx.author]
+        if match := cls.discrim_re.fullmatch(arg):
+            name, discrim = match[1], match[2]
+            matches = list(filter(lambda u: u.name == name and u.discriminator == discrim, user_list))
+            if len(matches) > 1:
+                raise UserError("Multiple results for {}#{}", name, discrim)
+            elif len(matches) == 1:
+                return matches[0]
+
+        matches = priority_find(lambda u: nicknamed_priority(u, arg), user_list)
+        if len(matches) > 1:
+            raise UserError("Multiple results for {}", arg)
+        elif len(matches) == 1:
+            return matches[0]
+        else:
+            raise UserError("No results for {}", arg)
+
+class MemberConverter(discord.User):
+    @classmethod
+    async def convert(cls, ctx: discord.ext.commands.Context, arg: str) -> Optional[discord.Member]:
+        if ctx.guild is None:
+            raise UserError("Cannot obtain member outside guild")
+
+        obj = await PartialUserConverter.convert(ctx, arg)
+        if isinstance(obj, discord.Member):
+            return obj
+        elif isinstance(obj, discord.User):
+            raise UserError("No member found by ID {}", obj.id)
+
+        member = ctx.guild.get_member(obj.id)
+        if member is not None: return member
+        try:
+            return await ctx.guild.fetch_member(obj.id)
+        except discord.NotFound:
+            raise UserError("No member found by ID {}", obj.id)
+
+class UserConverter(discord.User):
+    @classmethod
+    async def convert(cls, ctx: discord.ext.commands.Context, arg: str) -> Optional[discord.User]:
+        obj = await PartialUserConverter.convert(ctx, arg)
+        if isinstance(obj, discord.User):
+            return obj
+        user = ctx.bot.get_user(obj.id)
+
+        if user is not None: return user
+        try:
+            return await ctx.bot.fetch_user(obj.id)
+        except discord.NotFound:
+            raise UserError("No user found by ID {}", obj.id)
+
+class PartialRoleConverter(discord.abc.Snowflake):
+    mention_re: re.Pattern[str] = re.compile(r"<@&(\d+)>")
+    id_re: re.Pattern[str] = re.compile(r"\d{15,}")
+
+    @classmethod
+    async def convert(cls, ctx: discord.ext.commands.Context, arg: str) -> discord.abc.Snowflake:
+        if match := cls.mention_re.fullmatch(arg):
+            return discord.Object(int(match[1]))
+        elif match := cls.id_re.fullmatch(arg):
+            return discord.Object(int(match[0]))
+
+        if ctx.guild is None:
+            raise UserError("Outside a guild a role can only be specified by ID")
+
+        matches = priority_find(lambda r: named_priority(r, arg), ctx.guild.roles)
+        if len(matches) > 1:
+            raise UserError("Multiple results for {}", arg)
+        elif len(matches) == 1:
+            return matches[0]
+        else:
+            raise UserError("No results for {}", arg)
+
+class RoleConverter(discord.Role):
+    @classmethod
+    async def convert(cls, ctx: discord.ext.commands.Context, arg: str) -> discord.Role:
+        obj = await PartialRoleConverter.convert(ctx, arg)
+        if isinstance(obj, discord.Role):
+            return obj
+        if ctx.guild is not None:
+            role = ctx.guild.get_role(obj.id)
+            if role is not None:
+                return role
+        for guild in ctx.bot.guilds:
+            role = guild.get_role(obj.id)
+            if role is not None:
+                return role
+        else:
+            raise UserError("No role found by ID {}", obj.id)
+
+C = TypeVar("C", bound=discord.abc.GuildChannel)
+
+class PCConv(Generic[C]):
+    mention_re: re.Pattern[str] = re.compile(r"<#(\d+)>")
+    id_re: re.Pattern[str] = re.compile(r"\d{15,}")
+
+    @classmethod
+    async def partial_convert(cls, ctx: discord.ext.commands.Context, arg: str, ty: Type[C]) -> discord.abc.Snowflake:
+        if match := cls.mention_re.fullmatch(arg):
+            return discord.Object(int(match[1]))
+        elif match := cls.id_re.fullmatch(arg):
+            return discord.Object(int(match[0]))
+
+        if ctx.guild is None:
+            raise UserError("Outside a guild a channel can only be specified by ID")
+
+        chan_list: Sequence[discord.abc.GuildChannel] = ctx.guild.channels
+        if ty == discord.TextChannel:
+            chan_list = ctx.guild.text_channels
+        elif ty == discord.VoiceChannel:
+            chan_list = ctx.guild.voice_channels
+        elif ty == discord.CategoryChannel:
+            chan_list = ctx.guild.categories
+        elif ty == discord.StageChannel:
+            chan_list = ctx.guild.stage_channels
+
+        matches = priority_find(lambda c: named_priority(c, arg), chan_list)
+        if len(matches) > 1:
+            raise UserError("Multiple results for {}", arg)
+        elif len(matches) == 1:
+            return matches[0]
+        else:
+            raise UserError("No results for {}", arg)
+
+    @classmethod
+    async def convert(cls, ctx: discord.ext.commands.Context, arg: str, ty: Type[C]) -> C:
+        obj = await cls.partial_convert(ctx, arg, ty)
+        if isinstance(obj, ty):
+            return obj
+        if ctx.guild is not None:
+            chan = ctx.guild.get_channel(obj.id)
+            if chan is not None:
+                if not isinstance(chan, ty):
+                    raise UserError("{!c} is not a {}", chan.id, ty)
+                return chan
+        for guild in ctx.bot.guilds:
+            chan = guild.get_channel(obj.id)
+            if chan is not None:
+                if not isinstance(chan, ty):
+                    raise UserError("{!c} is not a {}", chan.id, ty)
+                return chan
+        else:
+            raise UserError("No {} found by ID {}", ty, obj.id)
+
+class PartialChannelConverter(discord.abc.GuildChannel):
+    @classmethod
+    async def convert(cls, ctx: discord.ext.commands.Context, arg: str) -> discord.abc.Snowflake:
+        return await PCConv.partial_convert(ctx, arg, discord.abc.GuildChannel)
+
+class ChannelConverter(discord.abc.GuildChannel):
+    @classmethod
+    async def convert(cls, ctx: discord.ext.commands.Context, arg: str) -> discord.abc.GuildChannel:
+        return await PCConv.convert(ctx, arg, discord.abc.GuildChannel)
