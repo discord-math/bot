@@ -92,11 +92,11 @@ class ModMailClient(discord.Client):
             thread_id = update_thread(msg.author.id)
             header = util.discord.format("**From {}#{}** {} {!m} on {}:\n\n",
                 msg.author.name, msg.author.discriminator, msg.author.id, msg.author, msg.created_at)
-            footer = "\n".join("**Attachment:** {} {}".format(att.filename, att.url) for att in msg.attachments)
+            footer = "".join("\n**Attachment:** {} {}".format(att.filename, att.url) for att in msg.attachments)
             if thread_id is None:
-                if footer:
-                    footer += "\n"
-                footer = util.discord.format("\n\n{}{!m}", footer, role)
+                footer += util.discord.format("\n{!m}", role)
+            if footer:
+                footer = "\n" + footer
             text = msg.content
             mentions = discord.AllowedMentions.none()
             mentions.roles = [role]
