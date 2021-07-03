@@ -7,26 +7,26 @@ import discord
 import discord.abc
 import string
 import logging
-from typing import (Any, List, Callable, Iterable, Optional, Union, Awaitable,
+from typing import (Any, List, Callable, Iterable, Optional, Union, Awaitable, Coroutine,
     TypeVar, Protocol, AsyncContextManager)
 import discord_client
 import plugins
 
 logger: logging.Logger = logging.getLogger(__name__)
 
-def unsafe_hook_event(name: str, fun: Callable[..., Awaitable[None]]) -> None:
+def unsafe_hook_event(name: str, fun: Callable[..., Coroutine[Any, Any, None]]) -> None:
     if not asyncio.iscoroutinefunction(fun):
         raise TypeError("expected coroutine function")
     method_name = "on_" + name
     discord_client.client.add_listener(fun, name=method_name)
 
-def unsafe_unhook_event(name: str, fun: Callable[..., Awaitable[None]]) -> None:
+def unsafe_unhook_event(name: str, fun: Callable[..., Coroutine[Any, Any, None]]) -> None:
     method_name = "on_" + name
     discord_client.client.remove_listener(fun, name=method_name)
 
 def event(name: str) -> Callable[
-        [Callable[..., Awaitable[None]]],
-        Callable[..., Awaitable[None]]]:
+        [Callable[..., Coroutine[Any, Any, None]]],
+        Callable[..., Coroutine[Any, Any, None]]]:
     """
     discord.py doesn't allow multiple functions to register for the same event.
     This decorator fixes that. Takes the event name without "on_" Example usage:
@@ -37,8 +37,8 @@ def event(name: str) -> Callable[
     This function registers a finalizer that removes the registered function,
     and hence should only be called during plugin initialization.
     """
-    def decorator(fun: Callable[..., Awaitable[None]]
-        ) -> Callable[..., Awaitable[None]]:
+    def decorator(fun: Callable[..., Coroutine[Any, Any, None]]
+        ) -> Callable[..., Coroutine[Any, Any, None]]:
         unsafe_hook_event(name, fun)
         @plugins.finalizer
         def finalizer() -> None:

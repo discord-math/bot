@@ -4,9 +4,11 @@ This module defines the "client" singleton. It really should be a singleton so i
 
 import discord
 import discord.ext.commands
+import discord.ext.typed_commands
 import asyncio
-import static_config
 import logging
+from typing import Any
+import static_config
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -14,7 +16,7 @@ try:
     client
     logger.warn("Refusing to re-create the Discord client", stack_info=True)
 except NameError:
-    client: discord.ext.commands.Bot = discord.ext.commands.Bot(
+    client: discord.ext.typed_commands.Bot[discord.ext.commands.Context] = discord.ext.commands.Bot(
         command_prefix=(),
         loop=asyncio.get_event_loop(),
         max_messages=None,
@@ -23,7 +25,7 @@ except NameError:
 
     # Disable command functionality until reenabled again in plugins.commands
     @client.event
-    async def on_message(*args, **kwargs):
+    async def on_message(*args: Any, **kwargs: Any) -> None:
         pass
     del on_message
 

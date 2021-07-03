@@ -11,6 +11,7 @@ jobs:
     - uses: actions/setup-python@v1
       with:
         python-version: 3.9
-    - run: pip install discord.py discord.py_stubs sqlalchemy2-stubs mypy sqlalchemy[mypy]
+    - name: pip
+      run: pip install discord.py discord.py_stubs discord-ext-typed-commands sqlalchemy2-stubs mypy sqlalchemy[mypy]
     - name: mypy
       run: mypy .

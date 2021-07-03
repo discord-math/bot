@@ -65,6 +65,7 @@ The bot requires:
  - sqlalchemy-orm
  - urrllib
  - discord.py
+ - discord-ext-typed-commands
 
 You will need to create a static config file called `bot.conf` in the working
 directory of the bot, see `bot.conf.example`.
