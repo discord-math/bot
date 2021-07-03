@@ -3,6 +3,7 @@ This module defines the "client" singleton. It really should be a singleton so i
 """
 
 import discord
+import discord.ext.commands
 import asyncio
 import static_config
 import logging
@@ -13,11 +14,18 @@ try:
     client
     logger.warn("Refusing to re-create the Discord client", stack_info=True)
 except NameError:
-    client: discord.Client = discord.Client(
+    client: discord.ext.commands.Bot = discord.ext.commands.Bot(
+        command_prefix=(),
         loop=asyncio.get_event_loop(),
         max_messages=None,
         intents=discord.Intents.all(),
         allowed_mentions=discord.AllowedMentions(everyone=False, roles=False))
+
+    # Disable command functionality until reenabled again in plugins.commands
+    @client.event
+    async def on_message(*args, **kwargs):
+        pass
+    del on_message
 
 async def main_task() -> None:
     try:

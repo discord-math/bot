@@ -17,32 +17,12 @@ logger: logging.Logger = logging.getLogger(__name__)
 def unsafe_hook_event(name: str, fun: Callable[..., Awaitable[None]]) -> None:
     if not asyncio.iscoroutinefunction(fun):
         raise TypeError("expected coroutine function")
-
     method_name = "on_" + name
-    client = discord_client.client
-
-    if not hasattr(client, method_name):
-        # Insert a hook that is actually a bound method of "of" a list. The list
-        # contains hooks that are to be executed.
-        async def event_hook(hooks: List[Callable[..., Awaitable[None]]],
-            *args: Any, **kwargs: Any) -> None:
-            for hook in list(hooks):
-                try:
-                    await hook(*args, **kwargs)
-                except:
-                    logger.error(
-                        "Exception in {} hook {}".format(method_name, hook),
-                        exc_info=True)
-        event_hook.__name__ = method_name
-        client.event(event_hook.__get__([])) # type: ignore
-
-    getattr(client, method_name).__self__.append(fun)
+    discord_client.client.add_listener(fun, name=method_name)
 
 def unsafe_unhook_event(name: str, fun: Callable[..., Awaitable[None]]) -> None:
     method_name = "on_" + name
-    client = discord_client.client
-    if hasattr(client, method_name):
-        getattr(client, method_name).__self__.remove(fun)
+    discord_client.client.remove_listener(fun, name=method_name)
 
 def event(name: str) -> Callable[
         [Callable[..., Awaitable[None]]],

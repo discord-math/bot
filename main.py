@@ -1,9 +1,9 @@
 import logging
 import log_setup
 
-try:
-    logger: logging.Logger = logging.getLogger(__name__)
+logger: logging.Logger = logging.getLogger(__name__)
 
+try:
     import asyncio
 
     import util.restart
