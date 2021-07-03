@@ -6,7 +6,10 @@ import re
 import asyncio
 import logging
 import discord
-from typing import Dict, Iterator, Optional, Callable, Awaitable, Coroutine, Any, Protocol, cast
+import discord.ext.commands
+import discord.ext.typed_commands
+from typing import (Dict, Iterator, Optional, Callable, Awaitable, Coroutine, Any, Type, TypeVar, Protocol, cast,
+    overload)
 import util.discord
 import discord_client
 import util.db.kv
@@ -236,16 +239,24 @@ def command(name: str) -> Callable[[Callable[[discord.Message, ArgParser], Await
         return fun
     return decorator
 
-def command_ext(*args: Any, **kwargs: Any) -> Callable[[Callable[..., Coroutine[Any, Any, None]]],
-    Callable[..., Coroutine[Any, Any, None]]]:
+T = TypeVar("T")
+
+@overload
+def command_ext(name: Optional[str] = None, cls: Type[T] = ..., *args: Any, **kwargs: Any) -> Callable[
+    [Callable[..., Coroutine[Any, Any, None]]], T]: ...
+@overload
+def command_ext(name: Optional[str] = None, cls: None = None, *args: Any, **kwargs: Any) -> Callable[
+    [Callable[..., Coroutine[Any, Any, None]]], discord.ext.typed_commands.Command[discord.ext.commands.Context]]: ...
+def command_ext(name: Optional[str] = None, cls: Any = discord.ext.commands.Command, *args: Any, **kwargs: Any
+    ) -> Callable[[Callable[..., Coroutine[Any, Any, None]]], Any]:
     def decorator(fun: Callable[..., Coroutine[Any, Any, None]]) -> Callable[..., Coroutine[Any, Any, None]]:
-        cmd: discord.ext.commands.Command[discord.ext.commands.Context]
+        cmd: discord.ext.typed_commands.Command[discord.ext.commands.Context]
         if isinstance(fun, discord.ext.commands.Command):
             if args or kwargs:
                 raise TypeError("the provided object is already a Command (args/kwargs have no effect)")
             cmd = fun
         else:
-            cmd = discord.ext.commands.command(*args, **kwargs)(fun) # type: ignore
+            cmd = discord.ext.commands.command(name=name, cls=cls, *args, **kwargs)(fun) # type: ignore
         discord_client.client.add_command(cmd)
         @plugins.finalizer
         def cleanup_command() -> None:
