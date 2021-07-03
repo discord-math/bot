@@ -2,6 +2,7 @@ import sys
 import traceback
 import importlib
 import discord
+import discord.ext.commands
 from typing import Optional
 import plugins
 import plugins.autoload
@@ -10,114 +11,115 @@ import plugins.privileges
 import util.discord
 import util.restart
 
-@plugins.commands.command("restart")
-@plugins.privileges.priv("admin")
-async def restart_command(msg: discord.Message, args: plugins.commands.ArgParser) -> None:
-    await msg.channel.send("Restarting...")
+@plugins.commands.command_ext("restart")
+@plugins.privileges.priv_ext("admin")
+async def restart_command(ctx: discord.ext.commands.Context) -> None:
+    """Restart the bot process"""
+    await ctx.send("Restarting...")
     util.restart.restart()
 
-def plugin_from_arg(name: Optional[plugins.commands.Arg]) -> Optional[str]:
-    if not isinstance(name, plugins.commands.StringArg): return None
-    pname = name.text
-    if not pname.startswith(plugins.plugins_namespace + "."):
-        pname = plugins.plugins_namespace + "." + pname
-    return pname
+class PluginConverter(str):
+    @classmethod
+    async def convert(cls, ctx: discord.ext.commands.Context, arg: str) -> str:
+        if not arg.startswith(plugins.plugins_namespace + "."):
+            arg = plugins.plugins_namespace + "." + arg
+        return arg
 
-async def reply_exception(msg: discord.Message) -> None:
+async def reply_exception(ctx: discord.ext.commands.Context) -> None:
     _, exc, tb = sys.exc_info()
     text = util.discord.format("{!b:py}", "{}\n{}".format("".join(traceback.format_tb(tb)), repr(exc)))
     del tb
-    await msg.channel.send(text)
+    await ctx.send(text)
 
-@plugins.commands.command("load")
-@plugins.privileges.priv("admin")
-async def load_command(msg: discord.Message, args: plugins.commands.ArgParser) -> None:
-    name = plugin_from_arg(args.next_arg())
-    if name is None: return
+@plugins.commands.command_ext("load")
+@plugins.privileges.priv_ext("admin")
+async def load_command(ctx: discord.ext.commands.Context, plugin: PluginConverter) -> None:
+    """Load a plugin"""
     try:
-        await plugins.load(name)
-        await msg.channel.send("\u2705")
+        await plugins.load(plugin)
     except:
-        await reply_exception(msg)
+        await reply_exception(ctx)
+    else:
+        await ctx.send("\u2705")
 
-
-@plugins.commands.command("reload")
-@plugins.privileges.priv("admin")
-async def reload_command(msg: discord.Message, args: plugins.commands.ArgParser) -> None:
-    name = plugin_from_arg(args.next_arg())
-    if name is None: return
+@plugins.commands.command_ext("reload")
+@plugins.privileges.priv_ext("admin")
+async def reload_command(ctx: discord.ext.commands.Context, plugin: PluginConverter) -> None:
+    """Reload a plugin"""
     try:
-        await plugins.reload(name)
-        await msg.channel.send("\u2705")
+        await plugins.reload(plugin)
     except:
-        await reply_exception(msg)
+        await reply_exception(ctx)
+    else:
+        await ctx.send("\u2705")
 
-@plugins.commands.command("unsafereload")
-@plugins.privileges.priv("admin")
-async def unsafe_reload_command(msg: discord.Message, args: plugins.commands.ArgParser) -> None:
-    name = plugin_from_arg(args.next_arg())
-    if name is None: return
+@plugins.commands.command_ext("unsafereload")
+@plugins.privileges.priv_ext("admin")
+async def unsafe_reload_command(ctx: discord.ext.commands.Context, plugin: PluginConverter) -> None:
+    """Reload a plugin without its dependents"""
     try:
-        await plugins.unsafe_reload(name)
-        await msg.channel.send("\u2705")
+        await plugins.unsafe_reload(plugin)
     except:
-        await reply_exception(msg)
+        await reply_exception(ctx)
+    else:
+        await ctx.send("\u2705")
 
-@plugins.commands.command("unload")
-@plugins.privileges.priv("admin")
-async def unload_command(msg: discord.Message, args: plugins.commands.ArgParser) -> None:
-    name = plugin_from_arg(args.next_arg())
-    if name is None: return
+@plugins.commands.command_ext("unload")
+@plugins.privileges.priv_ext("admin")
+async def unload_command(ctx: discord.ext.commands.Context, plugin: PluginConverter) -> None:
+    """Unload a plugin"""
     try:
-        await plugins.unload(name)
-        await msg.channel.send("\u2705")
+        await plugins.unload(plugin)
     except:
-        await reply_exception(msg)
+        await reply_exception(ctx)
+    else:
+        await ctx.send("\u2705")
 
-@plugins.commands.command("unsafeunload")
-@plugins.privileges.priv("admin")
-async def unsafe_unload_command(msg: discord.Message, args: plugins.commands.ArgParser) -> None:
-    name = plugin_from_arg(args.next_arg())
-    if name is None: return
+@plugins.commands.command_ext("unsafeunload")
+@plugins.privileges.priv_ext("admin")
+async def unsafe_unload_command(ctx: discord.ext.commands.Context, plugin: PluginConverter) -> None:
+    """Unload a plugin without its dependents"""
     try:
-        await plugins.unsafe_unload(name)
-        await msg.channel.send("\u2705")
+        await plugins.unsafe_unload(plugin)
     except:
-        await reply_exception(msg)
+        await reply_exception(ctx)
+    else:
+        await ctx.send("\u2705")
 
-@plugins.commands.command("reloadmod")
-@plugins.privileges.priv("admin")
-async def reloadmod_command(msg: discord.Message, args: plugins.commands.ArgParser) -> None:
-    name = args.next_arg()
-    if not isinstance(name, plugins.commands.StringArg): return None
-    mname = name.text
+@plugins.commands.command_ext("reloadmod")
+@plugins.privileges.priv_ext("admin")
+async def reloadmod_command(ctx: discord.ext.commands.Context, module: str) -> None:
+    """Reload a module"""
     try:
-        importlib.reload(sys.modules[mname])
-        await msg.channel.send("\u2705")
+        importlib.reload(sys.modules[module])
     except:
-        await reply_exception(msg)
+        await reply_exception(ctx)
+    else:
+        await ctx.send("\u2705")
 
-@plugins.commands.command("autoload")
-@plugins.privileges.priv("admin")
-async def autoload_command(msg: discord.Message, args: plugins.commands.ArgParser) -> None:
-    cmd = args.next_arg()
-    if cmd is None:
-        await msg.channel.send(", ".join(util.discord.format("{!i}", name) for name in plugins.autoload.get_autoload()))
-        return
-    if not isinstance(cmd, plugins.commands.StringArg): return None
-    if cmd.text.lower() == "add":
-        name = plugin_from_arg(args.next_arg())
-        if name is None: return
-        await plugins.autoload.set_autoload(name, True)
-        await msg.channel.send("\u2705")
-    elif cmd.text.lower() == "remove":
-        name = plugin_from_arg(args.next_arg())
-        if name is None: return
-        await plugins.autoload.set_autoload(name, False)
-        await msg.channel.send("\u2705")
+@plugins.commands.command_ext("autoload", cls=discord.ext.commands.Group, invoke_without_command=True)
+@plugins.privileges.priv_ext("admin")
+async def autoload_command(ctx: discord.ext.commands.Context) -> None:
+    """Manage plugins loaded at startup"""
+    await ctx.send(", ".join(util.discord.format("{!i}", name) for name in plugins.autoload.get_autoload()))
 
-@plugins.commands.command("plugins")
-@plugins.privileges.priv("mod")
-async def plugins_command(msg: discord.Message, args: plugins.commands.ArgParser) -> None:
-    await msg.channel.send(", ".join(util.discord.format("{!i}", name)
+@autoload_command.command("add")
+@plugins.privileges.priv_ext("admin")
+async def autoload_add(ctx: discord.ext.commands.Context, plugin: PluginConverter) -> None:
+    """Add a plugin to be loaded at startup"""
+    await plugins.autoload.set_autoload(plugin, True)
+    await ctx.send("\u2705")
+
+@autoload_command.command("remove")
+@plugins.privileges.priv_ext("admin")
+async def autoload_remove(ctx: discord.ext.commands.Context, plugin: PluginConverter) -> None:
+    """Remove a plugin from startup loading list"""
+    await plugins.autoload.set_autoload(plugin, False)
+    await ctx.send("\u2705")
+
+@plugins.commands.command_ext("plugins")
+@plugins.privileges.priv_ext("mod")
+async def plugins_command(ctx: discord.ext.commands.Context) -> None:
+    """List loaded plugins"""
+    await ctx.send(", ".join(util.discord.format("{!i}", name)
         for name in sys.modules if plugins.is_plugin(name)))
