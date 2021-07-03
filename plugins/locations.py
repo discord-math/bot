@@ -1,9 +1,8 @@
 import logging
-from typing import List, Optional, Union, Tuple, Iterator, Literal, Callable, Awaitable, Protocol, Any, overload, cast
+from typing import List, Optional, Union, Tuple, Iterator, Coroutine, Literal, Callable, Awaitable, Protocol, Any, cast
 import discord
 import discord.utils
 import util.db.kv
-from util.frozen_dict import FrozenDict
 from util.frozen_list import FrozenList
 import discord_client
 import util.discord
@@ -42,12 +41,17 @@ def location(name: str) -> Callable[[Callable[[discord.Message, plugins.commands
     def decorator(fun: Callable[[discord.Message, plugins.commands.ArgParser], Awaitable[None]]) -> Callable[
         [discord.Message, plugins.commands.ArgParser], Awaitable[None]]:
         async def check(msg: discord.Message, arg: plugins.commands.ArgParser) -> None:
-            if isinstance(msg.channel, discord.abc.GuildChannel):
-                if in_location(name, msg.channel):
-                    await fun(msg, arg)
+            if isinstance(msg.channel, discord.abc.GuildChannel) and in_location(name, msg.channel):
+                await fun(msg, arg)
         check.__name__ = fun.__name__
         return check
     return decorator
+
+def location_ext(name: str) -> Callable[[Callable[..., Coroutine[Any, Any, None]]], Callable[
+    ..., Coroutine[Any, Any, None]]]:
+    def command_location_check(ctx: discord.ext.commands.Context) -> bool:
+        return isinstance(ctx.channel, discord.abc.GuildChannel) and in_location(name, ctx.channel)
+    return discord.ext.commands.check(command_location_check)
 
 def chan_id_from_arg(guild: Optional[discord.Guild], arg: plugins.commands.Arg) -> Optional[int]:
     if isinstance(arg, plugins.commands.ChannelArg):

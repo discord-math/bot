@@ -6,7 +6,7 @@ import re
 import asyncio
 import logging
 import discord
-from typing import Dict, Iterator, Optional, Callable, Awaitable, Protocol, cast
+from typing import Dict, Iterator, Optional, Callable, Awaitable, Coroutine, Any, Protocol, cast
 import util.discord
 import discord_client
 import util.db.kv
@@ -231,7 +231,24 @@ def command(name: str) -> Callable[[Callable[[discord.Message, ArgParser], Await
         fun.__name__ = name
         unsafe_hook_command(name, fun)
         @plugins.finalizer
-        def finalizer() -> None:
+        def cleanup_command() -> None:
             unsafe_unhook_command(name, fun)
         return fun
+    return decorator
+
+def command_ext(*args: Any, **kwargs: Any) -> Callable[[Callable[..., Coroutine[Any, Any, None]]],
+    Callable[..., Coroutine[Any, Any, None]]]:
+    def decorator(fun: Callable[..., Coroutine[Any, Any, None]]) -> Callable[..., Coroutine[Any, Any, None]]:
+        cmd: discord.ext.commands.Command[discord.ext.commands.Context]
+        if isinstance(fun, discord.ext.commands.Command):
+            if args or kwargs:
+                raise TypeError("the provided object is already a Command (args/kwargs have no effect)")
+            cmd = fun
+        else:
+            cmd = discord.ext.commands.command(*args, **kwargs)(fun) # type: ignore
+        discord_client.client.add_command(cmd)
+        @plugins.finalizer
+        def cleanup_command() -> None:
+            discord_client.client.remove_command(cmd.name)
+        return cmd
     return decorator
