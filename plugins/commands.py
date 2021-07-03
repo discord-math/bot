@@ -8,6 +8,7 @@ import logging
 import discord
 from typing import Dict, Iterator, Optional, Callable, Awaitable, Protocol, cast
 import util.discord
+import discord_client
 import util.db.kv
 import plugins
 
@@ -169,6 +170,23 @@ class ArgParser:
 commands: Dict[str, Callable[[discord.Message, ArgParser], Awaitable[None]]]
 commands = {}
 
+def bot_prefix(bot: discord.Client, msg: discord.Message) -> str:
+    return conf.prefix
+discord_client.client.command_prefix = bot_prefix
+@plugins.finalizer
+def cleanup_prefix() -> None:
+    discord_client.client.command_prefix = ()
+
+@util.discord.event("command_error")
+async def on_command_error(ctx: discord.ext.commands.Context, exc: Exception) -> None:
+    if isinstance(exc, discord.ext.commands.CommandNotFound):
+        return
+    elif isinstance(exc, util.discord.UserError):
+        await ctx.channel.send("Error: {}".format(exc.text))
+        return
+    else:
+        return
+
 @util.discord.event("message")
 async def message_find_command(msg: discord.Message) -> None:
     if conf.prefix and msg.content.startswith(conf.prefix):
@@ -187,6 +205,7 @@ async def message_find_command(msg: discord.Message) -> None:
                     logger.error(
                         "Error in command {!r} from <@{}> in <#{}>".format(name, msg.author.id, msg.channel.id),
                         exc_info=True)
+    await discord_client.client.process_commands(msg)
 
 def unsafe_hook_command(name: str, fun: Callable[[discord.Message, ArgParser], Awaitable[None]]) -> None:
     if not asyncio.iscoroutinefunction(fun):
