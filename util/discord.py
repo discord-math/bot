@@ -7,8 +7,7 @@ import discord
 import discord.abc
 import string
 import logging
-from typing import (Any, List, Callable, Iterable, Optional, Union, Awaitable, Coroutine,
-    TypeVar, Protocol, AsyncContextManager)
+from typing import Any, List, Callable, Iterable, Optional, Union, Coroutine, TypeVar, Protocol, AsyncContextManager
 import discord_client
 import plugins
 
