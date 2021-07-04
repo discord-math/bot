@@ -175,7 +175,7 @@ async def reminder_command(msg: discord.Message, args: plugins.commands.ArgParse
     reminders_optional = conf[str(msg.author.id)]
     reminders = reminders_optional.copy() if reminders_optional is not None else []
 
-    if cmd.text.lower() == "show":
+    if cmd.text.lower() == "list":
         reminder_list_md = "Your reminders include:\n{}".format("\n".join("**{:d}.** Reminder {}"
             .format(i, format_reminder(reminder)) for i, reminder in zip(count(1), reminders)))
         if len(reminder_list_md) > 2000:
