@@ -17,6 +17,7 @@ import discord_client
 import util.db
 import util.discord
 import util.asyncio
+import util.frozen_list
 
 import plugins.commands
 import plugins.reactions
@@ -57,6 +58,8 @@ class TicketsConf(Protocol):
     tracked_roles: List[str] # List of roleids of tracked roles
     last_auditid: Optional[str] # ID of last audit event processed
     ticket_list: str # Channel id of the ticket list in the guild
+    pending_unmutes: util.frozen_list.FrozenList[int] # List of users peding VC unmute
+    pending_undeafens: util.frozen_list.FrozenList[int] # List of users peding VC undeafen
 
 conf = cast(TicketsConf, util.db.kv.Config(__name__))
 
@@ -629,7 +632,7 @@ class Ticket(RowInterface):
         Revert a ticket and set its status to HIDDEN.
         """
         result = await self.revert_action(
-            reason="Ticket #{}: Moderator {} hid the ticket.".format( self.id, actorid))
+            reason="Ticket #{}: Moderator {} hid the ticket.".format(self.id, actorid))
         if result:
             with self.batch_update():
                 self.status = TicketStatus.HIDDEN
@@ -838,7 +841,13 @@ class VCMuteTicket(Ticket):
         if member is None:
             # User is no longer in the guild, nothing to do
             return True
-        await member.edit(mute=False)
+        try:
+            await member.edit(mute=False)
+        except discord.HTTPException as exc:
+            if exc.text != "Target user is not connected to voice.":
+                raise
+            conf.pending_unmutes = conf.pending_unmutes + [self.targetid]
+            logging.debug("Pending unmute for {}".format(self.targetid))
         return True
 
 
@@ -900,7 +909,13 @@ class VCDeafenTicket(Ticket):
         if member is None:
             # User is no longer in the guild, nothing to do
             return True
-        await member.edit(deafen=False)
+        try:
+            await member.edit(deafen=False)
+        except discord.HTTPException as exc:
+            if exc.text != "Target user is not connected to voice.":
+                raise
+            conf.pending_undeafens = conf.pending_undeafens + [self.targetid]
+            logging.debug("Pending undeafen for {}".format(self.targetid))
         return True
 
 
@@ -1848,9 +1863,32 @@ async def cmd_ticket(msg: discord.Message, args: plugins.commands.ArgParser) -> 
 
 # ------------ Event handlers ------------
 
-util.discord.event("voice_state_update")(update_audit_log)
 util.discord.event("member_ban")(update_audit_log)
 util.discord.event("member_kick")(update_audit_log)
+
+@util.discord.event("voice_state_update")
+async def process_voice_state(member: discord.Member, before: discord.VoiceState, after: discord.VoiceState) -> None:
+    if before.deaf != after.deaf or before.mute != after.mute:
+        await update_audit_log()
+    if after.channel is not None:
+        if member.id in conf.pending_unmutes:
+            try:
+                await member.edit(mute=False)
+                conf.pending_unmutes = util.frozen_list.FrozenList(
+                    filter(lambda i: i != member.id, conf.pending_unmutes))
+                logging.debug("Processed unmute for {}".format(member.id))
+            except discord.HTTPException as exc:
+                if exc.text != "Target user is not connected to voice.":
+                    raise
+        if member.id in conf.pending_undeafens:
+            try:
+                await member.edit(deafen=False)
+                conf.pending_undeafens = util.frozen_list.FrozenList(
+                    filter(lambda i: i != member.id, conf.pending_undeafens))
+                logging.debug("Processed undeafen for {}".format(member.id))
+            except discord.HTTPException as exc:
+                if exc.text != "Target user is not connected to voice.":
+                    raise
 
 @util.discord.event("member_update")
 async def process_member_update(before: discord.Member, after: discord.Member) -> None:
