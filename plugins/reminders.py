@@ -88,8 +88,8 @@ async def send_reminder(user_id: str, reminder: Reminder) -> None:
     try:
         creation_time = discord.utils.snowflake_time(int(reminder["msg"])).replace(tzinfo=timezone.utc)
         user = int(user_id)
-        await channel.send(util.discord.format(
-            "{!m} asked to be reminded <t:{}:R>: {}", user, int(creation_time.timestamp()), reminder["contents"]),
+        await channel.send(util.discord.format("{!m} asked to be reminded <t:{}:R>: {}",
+                user, int(creation_time.timestamp()), reminder["contents"])[:2000],
             reference = discord.MessageReference(message_id = int(reminder["msg"]),
                 channel_id = int(reminder["channel"]), fail_if_not_exists = False),
             allowed_mentions=discord.AllowedMentions(everyone = False, users = [discord.Object(user)], roles = False))
@@ -163,7 +163,7 @@ async def remindme_command(msg: discord.Message, args: plugins.commands.ArgParse
     conf[str(msg.author.id)] = FrozenList(reminders)
     expiration_updated.release()
 
-    await msg.channel.send("Created reminder {}".format(format_reminder(reminder)),
+    await msg.channel.send("Created reminder {}".format(format_reminder(reminder))[:2000],
         allowed_mentions=discord.AllowedMentions.none())
 
 @plugins.commands.command("reminder")
@@ -198,5 +198,5 @@ async def reminder_command(msg: discord.Message, args: plugins.commands.ArgParse
         del reminders[reminder_remove - 1]
         conf[str(msg.author.id)] = FrozenList(reminders)
         expiration_updated.release()
-        await msg.channel.send("Removed reminder {}".format(format_reminder(reminder)),
+        await msg.channel.send("Removed reminder {}".format(format_reminder(reminder))[:2000],
             allowed_mentions=discord.AllowedMentions.none())
