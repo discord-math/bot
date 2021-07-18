@@ -32,6 +32,23 @@ class Digraph(Generic[T]):
         """Return a (read-only) set of edges from x."""
         return self.fwd[x] if x in self.fwd else set()
 
+    def subgraph_paths_from(self, x: T) -> Digraph[T]:
+        """
+        Return an induced subgraph of exactly those vertices that can be reached from x via a path.
+        """
+        graph: Digraph[T] = Digraph()
+        seen: Set[T] = set()
+        def dfs(x: T) -> None:
+            if x in seen:
+                return
+            seen.add(x)
+            if x in self.fwd:
+                for y in self.fwd[x]:
+                    graph.add_edge(x, y)
+                    dfs(y)
+        dfs(x)
+        return graph
+
     def subgraph_paths_to(self, x: T) -> Digraph[T]:
         """
         Return an induced subgraph of exactly those vertices that can reach x via a path.
@@ -49,10 +66,10 @@ class Digraph(Generic[T]):
         dfs(x)
         return graph
 
-    def topo_sort_fwd(self) -> Iterator[T]:
+    def topo_sort_fwd(self, sources: Set[T] = set()) -> Iterator[T]:
         """
         Iterate through vertices in such a way that whenever there is an edge from x to y, x will come up earlier in
-        iteration than y.
+        iteration than y. The sources are forcibly included in the iteration.
         """
         seen: Set[T] = set()
         def dfs(x: T) -> Iterator[T]:
@@ -67,11 +84,13 @@ class Digraph(Generic[T]):
             yield from dfs(x)
         for x in self.bck:
             yield from dfs(x)
+        for x in sources:
+            yield from dfs(x)
 
-    def topo_sort_bck(self) -> Iterator[T]:
+    def topo_sort_bck(self, sources: Set[T] = set()) -> Iterator[T]:
         """
         Iterate through vertices in such a way that whenever there is an edge from x to y, x will come up later in
-        iteration than y.
+        iteration than y. The sources are forcibly included in the iteration.
         """
         seen: Set[T] = set()
         def dfs(x: T) -> Iterator[T]:
@@ -85,6 +104,8 @@ class Digraph(Generic[T]):
         for x in self.bck:
             yield from dfs(x)
         for x in self.fwd:
+            yield from dfs(x)
+        for x in sources:
             yield from dfs(x)
 
     def del_edges_from(self, x: T) -> None:

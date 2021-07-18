@@ -35,7 +35,7 @@ async def load_command(msg: discord.Message, args: plugins.commands.ArgParser) -
     name = plugin_from_arg(args.next_arg())
     if name is None: return
     try:
-        plugins.load(name)
+        await plugins.load(name)
         await msg.channel.send("\u2705")
     except:
         await reply_exception(msg)
@@ -47,7 +47,7 @@ async def reload_command(msg: discord.Message, args: plugins.commands.ArgParser)
     name = plugin_from_arg(args.next_arg())
     if name is None: return
     try:
-        plugins.reload(name)
+        await plugins.reload(name)
         await msg.channel.send("\u2705")
     except:
         await reply_exception(msg)
@@ -58,7 +58,7 @@ async def unsafe_reload_command(msg: discord.Message, args: plugins.commands.Arg
     name = plugin_from_arg(args.next_arg())
     if name is None: return
     try:
-        plugins.unsafe_reload(name)
+        await plugins.unsafe_reload(name)
         await msg.channel.send("\u2705")
     except:
         await reply_exception(msg)
@@ -69,7 +69,7 @@ async def unload_command(msg: discord.Message, args: plugins.commands.ArgParser)
     name = plugin_from_arg(args.next_arg())
     if name is None: return
     try:
-        plugins.unload(name)
+        await plugins.unload(name)
         await msg.channel.send("\u2705")
     except:
         await reply_exception(msg)
@@ -80,7 +80,7 @@ async def unsafe_unload_command(msg: discord.Message, args: plugins.commands.Arg
     name = plugin_from_arg(args.next_arg())
     if name is None: return
     try:
-        plugins.unsafe_unload(name)
+        await plugins.unsafe_unload(name)
         await msg.channel.send("\u2705")
     except:
         await reply_exception(msg)

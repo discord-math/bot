@@ -7,6 +7,7 @@ from typing import Iterable, Protocol, cast
 import util.frozen_list
 import util.db.kv
 import plugins
+import util.asyncio
 
 class AutoloadConf(Protocol):
     autoload: util.frozen_list.FrozenList[str]
@@ -23,9 +24,11 @@ def set_autoload(autoload: Iterable[str]) -> None:
 
 logger: logging.Logger = logging.getLogger(__name__)
 
-for name in conf.autoload:
-    try:
-        # Sidestep plugin dependency tracking
-        plugins.load(name)
-    except:
-        logger.critical("Exception during autoload of {}".format(name), exc_info=True)
+async def autoload() -> None:
+    for name in conf.autoload:
+        try:
+            # Sidestep plugin dependency tracking
+            await plugins.load(name)
+        except:
+            logger.critical("Exception during autoload of {}".format(name), exc_info=True)
+util.asyncio.getloop().create_task(autoload())
