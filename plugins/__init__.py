@@ -376,7 +376,11 @@ def atexit_unload() -> None:
                     raise
             await cont_unload()
 
-    loop = asyncio.get_event_loop()
-    if loop.is_closed():
+    loop: Optional[asyncio.AbstractEventLoop]
+    try:
+        loop = asyncio.get_event_loop()
+    except:
+        loop = None
+    if loop is None or loop.is_closed():
         loop = asyncio.new_event_loop()
     loop.run_until_complete(async_atexit_unload())
