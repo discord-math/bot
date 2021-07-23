@@ -63,6 +63,10 @@ The bot requires:
  - Python 3.9+ (!)
  - PostgreSQL 10+
  - psycopg2
+ - asyncpg
+ - sqlalchemy
+ - sqlalchemy-orm
+ - urrllib
  - discord.py
  - pyjq
 
