@@ -4,132 +4,33 @@ piece of JSON. If a module needs more efficient or structured storage it should
 probably have its own DB handling code.
 """
 
-import psycopg2.extensions
+from __future__ import annotations
+import asyncio
+import asyncpg
 import json
 import weakref
-from typing import Optional, Dict, Iterator, Tuple, Any
-import util.db as db
+import contextlib
+from typing import Optional, Dict, Iterator, Tuple, Set, Sequence, Union, Any, cast
+import util.asyncio
+import util.db as util_db
 import util.frozen_list
 import util.frozen_dict
 
-@db.init_for(__name__)
-def init() -> str:
-    return """
-        CREATE TABLE kv
-            ( namespace TEXT NOT NULL
-            , key TEXT NOT NULL
-            , value TEXT NOT NULL
-            , PRIMARY KEY(namespace, key) );
-        CREATE INDEX kv_namespace_index
-            ON kv USING BTREE(namespace);
-        """
+schema_initialized = False
 
-def cur_get_value(cur: psycopg2.extensions.cursor, namespace: str, key: str
-    ) -> Optional[str]:
-    cur.execute("""
-        SELECT value FROM kv WHERE namespace = %(ns)s AND key = %(key)s
-        """, {"ns": namespace, "key": key})
-    value = cur.fetchone()
-    return value[0] if value else None
-
-def cur_get_key_values(cur: psycopg2.extensions.cursor, namespace: str
-    ) -> Iterator[Tuple[str, str]]:
-    cur.execute("""
-        SELECT key, value FROM kv WHERE namespace = %(ns)s
-        """, {"ns": namespace})
-    for key, value in cur:
-        yield key, value
-
-def cur_get_namespaces(cur: psycopg2.extensions.cursor) -> Iterator[str]:
-    cur.execute("""
-        SELECT DISTINCT namespace FROM kv
-        """)
-    for ns, in cur:
-        yield ns
-
-def cur_set_value(cur: psycopg2.extensions.cursor, namespace: str, key: str,
-    value: Optional[str], log_value: bool = True) -> None:
-    if value == None:
-        cur.execute("""
-            DELETE FROM kv
-            WHERE namespace = %(ns)s AND key = %(key)s
-            """, {"ns": namespace, "key": key})
-    else:
-        cur.execute("""
-            INSERT INTO kv (namespace, key, value)
-            VALUES (%(ns)s, %(key)s, %(value)s)
-            ON CONFLICT (namespace, key) DO UPDATE SET value = EXCLUDED.value
-            """, {"ns": namespace, "key": key, "value": value},
-            log_data=True if log_value else {"ns", "key"})
-
-def cur_set_default(cur: psycopg2.extensions.cursor, namespace: str, key: str,
-    value: Optional[str], log_value: bool = True) -> None:
-    if value is not None:
-        cur.execute("""
-            INSERT INTO kv (namespace, key, value)
-            VALUES (%(ns)s, %(key)s, %(value)s)
-            ON CONFLICT (namespace, key) DO NOTHING
-            """, {"ns": namespace, "key": key, "value": value},
-            log_data=True if log_value else {"ns", "key"})
-
-def cur_set_values(cur: psycopg2.extensions.cursor, namespace: str,
-    dict: Dict[str, Optional[str]], log_value: bool = False) -> None:
-    removals = [{"ns": namespace, "key": key}
-        for key, value in dict.items() if value is None]
-    additions = [{"ns": namespace, "key": key, "value": value}
-        for key, value in dict.items() if value is not None]
-    if removals:
-        cur.executemany("""
-            DELETE FROM kv
-            WHERE namespace = %(ns)s AND key = %(key)s
-            """, removals, log_data=True)
-    if additions:
-        cur.executemany("""
-            INSERT INTO kv (namespace, key, value)
-            VALUES (%(ns)s, %(key)s, %(value)s)
-            ON CONFLICT (namespace, key) DO UPDATE SET value = EXCLUDED.value
-            """, additions, log_data=True if log_value else {"ns", "key"})
-
-def cur_set_defaults(cur: psycopg2.extensions.cursor, namespace: str,
-    dict: Dict[str, Optional[str]], log_value: bool = False) -> None:
-    additions = [{"ns": namespace, "key": key, "value": value}
-        for key, value in dict.items() if value is not None]
-    if additions:
-        cur.executemany("""
-            INSERT INTO kv (namespace, key, value)
-            VALUES (%(ns)s, %(key)s, %(value)s)
-            ON CONFLICT (namespace, key) DO NOTHING
-            """, additions, log_data=True if log_value else {"ns", "key"})
-
-def get_value(namespace: str, key: str) -> Optional[str]:
-    return cur_get_value(db.connection().cursor(), namespace, key)
-
-def get_key_values(namespace: str) -> Iterator[Tuple[str, str]]:
-    return cur_get_key_values(db.connection().cursor(), namespace)
-
-def get_namespaces() -> Iterator[str]:
-    return cur_get_namespaces(db.connection().cursor())
-
-def set_value(namespace: str, key: str, value: Optional[str],
-    log_value: bool = True) -> None:
-    with db.connection() as conn:
-        cur_set_value(conn.cursor(), namespace, key, value, log_value=log_value)
-
-def set_default(namespace: str, key: str, value: Optional[str],
-    log_value: bool = True) -> None:
-    with db.connection() as conn:
-        cur_set_default(conn.cursor(), namespace, key, value,
-            log_value=log_value)
-
-def set_values(namespace: str, dict: Dict[str, Optional[str]],
-    log_value: bool = True) -> None:
-    with db.connection() as conn:
-        cur_set_values(conn.cursor(), namespace, dict, log_value=log_value)
-
-def set_defaults(namespace: str, dict: Dict[str, Optional[str]],
-    log_value: bool = True) -> None:
-    with db.connection() as conn:
-        cur_set_defaults(conn.cursor(), namespace, dict, log_value=log_value)
+async def init_schema() -> None:
+    global schema_initialized
+    if not schema_initialized:
+        await util_db.init_async_for(__name__, """
+            CREATE TABLE kv
+                ( namespace TEXT NOT NULL
+                , key TEXT ARRAY NOT NULL
+                , value TEXT NOT NULL
+                , PRIMARY KEY(namespace, key) );
+            CREATE INDEX kv_namespace_index
+                ON kv USING BTREE(namespace);
+            """)
+        schema_initialized = True
 
 def json_freeze(value: Optional[Any]) -> Optional[Any]:
     if isinstance(value, list):
@@ -151,101 +52,167 @@ class ThawingJSONEncoder(json.JSONEncoder):
         else:
             return super().default(obj)
 
-def json_encode(value: Optional[Any]) -> Optional[str]:
-    return json.dumps(value,
-        cls=ThawingJSONEncoder) if value is not None else None
+def json_encode(value: Any) -> Optional[str]:
+    return json.dumps(value, cls=ThawingJSONEncoder) if value is not None else None
 
-def json_decode(text: Optional[str]) -> Optional[Any]:
+def json_decode(text: Optional[str]) -> Any:
     return json_freeze(json.loads(text)) if text is not None else None
 
-class Proxy:
-    """
-    This object encapsulates access to the key-value store for a fixed module.
-    No efforts are made to cache anything: every __getitem__/__getattr__ and
-    __setitem__/__setattr__ and __iter__ makes a respective DB query.
-    """
-    __slots__ = "_namespace", "_log_value"
+@contextlib.asynccontextmanager
+async def connect() -> asyncpg.Connection:
+    await init_schema()
+    conn = await util_db.connection_async()
+    try:
+        yield conn
+    finally:
+        await conn.close()
 
-    def __init__(self, namespace: str, log_value: bool = False):
-        self._namespace = namespace
-        self._log_value = log_value
+async def get_raw_value(namespace: Sequence[str], key: Sequence[str]) -> Optional[str]:
+    async with connect() as conn:
+        val = await conn.fetchval("""
+            SELECT value FROM kv WHERE namespace = $1 AND key = $2
+            """, namespace, tuple(key))
+        return cast(Optional[str], val)
 
-    def __iter__(self) -> Iterator[str]:
-        for key, _ in get_key_values(self._namespace):
-            yield key
+async def get_raw_key_values(namespace: str) -> Dict[Tuple[str, ...], str]:
+    async with connect() as conn:
+        rows = await conn.fetch("""
+            SELECT key, value FROM kv WHERE namespace = $1
+            """, namespace)
+        return {tuple(row["key"]): row["value"] for row in rows}
 
-    def __getitem__(self, key: str) -> Optional[Any]:
-        return json_decode(get_value(self._namespace, key))
+async def get_raw_glob(namespace: str, length: int, parts: Dict[int, str]) -> Dict[Tuple[str, ...], str]:
+    async with connect() as conn:
+        arg = 2
+        clauses = []
+        for k in parts:
+            arg += 1
+            clauses.append("key[{}] = ${}".format(k, arg))
+        clause = " AND ".join(clauses) if clauses else "TRUE"
+        rows = await conn.fetch("""
+            SELECT key, value FROM kv
+            WHERE namespace = $1 AND ARRAY_LENGTH(key, 1) = $2 AND ({})
+            """.format(clause), namespace, length, *parts.values())
+        return {tuple(row["key"]): row["value"] for row in rows}
 
-    def __setitem__(self, key: str, value: Optional[Any]) -> None:
-        set_value(self._namespace, key, json_encode(value),
-            log_value=self._log_value)
+async def get_namespaces() -> Sequence[str]:
+    async with connect() as conn:
+        rows = await conn.fetch("""
+            SELECT DISTINCT namespace FROM kv
+            """)
+        return [row["namespace"] for row in rows]
 
-    def __getattr__(self, key: str) -> Optional[Any]:
-        if key.startswith("_"):
-            return None
-        return json_decode(get_value(self._namespace, key))
+async def set_raw_value(namespace: str, key: Sequence[str], value: Optional[str], log_value: bool = True) -> None:
+    async with connect() as conn:
+        if value is None:
+            await conn.execute("""
+                DELETE FROM kv
+                WHERE namespace = $1 AND key = $2
+                """, namespace, tuple(key))
+        else:
+            await conn.execute("""
+                INSERT INTO kv (namespace, key, value)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (namespace, key) DO UPDATE SET value = EXCLUDED.value
+                """, namespace, tuple(key), value, log_data=True if log_value else {1, 2})
 
-    def __setattr__(self, key: str, value: Optional[Any]) -> None:
-        if key.startswith("_"):
-            return super().__setattr__(key, value)
-        set_value(self._namespace, key, json_encode(value),
-            log_value=self._log_value)
+async def set_raw_values(namespace: str, dict: Dict[Sequence[str], Optional[str]], log_value: bool = False) -> None:
+    removals = [(namespace, tuple(key)) for key, value in dict.items() if value is None]
+    updates = [(namespace, tuple(key), value) for key, value in dict.items() if value is not None]
+    async with connect() as conn:
+        async with conn.transaction():
+            if removals:
+                await conn.executemany("""
+                    DELETE FROM kv
+                    WHERE namespace = $1 AND key = $2
+                    """, removals)
+            if updates:
+                await conn.executemany("""
+                    INSERT INTO kv (namespace, key, value)
+                    VALUES ($1, $2, $3)
+                    ON CONFLICT (namespace, key) DO UPDATE SET value = EXCLUDED.value
+                    """, updates, log_data=True if log_value else {1, 2})
 
-class ConfigStore(Dict[str, str]):
-    __slots__ = "__weakref__"
+class ConfigStore(Dict[Tuple[str, ...], str]):
+    __slots__ = ("__weakref__", "ready")
+    ready: asyncio.Event
+
+    def __init__(self, *args: Any, **kwargs: Any):
+        super().__init__(*args, **kwargs)
+        self.ready = asyncio.Event()
 
 config_stores: weakref.WeakValueDictionary[str, ConfigStore]
 config_stores = weakref.WeakValueDictionary()
 
+KeyType = Union[str, int, Sequence[Union[str, int]]]
+
+def encode_key(key: KeyType) -> Tuple[str, ...]:
+    if isinstance(key, (str, int)):
+        key = (key,)
+    return tuple(str(k) for k in key)
+
 class Config:
     """
-    This object encapsulates access to the key-value store for a fixed module.
-    Upon construction this makes a DB query fetching all the data. __iter__ and
-    __getitem__/__getattr__ will read from this in-memory copy,
-    __setitem__/__setattr__ will update the in-memory copy but also immediately
-    make a DB query to store the change.
+    This object encapsulates access to the key-value store for a fixed module. Upon construction we load all the pairs
+    from the DB into memory. The in-memory copy is shared across Config objects for the same module.
+    __iter__ and __getitem__/__getattr__ will read from this in-memory copy.
+    __setitem__/__setattr__ will update the in-memory copy. awaiting will commit the keys that were modified by this
+    Config object to the DB (the values may have since been overwritten by other Config objects)
     """
-    __slots__ = "_namespace", "_log_value", "_config"
+    __slots__ = "_namespace", "_log_value", "_store", "_dirty"
     _namespace: str
     _log_value: bool
-    _config: ConfigStore
+    _store: ConfigStore
+    _dirty: Set[Tuple[str, ...]]
 
-    def __init__(self, namespace: str, log_value: bool = False):
+    def __init__(self, namespace: str, log_value: bool, store: ConfigStore):
         self._namespace = namespace
         self._log_value = log_value
+        self._store = store
+        self._dirty = set()
 
-        config = config_stores.get(namespace)
-        if config is None:
-            config = ConfigStore(get_key_values(namespace))
-            config_stores[namespace] = config
-        self._config = config
+    @classmethod
+    async def load(cls, namespace: str, log_value: bool = False) -> Config:
+        store = config_stores.get(namespace)
+        if store is None:
+            store = ConfigStore()
+            config_stores[namespace] = store
+            store.update(await get_raw_key_values(namespace))
+            store.ready.set()
+        await store.ready.wait()
+        return cls(namespace, log_value, store)
 
-    def __iter__(self) -> Iterator[str]:
-        return self._config.__iter__()
+    def __iter__(self) -> Iterator[Tuple[str, ...]]:
+        return self._store.__iter__()
 
-    def __getitem__(self, key: str) -> Optional[Any]:
-        return json_decode(self._config.get(key))
+    def __getitem__(self, key: KeyType) -> Any:
+        return json_decode(self._store.get(encode_key(key)))
 
-    def __setitem__(self, key: str, value: Optional[Any]) -> None:
+    def __setitem__(self, key: KeyType, value: Any) -> None:
+        ek = encode_key(key)
         ev = json_encode(value)
         if ev is None:
-            del self._config[key]
+            del self._store[ek]
         else:
-            self._config[key] = ev
-        set_value(self._namespace, key, ev, log_value=self._log_value)
+            self._store[ek] = ev
+        self._dirty.add(ek)
 
-    def __getattr__(self, key: str) -> Optional[Any]:
+    @util.asyncio.__await__
+    async def __await__(self) -> None:
+        dirty = self._dirty
+        self._dirty = set()
+        try:
+            await set_raw_values(self._namespace, {key: self._store.get(key) for key in dirty})
+        except:
+            self._dirty.update(dirty)
+            raise
+
+    def __getattr__(self, key: str) -> Any:
         if key.startswith("_"):
             return None
-        return json_decode(self._config.get(key))
+        return self[key]
 
-    def __setattr__(self, key: str, value: Optional[Any]) -> None:
+    def __setattr__(self, key: str, value: Any) -> None:
         if key.startswith("_"):
             return super().__setattr__(key, value)
-        ev = json_encode(value)
-        if ev is None:
-            del self._config[key]
-        else:
-            self._config[key] = ev
-        set_value(self._namespace, key, ev, log_value=self._log_value)
+        self[key] = value
