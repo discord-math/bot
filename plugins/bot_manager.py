@@ -108,12 +108,12 @@ async def autoload_command(msg: discord.Message, args: plugins.commands.ArgParse
     if cmd.text.lower() == "add":
         name = plugin_from_arg(args.next_arg())
         if name is None: return
-        plugins.autoload.set_autoload(plugins.autoload.get_autoload() + [name])
+        plugins.autoload.set_autoload(name, True)
         await msg.channel.send("\u2705")
     elif cmd.text.lower() == "remove":
         name = plugin_from_arg(args.next_arg())
         if name is None: return
-        plugins.autoload.set_autoload(list(filter(lambda n: n != name, plugins.autoload.get_autoload())))
+        plugins.autoload.set_autoload(name, False)
         await msg.channel.send("\u2705")
 
 @plugins.commands.command("plugins")

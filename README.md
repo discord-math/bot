@@ -31,10 +31,8 @@ These are the plugins provide commands or otherwise user-visible functionality:
     - `config <namespace> <key>` -- show the value associated to a key.
     - `config --delete <namespace> <key>` -- delete the value associated to a
       key
-    - `config <namespace> <key> <jq expression>` -- set a value. The values are
-      JSON objects. The provided argument is a JQ expression, into which the
-      old value will be fed to produce the new value. If unsure, verbatim JSON
-      objects can be supplied as well.
+    - `config <namespace> <key> <value>` -- set a value. The values are
+      JSON objects.
     - ``sql `<sql code>` `` -- run an arbitrary SQL expression. If any
       modification is made, we prompt to commit/rollback.
   - `discord_log`: log errors to a discord channel. Configure with
@@ -68,7 +66,6 @@ The bot requires:
  - sqlalchemy-orm
  - urrllib
  - discord.py
- - pyjq
 
 You will need to create a static config file called `bot.conf` in the working
 directory of the bot, see `bot.conf.example`.
@@ -79,11 +76,12 @@ run the following (adjust `PYTHONPATH` so that the necessary modules are in
 scope):
 ```sh
 python -m util.db.kv plugins.commands prefix '"."'
-python -m util.db.kv plugins.autoload autoload '["plugins.discord_log","plugins.bot_manager"]'
+python -m util.db.kv plugins.autoload autoload,plugins.discord_log 'true'
+python -m util.db.kv plugins.autoload autoload,plugins.bot_manager 'true'
 # Create the shell and admin roles.
-# Substitute your own discord user id. Make sure it's double quoted.
-python -m util.db.kv plugins.privileges shell '{"users":["207092805644845057"]}'
-python -m util.db.kv plugins.privileges admin '{"users":["207092805644845057"]}'
+# Substitute your own discord user id.
+python -m util.db.kv plugins.privileges shell,users '[207092805644845057]'
+python -m util.db.kv plugins.privileges admin,users '[207092805644845057]'
 ```
 Now you can run the bot by executing `main.py`.
 
