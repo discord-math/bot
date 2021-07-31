@@ -1,32 +1,53 @@
 import logging
-from typing import List, Dict, Optional, Union, Iterable, Callable, Awaitable, Literal, Protocol, cast
+from typing import List, Optional, Union, Tuple, Iterator, Literal, Callable, Awaitable, Protocol, Any, overload, cast
 import discord
 import discord.utils
 import util.db.kv
 from util.frozen_dict import FrozenDict
 from util.frozen_list import FrozenList
+import discord_client
 import util.discord
 import plugins.commands
 import plugins.privileges
 
-ADict = Union[Dict[str, List[str]], FrozenDict[str, FrozenList[str]]]
-
-class LocationsConf(Protocol):
+class LocationsConf(Protocol, Awaitable[None]):
+    @overload
     def __getitem__(self, priv: str) -> Optional[FrozenDict[str, FrozenList[str]]]: ...
-    def __setitem__(self, priv: str, p: Optional[ADict]) -> None: ...
+    @overload
+    def __getitem__(self, key: Tuple[str, Literal["channels", "categories"]]) -> Optional[FrozenList[int]]: ...
+    @overload
+    def __setitem__(self, key: Tuple[str, ...], value: None) -> None: ...
+    @overload
+    def __setitem__(self, key: Tuple[str, Literal["channels", "categories"]],
+        value: Optional[Union[List[int], FrozenList[int]]]) -> None: ...
+    def __iter__(self) -> Iterator[Tuple[str, ...]]: ...
 
-conf = cast(LocationsConf, util.db.kv.Config(__name__))
+conf: LocationsConf
+
 logger: logging.Logger = logging.getLogger(__name__)
 
+@plugins.init_async
+async def init() -> None:
+    global conf
+    conf = cast(LocationsConf, await util.db.kv.load(__name__))
+
+    locs = {k[0] for k in conf if len(k) == 1}
+    for loc in locs:
+        obj = conf[loc]
+        assert obj
+        conf[loc, "channels"] = [int(cid) for cid in obj.get("channels", ())]
+        conf[loc, "categories"] = [int(cid) for cid in obj.get("categories", ())]
+    for loc in locs:
+        conf[loc,] = None
+    await conf
+
 def in_location(loc: str, channel: discord.abc.GuildChannel) -> bool:
-    obj = conf[loc]
-    if obj and "channels" in obj:
-        if str(channel.id) in obj["channels"]:
-            return True
-    if obj and "categories" in obj:
-        if channel.category_id != None:
-            if str(channel.category_id) in obj["categories"]:
-                return True
+    chans = conf[loc, "channels"]
+    cats = conf[loc, "categories"]
+    if chans and channel.id in chans:
+        return True
+    if cats and channel.category_id is not None and channel.category_id in cats:
+        return True
     return False
 
 def location(name: str) -> Callable[[Callable[[discord.Message, plugins.commands.ArgParser], Awaitable[None]]],
@@ -64,83 +85,91 @@ def cat_id_from_arg(guild: Optional[discord.Guild], arg: plugins.commands.Arg) -
     return cat.id
 
 async def loc_new(msg: discord.Message, loc: str) -> None:
-    if conf[loc] is not None:
+    if conf[loc, "channels"] is not None or conf[loc, "categories"] is not None:
         await msg.channel.send(util.discord.format("Location {!i} already exists", loc))
         return
-    conf[loc] = {"channels": [], "categories": []}
+    conf[loc, "channels"] = []
+    conf[loc, "categories"] = []
+    await conf
     await msg.channel.send(util.discord.format("Created location {!i}", loc))
 
 async def loc_delete(msg: discord.Message, loc: str) -> None:
-    if conf[loc] == None:
+    if conf[loc, "channels"] is None or conf[loc, "categories"] is None:
         await msg.channel.send(util.discord.format("Location {!i} does not exist", loc))
         return
-    conf[loc] = None
+    conf[loc, "channels"] = None
+    conf[loc, "categories"] = None
+    await conf
     await msg.channel.send(util.discord.format("Removed location {!i}", loc))
 
 async def loc_show(msg: discord.Message, loc: str) -> None:
-    obj = conf[loc]
-    if obj is None:
+    chans = conf[loc, "channels"]
+    cats = conf[loc, "categories"]
+    if chans is None and cats is None:
         await msg.channel.send(util.discord.format("Location {!i} does not exist", loc))
         return
     output = []
-    if "channels" in obj:
-        for id in map(int, obj["channels"]):
-            chan = discord.utils.find(lambda c: c.id == id, msg.guild.channels if msg.guild else ())
-            if chan is not None:
-                ctext = util.discord.format("{!c}({!i} {!i})", chan, chan.name, chan.id)
-            else:
-                ctext = util.discord.format("{!c}({!i})", id, id)
-            output.append("channel {}".format(ctext))
-    if "categories" in obj:
-        for id in map(int, obj["categories"]):
-            cat = discord.utils.find(lambda r: r.id == id, msg.guild.categories if msg.guild else ())
-            if cat is not None:
-                ctext = util.discord.format("{!c}({!i} {!i})", cat, cat.name, cat.id)
-            else:
-                ctext = util.discord.format("{!c}({!i})", id, id)
-            output.append("category {}".format(ctext))
+    for id in chans or ():
+        chan = discord_client.client.get_channel(id)
+        if isinstance(chan, discord.abc.GuildChannel):
+            ctext = util.discord.format("{!c}({!i} {!i})", chan, chan.name, chan.id)
+        else:
+            ctext = util.discord.format("{!c}({!i})", id, id)
+        output.append("channel {}".format(ctext))
+    for id in cats or ():
+        cat = discord_client.client.get_channel(id)
+        if isinstance(cat, discord.CategoryChannel):
+            ctext = util.discord.format("{!c}({!i} {!i})", cat, cat.name, cat.id)
+        else:
+            ctext = util.discord.format("{!c}({!i})", id, id)
+        output.append("category {}".format(ctext))
     await msg.channel.send(util.discord.format("Location {!i} includes: {}", loc, "; ".join(output)))
 
-async def loc_add_chan(msg: discord.Message, loc: str, obj: FrozenDict[str, FrozenList[str]], chan_id: int) -> None:
-    if str(chan_id) in obj.get("channels", []):
+async def loc_add_chan(msg: discord.Message, loc: str, chan_id: int) -> None:
+    chans = conf[loc, "channels"] or FrozenList()
+    if chan_id in chans:
         await msg.channel.send(util.discord.format("Channel {!c} is already in location {!i}", chan_id, loc))
         return
 
-    chans = obj.get("channels") or FrozenList()
-    chans += [str(chan_id)]
-    conf[loc] = obj | {"channels": chans}
+    conf[loc, "channels"] = chans + [chan_id]
+    await conf
 
     await msg.channel.send(util.discord.format("Added channel {!c} to location {!i}", chan_id, loc))
 
-async def loc_add_cat(msg: discord.Message, loc: str, obj: FrozenDict[str, FrozenList[str]], cat_id: int) -> None:
-    if str(cat_id) in obj.get("categories", []):
+async def loc_add_cat(msg: discord.Message, loc: str, cat_id: int) -> None:
+    cats = conf[loc, "categories"] or FrozenList()
+    if cat_id in cats:
         await msg.channel.send(util.discord.format("Category {!c} is already in location {!i}", cat_id, loc))
         return
 
-    cats = obj.get("categories") or FrozenList()
-    conf[loc] = obj | {"categories": cats + [str(cat_id)]}
+    conf[loc, "categories"] = cats + [cat_id]
+    await conf
 
     await msg.channel.send(util.discord.format("Added category {!c} to location {!i}", cat_id, loc))
 
-async def loc_remove_chan(msg: discord.Message, loc: str, obj: FrozenDict[str, FrozenList[str]], chan_id: int) -> None:
-    if str(chan_id) not in obj.get("channels", []):
+async def loc_remove_chan(msg: discord.Message, loc: str, chan_id: int) -> None:
+    chans = conf[loc, "channels"] or FrozenList()
+    if chan_id not in chans:
         await msg.channel.send(util.discord.format("Channel {!c} is already not in location {!i}", chan_id, loc))
         return
 
-    chans = obj.get("channels") or FrozenList()
-    chans = FrozenList(filter(lambda i: i != str(chan_id), chans))
-    conf[loc] = obj | {"channels": chans}
+    mchans = chans.copy()
+    mchans.remove(chan_id)
+    conf[loc, "channels"] = mchans
+    await conf
 
     await msg.channel.send(util.discord.format("Removed channel {!c} from location {!i}", chan_id, loc))
 
-async def loc_remove_cat(msg: discord.Message, loc: str, obj: FrozenDict[str, FrozenList[str]], cat_id: int) -> None:
-    if str(cat_id) not in obj.get("categories", []):
+async def loc_remove_cat(msg: discord.Message, loc: str, cat_id: int) -> None:
+    cats = conf[loc, "categories"] or FrozenList()
+    if cat_id in cats:
         await msg.channel.send(util.discord.format("Category {!c} is already not in location {!i}", cat_id, loc))
         return
 
-    cats = obj.get("categories") or FrozenList()
-    cats = FrozenList(filter(lambda i: i != str(cat_id), cats))
-    conf[loc] = obj | {"categories": cats}
+    mcats = cats.copy()
+    mcats.remove(cat_id)
+    conf[loc, "categories"] = mcats
+    await conf
 
     await msg.channel.send(util.discord.format("Removed category {!c} from location {!i}", cat_id, loc))
 
@@ -168,8 +197,7 @@ async def location_command(msg: discord.Message, args: plugins.commands.ArgParse
     elif cmd.text.lower() == "add":
         loc = args.next_arg()
         if not isinstance(loc, plugins.commands.StringArg): return
-        obj = conf[loc.text]
-        if obj is None:
+        if conf[loc.text, "channels"] is None and conf[loc.text, "categories"] is None:
             await msg.channel.send(util.discord.format("Location {!i} does not exist", loc.text))
             return
         cmd = args.next_arg()
@@ -179,20 +207,19 @@ async def location_command(msg: discord.Message, args: plugins.commands.ArgParse
             if arg is None: return
             chan_id = chan_id_from_arg(msg.guild, arg)
             if chan_id is None: return
-            await loc_add_chan(msg, loc.text, obj, chan_id)
+            await loc_add_chan(msg, loc.text, chan_id)
 
         elif cmd.text.lower() == "category":
             arg = args.next_arg()
             if arg is None: return
             cat_id = cat_id_from_arg(msg.guild, arg)
             if cat_id is None: return
-            await loc_add_cat(msg, loc.text, obj, cat_id)
+            await loc_add_cat(msg, loc.text, cat_id)
 
     elif cmd.text.lower() == "remove":
         loc = args.next_arg()
         if not isinstance(loc, plugins.commands.StringArg): return
-        obj = conf[loc.text]
-        if obj is None:
+        if conf[loc.text, "channels"] is None and conf[loc.text, "categories"] is None:
             await msg.channel.send(util.discord.format("Location {!i} does not exist", loc.text))
             return
         cmd = args.next_arg()
@@ -202,11 +229,11 @@ async def location_command(msg: discord.Message, args: plugins.commands.ArgParse
             if arg is None: return
             chan_id = chan_id_from_arg(msg.guild, arg)
             if chan_id is None: return
-            await loc_remove_chan(msg, loc.text, obj, chan_id)
+            await loc_remove_chan(msg, loc.text, chan_id)
 
         elif cmd.text.lower() == "category":
             arg = args.next_arg()
             if arg is None: return
             cat_id = cat_id_from_arg(msg.guild, arg)
             if cat_id is None: return
-            await loc_remove_cat(msg, loc.text, obj, cat_id)
+            await loc_remove_cat(msg, loc.text, cat_id)

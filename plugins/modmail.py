@@ -42,13 +42,16 @@ class ModmailConf(Protocol):
     role: str
     thread_expiry: int
 
-conf = cast(ModmailConf, util.db.kv.Config(__name__))
+conf: ModmailConf
 logger: logging.Logger = logging.getLogger(__name__)
 
 message_map: Dict[int, ModmailMessage] = {}
 
 @plugins.init_async
 async def init() -> None:
+    global conf
+    conf = cast(ModmailConf, await util.db.kv.load(__name__))
+
     await util.db.init_async(r"""
         CREATE SCHEMA modmail;"""
         + str(sqlalchemy.schema.CreateTable(ModmailMessage.__table__)) + ";"

@@ -1,11 +1,21 @@
 import asyncio.subprocess
 import discord
+from typing import Optional, Protocol, cast
+import plugins
 import plugins.commands
 import plugins.privileges
 import util.discord
 import util.db.kv
 
-conf: util.db.kv.Config = util.db.kv.Config(__name__)
+class UpdateConf(Protocol):
+    def __getitem__(self, key: str) -> Optional[str]: ...
+
+conf: UpdateConf
+
+@plugins.init_async
+async def init() -> None:
+    global conf
+    conf = cast(UpdateConf, await util.db.kv.load(__name__))
 
 @plugins.commands.command("update")
 @plugins.privileges.priv("admin")

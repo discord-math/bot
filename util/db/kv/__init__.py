@@ -171,17 +171,6 @@ class Config:
         self._store = store
         self._dirty = set()
 
-    @classmethod
-    async def load(cls, namespace: str, log_value: bool = False) -> Config:
-        store = config_stores.get(namespace)
-        if store is None:
-            store = ConfigStore()
-            config_stores[namespace] = store
-            store.update(await get_raw_key_values(namespace))
-            store.ready.set()
-        await store.ready.wait()
-        return cls(namespace, log_value, store)
-
     def __iter__(self) -> Iterator[Tuple[str, ...]]:
         return self._store.__iter__()
 
@@ -216,3 +205,13 @@ class Config:
         if key.startswith("_"):
             return super().__setattr__(key, value)
         self[key] = value
+
+async def load(namespace: str, log_value: bool = False) -> Config:
+    store = config_stores.get(namespace)
+    if store is None:
+        store = ConfigStore()
+        config_stores[namespace] = store
+        store.update(await get_raw_key_values(namespace))
+        store.ready.set()
+    await store.ready.wait()
+    return Config(namespace, log_value, store)

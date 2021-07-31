@@ -21,7 +21,7 @@ conf: AutoloadConf
 @plugins.init_async
 async def init() -> None:
     global conf
-    conf = cast(AutoloadConf, await util.db.kv.Config.load(__name__))
+    conf = cast(AutoloadConf, await util.db.kv.load(__name__))
 
     if conf.autoload is not None:
         for plugin in conf.autoload:

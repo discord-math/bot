@@ -1,7 +1,8 @@
 import asyncio
 import discord
-from typing import Optional, Protocol
+from typing import Optional, Protocol, cast
 import discord_client
+import plugins
 import util.discord
 import util.db.kv
 import util.asyncio
@@ -10,7 +11,12 @@ class KeepvanityConf(Protocol):
     guild: str
     vanity: Optional[str]
 
-conf = util.db.kv.Config(__name__)
+conf: KeepvanityConf
+
+@plugins.init_async
+async def init() -> None:
+    global conf
+    conf = cast(KeepvanityConf, util.db.kv.load(__name__))
 
 async def check_guild_vanity(guild: discord.Guild) -> None:
     try:
@@ -37,7 +43,7 @@ async def check_after_connect() -> None:
     for guild in discord_client.client.guilds:
         await check_guild_vanity(guild)
 
-@util.asyncio.init_async
+@plugins.init_async
 async def init_check_task() -> None:
     for guild in discord_client.client.guilds:
         await check_guild_vanity(guild)

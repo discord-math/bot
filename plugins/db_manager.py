@@ -29,7 +29,7 @@ async def config_command(msg: discord.Message, args: plugins.commands.ArgParser)
         if not isinstance(nsp, plugins.commands.StringArg): return
         if not isinstance(key, plugins.commands.StringArg): return
 
-        conf = await util.db.kv.Config.load(nsp.text)
+        conf = await util.db.kv.load(nsp.text)
         conf[key.text.split(",")] = None
 
         await msg.channel.send("\u2705")
@@ -38,7 +38,7 @@ async def config_command(msg: discord.Message, args: plugins.commands.ArgParser)
     nsp = arg
     key = args.next_arg()
     if key is None:
-        conf = await util.db.kv.Config.load(nsp.text)
+        conf = await util.db.kv.load(nsp.text)
         await msg.channel.send("; ".join(",".join(util.discord.format("{!i}", k) for k in key) for key in conf))
         return
 
@@ -46,13 +46,13 @@ async def config_command(msg: discord.Message, args: plugins.commands.ArgParser)
 
     value = args.next_arg()
     if value is None:
-        conf = await util.db.kv.Config.load(nsp.text)
+        conf = await util.db.kv.load(nsp.text)
         await msg.channel.send(util.discord.format("{!i}", util.db.kv.json_encode(conf[key.text.split(",")])))
         return
 
     if not isinstance(value, plugins.commands.StringArg): return
 
-    conf = await util.db.kv.Config.load(nsp.text)
+    conf = await util.db.kv.load(nsp.text)
     conf[key.text.split(",")] = json.loads(value.text)
     await conf
     await msg.channel.send("\u2705")

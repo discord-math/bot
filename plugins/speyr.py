@@ -1,6 +1,7 @@
 import re
 import discord
 from typing import Optional, Protocol, cast
+import plugins
 import util.discord
 import util.db.kv
 
@@ -11,7 +12,12 @@ class SpeyrConf(Protocol):
     rule_15m: int
     def __getitem__(self, key: str) -> str: ...
 
-conf = cast(SpeyrConf, util.db.kv.Config(__name__))
+conf: SpeyrConf
+
+@plugins.init_async
+async def init() -> None:
+    global conf
+    conf = cast(SpeyrConf, await util.db.kv.load(__name__))
 
 def rule_embed(n: int) -> Optional[discord.Embed]:
     if conf[str(n)] != None:

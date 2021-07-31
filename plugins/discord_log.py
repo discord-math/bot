@@ -14,7 +14,7 @@ import util.asyncio
 class LoggingConf(Protocol):
     channel: Optional[str]
 
-conf = cast(LoggingConf, util.db.kv.Config(__name__))
+conf: LoggingConf
 logger: logging.Logger = logging.getLogger(__name__)
 
 class DiscordHandler(logging.Handler):
@@ -75,10 +75,15 @@ class DiscordHandler(logging.Handler):
                 self.queue.append(text)
                 util.asyncio.run_async(self.log_discord, chan_id, client)
 
-handler: logging.Handler = DiscordHandler(logging.ERROR)
-handler.setFormatter(logging.Formatter("%(name)s %(levelname)s: %(message)s"))
-logging.getLogger().addHandler(handler)
+@plugins.init_async
+async def init() -> None:
+    global conf
+    conf = cast(LoggingConf, await util.db.kv.load(__name__))
 
-@plugins.finalizer
-def finalizer() -> None:
-    logging.getLogger().removeHandler(handler)
+    handler: logging.Handler = DiscordHandler(logging.ERROR)
+    handler.setFormatter(logging.Formatter("%(name)s %(levelname)s: %(message)s"))
+    logging.getLogger().addHandler(handler)
+
+    @plugins.finalizer
+    def finalizer() -> None:
+        logging.getLogger().removeHandler(handler)

@@ -1,5 +1,5 @@
 import logging
-from typing import List, Dict, Optional, Union, Tuple, Iterator, Callable, Awaitable, Literal, Protocol, Any, overload, cast
+from typing import List, Optional, Union, Tuple, Iterator, Literal, Callable, Awaitable, Protocol, Any, overload, cast
 import discord
 import discord.utils
 import util.db.kv
@@ -13,9 +13,12 @@ class PrivilegesConf(Protocol, Awaitable[None]):
     @overload
     def __getitem__(self, priv: str) -> Optional[FrozenDict[str, FrozenList[str]]]: ...
     @overload
-    def __getitem__(self, key: Tuple[str, ...]) -> Optional[FrozenList[int]]: ...
-    def __getitem__(self, key: Any) -> Any: ...
-    def __setitem__(self, key: Tuple[str, ...], value: Optional[Union[List[int], FrozenList[int]]]) -> None: ...
+    def __getitem__(self, key: Tuple[str, Literal["users", "roles"]]) -> Optional[FrozenList[int]]: ...
+    @overload
+    def __setitem__(self, key: Tuple[str, Literal["users", "roles"]],
+        value: Optional[Union[List[int], FrozenList[int]]]) -> None: ...
+    @overload
+    def __setitem__(self, key: Tuple[str, ...], value: None) -> None: ...
     def __iter__(self) -> Iterator[Tuple[str, ...]]: ...
 
 conf: PrivilegesConf
@@ -24,7 +27,7 @@ logger: logging.Logger = logging.getLogger(__name__)
 @plugins.init_async
 async def init() -> None:
     global conf
-    conf = cast(PrivilegesConf, await util.db.kv.Config.load(__name__))
+    conf = cast(PrivilegesConf, await util.db.kv.load(__name__))
 
     privs = {k[0] for k in conf if len(k) == 1}
     for priv in privs:

@@ -19,7 +19,13 @@ class RoleReactionsConf(Protocol):
     def __setitem__(self, msg_id: str, obj: Optional[MessageReactions]) -> None: ...
     def __iter__(self) -> Iterator[str]: ...
 
-conf = cast(RoleReactionsConf, util.db.kv.Config(__name__))
+conf: RoleReactionsConf
+
+@plugins.init_async
+async def init() -> None:
+    global conf
+    conf = cast(RoleReactionsConf, await util.db.kv.load(__name__))
+
 msg_id_re = re.compile(r"https?://(?:\w*\.)?(?:discord.com|discordapp.com)/channels/(\d+)/(\d+)/(\d+)")
 
 async def find_message(channel_id: Union[str, int], msg_id: Union[str, int]) -> Optional[discord.Message]:

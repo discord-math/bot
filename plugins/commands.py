@@ -20,7 +20,7 @@ logger: logging.Logger = logging.getLogger(__name__)
 @plugins.init_async
 async def init() -> None:
     global conf
-    conf = cast(CommandsConfig, await util.db.kv.Config.load(__name__))
+    conf = cast(CommandsConfig, await util.db.kv.load(__name__))
 
 class Arg:
     __slots__ = "source", "rest"

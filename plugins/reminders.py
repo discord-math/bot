@@ -26,7 +26,7 @@ class RemindersConf(Protocol):
     def __setitem__(self, user_id: str, obj: Optional[FrozenList[Reminder]]) -> None: ...
     def __iter__(self) -> Iterator[str]: ...
 
-conf = cast(RemindersConf, util.db.kv.Config(__name__))
+conf: RemindersConf
 logger = logging.getLogger(__name__)
 
 time_re = re.compile(
@@ -105,7 +105,6 @@ async def handle_reminder(user_id: str, reminder: Reminder) -> None:
     reminders.remove(reminder)
     conf[user_id] = FrozenList(reminders)
 
-
 expiration_updated = asyncio.Semaphore(value=0)
 
 async def expire_reminders() -> None:
@@ -140,10 +139,15 @@ async def expire_reminders() -> None:
             logger.error("Exception in reminder expiry task", exc_info=True)
             await asyncio.sleep(60)
 
-expiry_task: asyncio.Task[None] = util.asyncio.run_async(expire_reminders)
-@plugins.finalizer
-def cancel_expiry() -> None:
-    expiry_task.cancel()
+@plugins.init_async
+async def init() -> None:
+    global conf
+    conf = cast(RemindersConf, await util.db.kv.load(__name__))
+
+    expiry_task: asyncio.Task[None] = util.asyncio.run_async(expire_reminders)
+    @plugins.finalizer
+    def cancel_expiry() -> None:
+        expiry_task.cancel()
 
 @plugins.commands.command("remindme")
 @plugins.privileges.priv("remind")

@@ -1,6 +1,7 @@
 import re
 import discord
 from typing import Optional, Protocol, cast
+import plugins
 import util.discord
 import util.db.kv
 
@@ -9,7 +10,12 @@ class TalksConf(Protocol):
     role: Optional[str]
     regex: Optional[str]
 
-conf = cast(TalksConf, util.db.kv.Config(__name__))
+conf: TalksConf
+
+@plugins.init_async
+async def init() -> None:
+    global conf
+    conf = cast(TalksConf, await util.db.kv.load(__name__))
 
 @util.discord.event("message")
 async def notification_message(msg: discord.Message) -> None:
