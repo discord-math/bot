@@ -1,5 +1,6 @@
 import asyncio
 import sqlalchemy
+import sqlalchemy.schema
 import sqlalchemy.orm
 import sqlalchemy.ext.asyncio
 import sqlalchemy.dialects.postgresql
@@ -52,10 +53,9 @@ async def init() -> None:
     global conf
     conf = cast(ModmailConf, await util.db.kv.load(__name__))
 
-    await util.db.init_async(r"""
-        CREATE SCHEMA modmail;"""
-        + str(sqlalchemy.schema.CreateTable(ModmailMessage.__table__)) + ";"
-        + str(sqlalchemy.schema.CreateTable(ModmailThread.__table__)) + ";")
+    await util.db.init_async(util.db.get_ddl(
+        sqlalchemy.schema.CreateSchema("modmail").execute,
+        registry.metadata.create_all))
 
     async with sqlalchemy.ext.asyncio.AsyncSession(engine) as session:
         for msg in (await session.execute(sqlalchemy.select(ModmailMessage))).scalars():
@@ -197,17 +197,19 @@ client: discord.Client = ModMailClient(
     intents=discord.Intents(dm_messages=True),
     allowed_mentions=discord.AllowedMentions(everyone=False, roles=False))
 
-async def run_modmail() -> None:
-    try:
-        await client.start(conf.token, reconnect=True)
-    except asyncio.CancelledError:
-        pass
-    except:
-        logger.error("Exception in modmail client task", exc_info=True)
-    finally:
-        await client.close()
+@plugins.init_async
+async def init_task() -> None:
+    async def run_modmail() -> None:
+        try:
+            await client.start(conf.token, reconnect=True)
+        except asyncio.CancelledError:
+            pass
+        except:
+            logger.error("Exception in modmail client task", exc_info=True)
+        finally:
+            await client.close()
 
-bot_task: asyncio.Task[None] = util.asyncio.run_async(run_modmail)
-@plugins.finalizer
-def cancel_bot_task() -> None:
-    bot_task.cancel()
+    bot_task: asyncio.Task[None] = util.asyncio.run_async(run_modmail)
+    @plugins.finalizer
+    def cancel_bot_task() -> None:
+        bot_task.cancel()

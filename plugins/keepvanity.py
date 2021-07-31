@@ -16,7 +16,7 @@ conf: KeepvanityConf
 @plugins.init_async
 async def init() -> None:
     global conf
-    conf = cast(KeepvanityConf, util.db.kv.load(__name__))
+    conf = cast(KeepvanityConf, await util.db.kv.load(__name__))
 
 async def check_guild_vanity(guild: discord.Guild) -> None:
     try:

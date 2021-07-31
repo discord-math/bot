@@ -1,7 +1,10 @@
 import psycopg2
 import psycopg2.extensions
 import asyncpg
+import sqlalchemy
+import sqlalchemy.schema
 import sqlalchemy.ext.asyncio
+import sqlalchemy.dialects.postgresql
 import logging
 from typing import Dict, Callable, Any
 import static_config
@@ -33,3 +36,15 @@ def create_async_engine(connect_args: Dict[str, Any] = {}, **kwargs: Any) -> sql
 
 from util.db.initialization import (init as init, init_for as init_for, init_async as init_async,
     init_async_for as init_async_for)
+
+def get_ddl(*cbs: Callable[[sqlalchemy.engine.Engine], None]) -> str:
+    dialect = sqlalchemy.dialects.postgresql.dialect() # type: ignore
+    ddls = []
+
+    def executor(sql: sqlalchemy.schema.DDLElement) -> None:
+        ddls.append(str(sql.compile(dialect=dialect)) + ";")
+    mock_engine = sqlalchemy.create_mock_engine("postgresql://", executor)
+    for cb in cbs:
+        cb(mock_engine) # type: ignore
+
+    return "\n".join(ddls)
