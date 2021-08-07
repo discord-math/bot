@@ -38,7 +38,10 @@ from util.db.initialization import (init as init, init_for as init_for, init_asy
     init_async_for as init_async_for)
 
 def get_ddl(*cbs: Callable[[sqlalchemy.engine.Engine], None]) -> str:
-    dialect = sqlalchemy.dialects.postgresql.dialect() # type: ignore
+    # By default sqlalchemy treats asyncpg as if it had paramstyle="format", which means it tries to escape percent
+    # signs. We don't want that so we have to override the paramstyle. Ideally "numeric" would be the right choice here
+    # but that doesn't work.
+    dialect = sqlalchemy.dialects.postgresql.dialect(paramstyle="qmark") # type: ignore
     ddls = []
 
     def executor(sql: sqlalchemy.schema.DDLElement) -> None:
