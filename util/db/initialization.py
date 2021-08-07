@@ -3,11 +3,14 @@ A simple database migration manager. A module can request to initialize somethin
 and @init decorators.
 """
 
+import logging
 import static_config
 import hashlib
 import plugins
 import util.db as db
 from typing import Callable
+
+logger = logging.getLogger(__name__)
 
 with db.connection() as conn:
     with conn.cursor() as cur:
@@ -84,6 +87,7 @@ meta_initialized = False
 async def initialize_meta() -> None:
     global meta_initialized
     if not meta_initialized:
+        logger.debug("Initializing migration metadata")
         conn = await db.connection_async()
         try:
             await conn.execute("""
@@ -108,12 +112,14 @@ async def init_async_for(name: str, schema: str) -> None:
     hash saved. If the known hash for the module matches the computed one, nothing happens. Otherwise we look for a
     migration file in a configurable directory and run it, updating the known hash.
     """
+    logger.debug("Schema for {}:\n{}".format(name, schema))
     conn = await db.connection_async()
     try:
         async with conn.transaction():
             await initialize_meta()
             old_sha = await conn.fetchval("SELECT sha1 FROM meta.schema_hashes WHERE name = $1", name)
             sha = hashlib.sha1(schema.encode("utf")).digest()
+            logger.debug("{}: old {} new {}".format(name, old_sha.hex() if old_sha is not None else None, sha.hex()))
             if old_sha is not None:
                 if old_sha != sha:
                     for dirname in static_config.DB["migrations"].split(":"):
@@ -128,6 +134,7 @@ async def init_async_for(name: str, schema: str) -> None:
                             "Could not find {}-{}-{}.sql in {}".format(name, old_sha.hex(), sha.hex(),
                                 static_config.DB["migrations"]))
                     with fp:
+                        logger.debug("{}: Loading migration {}".format(name, filename))
                         await conn.execute(fp.read())
                         await conn.execute("UPDATE meta.schema_hashes SET sha1 = $2 WHERE name = $1", name, sha)
             else:
