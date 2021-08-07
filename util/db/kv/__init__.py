@@ -181,7 +181,7 @@ class Config:
         ek = encode_key(key)
         ev = json_encode(value)
         if ev is None:
-            del self._store[ek]
+            self._store.pop(ek)
         else:
             self._store[ek] = ev
         self._dirty.add(ek)

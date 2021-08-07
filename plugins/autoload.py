@@ -41,5 +41,6 @@ async def init() -> None:
 def get_autoload() -> Set[str]:
     return {plugin for plugin, in conf}
 
-def set_autoload(plugin: str, status: bool) -> None:
+async def set_autoload(plugin: str, status: bool) -> None:
     conf[plugin] = status or None
+    await conf
