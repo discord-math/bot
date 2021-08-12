@@ -17,6 +17,9 @@ import plugins.reactions
 registry: sqlalchemy.orm.registry = sqlalchemy.orm.registry()
 
 engine = util.db.create_async_engine()
+@plugins.finalizer
+async def cleanup_engine() -> None:
+    await engine.dispose()
 
 @registry.mapped
 class ModmailMessage:

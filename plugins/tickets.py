@@ -134,7 +134,7 @@ def ticket_mod_join() -> sqlalchemy.sql.ColumnElement[sqlalchemy.Boolean]:
 class TicketMod:
     __tablename__ = "mods"
     __table_args__ = {"schema": "tickets"}
-    modid: int = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True)
+    modid: int = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, autoincrement=False)
     last_read_msgid: int = sqlalchemy.Column(sqlalchemy.BigInteger)
     scheduled_delivery: Optional[datetime.datetime] = sqlalchemy.Column(sqlalchemy.TIMESTAMP)
 
