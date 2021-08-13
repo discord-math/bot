@@ -123,12 +123,8 @@ class TicketStage(enum.Enum):
     DELIVERED = "Delivered"
     COMMENTED = "Commented"
 
-def ticket_mod_join() -> sqlalchemy.sql.ColumnElement[sqlalchemy.Boolean]:
-    TicketOrd = sqlalchemy.orm.aliased(Ticket)
-    return sqlalchemy.and_(sqlalchemy.orm.remote(Ticket.modid) == TicketMod.modid,
-        sqlalchemy.orm.remote(Ticket.id) == sqlalchemy.select(TicketOrd.id).where(
-            TicketOrd.stage != TicketStage.COMMENTED,
-            TicketOrd.modid == sqlalchemy.orm.foreign(TicketMod.modid)).order_by(TicketOrd.id).limit(1).scalar_subquery())
+ModQueueView = sqlalchemy.Table("mod_queues", sqlalchemy.MetaData(),
+    sqlalchemy.Column("id", sqlalchemy.BigInteger), schema="tickets")
 
 @registry.mapped
 class TicketMod:
@@ -138,8 +134,9 @@ class TicketMod:
     last_read_msgid: int = sqlalchemy.Column(sqlalchemy.BigInteger)
     scheduled_delivery: Optional[datetime.datetime] = sqlalchemy.Column(sqlalchemy.TIMESTAMP)
 
-    queue_top: Optional[Ticket] = sqlalchemy.orm.relationship(lambda: Ticket, # type:ignore
-        primaryjoin=ticket_mod_join, viewonly=True, uselist=False)
+    queue_top: Optional[Ticket] = sqlalchemy.orm.relationship(lambda: Ticket, primaryjoin=lambda: # type: ignore
+            sqlalchemy.and_(TicketMod.modid == Ticket.modid, Ticket.id.in_(sqlalchemy.select(ModQueueView.columns.id))),
+        viewonly=True, uselist=False)
         # needs to be refreshed whenever ticket.stage is updated
 
     @staticmethod
@@ -823,6 +820,16 @@ async def init_db() -> None:
         registry.metadata.create_all,
         sqlalchemy.DDL(r"""
             CREATE INDEX tickets_mod_queue ON tickets.tickets USING BTREE (modid, id) WHERE stage <> 'COMMENTED';
+
+            CREATE VIEW tickets.mod_queues AS
+                SELECT tkt.id AS id
+                    FROM tickets.mods mod
+                        INNER JOIN tickets.tickets tkt ON mod.modid = tkt.modid AND tkt.id =
+                            (SELECT t.id
+                                FROM tickets.tickets t
+                                WHERE mod.modid = t.modid AND stage <> 'COMMENTED'
+                                ORDER BY t.id LIMIT 1
+                            );
 
             CREATE FUNCTION tickets.log_ticket_update()
             RETURNS TRIGGER AS $log_ticket_update$
