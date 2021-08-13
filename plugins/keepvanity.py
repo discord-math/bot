@@ -13,7 +13,7 @@ class KeepvanityConf(Protocol):
 
 conf: KeepvanityConf
 
-@plugins.init_async
+@plugins.init
 async def init() -> None:
     global conf
     conf = cast(KeepvanityConf, await util.db.kv.load(__name__))
@@ -43,7 +43,7 @@ async def check_after_connect() -> None:
     for guild in discord_client.client.guilds:
         await check_guild_vanity(guild)
 
-@plugins.init_async
+@plugins.init
 async def init_check_task() -> None:
     for guild in discord_client.client.guilds:
         await check_guild_vanity(guild)

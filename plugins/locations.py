@@ -26,7 +26,7 @@ conf: LocationsConf
 
 logger: logging.Logger = logging.getLogger(__name__)
 
-@plugins.init_async
+@plugins.init
 async def init() -> None:
     global conf
     conf = cast(LocationsConf, await util.db.kv.load(__name__))

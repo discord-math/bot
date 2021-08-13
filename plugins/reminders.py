@@ -139,7 +139,7 @@ async def expire_reminders() -> None:
             logger.error("Exception in reminder expiry task", exc_info=True)
             await asyncio.sleep(60)
 
-@plugins.init_async
+@plugins.init
 async def init() -> None:
     global conf
     conf = cast(RemindersConf, await util.db.kv.load(__name__))

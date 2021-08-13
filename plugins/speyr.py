@@ -14,7 +14,7 @@ class SpeyrConf(Protocol):
 
 conf: SpeyrConf
 
-@plugins.init_async
+@plugins.init
 async def init() -> None:
     global conf
     conf = cast(SpeyrConf, await util.db.kv.load(__name__))

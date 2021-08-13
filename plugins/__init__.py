@@ -74,7 +74,7 @@ initializers: Dict[str, List[Callable[[], Awaitable[None]]]] = {}
 
 T = TypeVar("T", bound=Union[Callable[[], None], Callable[[], Awaitable[None]]])
 
-def init_async(init: T) -> T:
+def init(init: T) -> T:
     """
     A decorator for registering an async initializer, which will be called after the module is loaded. Initializers are
     called in order, and if the initializer fails, subsequent initializers will not be called, and finalizers registered

@@ -66,7 +66,7 @@ class TicketsConf(Protocol, Awaitable[None]):
 
 conf: TicketsConf
 
-@plugins.init_async
+@plugins.init
 async def init_conf() -> None:
     global conf
     conf = cast(TicketsConf, await util.db.kv.load(__name__))
@@ -816,9 +816,9 @@ class AddRoleTicket(Ticket):
             return
         await member.remove_roles(role)
 
-@plugins.init_async
+@plugins.init
 async def init_db() -> None:
-    await util.db.init_async(util.db.get_ddl(
+    await util.db.init(util.db.get_ddl(
         sqlalchemy.schema.CreateSchema("tickets").execute,
         registry.metadata.create_all,
         sqlalchemy.DDL(r"""
@@ -1061,7 +1061,7 @@ async def deliver_tickets() -> None:
 
 delivery_task: asyncio.Task[None]
 
-@plugins.init_async
+@plugins.init
 async def init_tasks() -> None:
     global audit_log_task, expiry_task, delivery_task
     audit_log_task = asyncio.create_task(poll_audit_log())

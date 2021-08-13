@@ -10,7 +10,7 @@ class TalksRoleConf(Protocol):
 
 conf: TalksRoleConf
 
-@plugins.init_async
+@plugins.init
 async def init() -> None:
     global conf
     conf = cast(TalksRoleConf, await util.db.kv.load(__name__))

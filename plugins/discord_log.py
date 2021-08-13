@@ -75,7 +75,7 @@ class DiscordHandler(logging.Handler):
                 self.queue.append(text)
                 util.asyncio.run_async(self.log_discord, chan_id, client)
 
-@plugins.init_async
+@plugins.init
 async def init() -> None:
     global conf
     conf = cast(LoggingConf, await util.db.kv.load(__name__))

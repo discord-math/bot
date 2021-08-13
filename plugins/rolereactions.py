@@ -21,7 +21,7 @@ class RoleReactionsConf(Protocol):
 
 conf: RoleReactionsConf
 
-@plugins.init_async
+@plugins.init
 async def init() -> None:
     global conf
     conf = cast(RoleReactionsConf, await util.db.kv.load(__name__))

@@ -51,12 +51,12 @@ logger: logging.Logger = logging.getLogger(__name__)
 
 message_map: Dict[int, ModmailMessage] = {}
 
-@plugins.init_async
+@plugins.init
 async def init() -> None:
     global conf
     conf = cast(ModmailConf, await util.db.kv.load(__name__))
 
-    await util.db.init_async(util.db.get_ddl(
+    await util.db.init(util.db.get_ddl(
         sqlalchemy.schema.CreateSchema("modmail").execute,
         registry.metadata.create_all))
 
@@ -200,7 +200,7 @@ client: discord.Client = ModMailClient(
     intents=discord.Intents(dm_messages=True),
     allowed_mentions=discord.AllowedMentions(everyone=False, roles=False))
 
-@plugins.init_async
+@plugins.init
 async def init_task() -> None:
     async def run_modmail() -> None:
         try:

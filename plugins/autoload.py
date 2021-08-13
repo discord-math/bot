@@ -18,7 +18,7 @@ class AutoloadConf(Protocol, Awaitable[None]):
 logger: logging.Logger = logging.getLogger(__name__)
 conf: AutoloadConf
 
-@plugins.init_async
+@plugins.init
 async def init() -> None:
     global conf
     conf = cast(AutoloadConf, await util.db.kv.load(__name__))

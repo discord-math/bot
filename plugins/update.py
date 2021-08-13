@@ -12,7 +12,7 @@ class UpdateConf(Protocol):
 
 conf: UpdateConf
 
-@plugins.init_async
+@plugins.init
 async def init() -> None:
     global conf
     conf = cast(UpdateConf, await util.db.kv.load(__name__))

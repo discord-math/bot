@@ -18,7 +18,7 @@ async def initialize_meta() -> None:
     global meta_initialized
     if not meta_initialized:
         logger.debug("Initializing migration metadata")
-        conn = await db.connection_async()
+        conn = await db.connection()
         try:
             await conn.execute("""
                 CREATE SCHEMA IF NOT EXISTS meta
@@ -32,7 +32,7 @@ async def initialize_meta() -> None:
             await conn.close()
             meta_initialized = True
 
-async def init_async_for(name: str, schema: str) -> None:
+async def init_for(name: str, schema: str) -> None:
     """
     Pass DDL SQL statements to initialize something in the database.
 
@@ -43,7 +43,7 @@ async def init_async_for(name: str, schema: str) -> None:
     migration file in a configurable directory and run it, updating the known hash.
     """
     logger.debug("Schema for {}:\n{}".format(name, schema))
-    conn = await db.connection_async()
+    conn = await db.connection()
     try:
         async with conn.transaction():
             await initialize_meta()
@@ -73,8 +73,8 @@ async def init_async_for(name: str, schema: str) -> None:
     finally:
         await conn.close()
 
-async def init_async(schema: str) -> None:
+async def init(schema: str) -> None:
     """
     Request database initialization for the current plugin.
     """
-    await init_async_for(plugins.current_plugin(), schema)
+    await init_for(plugins.current_plugin(), schema)

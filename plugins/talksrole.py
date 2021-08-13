@@ -12,7 +12,7 @@ class TalksConf(Protocol):
 
 conf: TalksConf
 
-@plugins.init_async
+@plugins.init
 async def init() -> None:
     global conf
     conf = cast(TalksConf, await util.db.kv.load(__name__))

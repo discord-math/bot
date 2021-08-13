@@ -61,7 +61,7 @@ async def config_command(msg: discord.Message, args: plugins.commands.ArgParser)
 async def sql_command(msg: discord.Message, args: plugins.commands.ArgParser) -> None:
     data_outputs: List[List[str]] = []
     outputs: List[Union[str, List[str]]] = []
-    conn = await util.db.connection_async()
+    conn = await util.db.connection()
     tx = conn.transaction()
     try:
         await tx.start()

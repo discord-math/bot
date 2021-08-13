@@ -21,7 +21,7 @@ schema_initialized = False
 async def init_schema() -> None:
     global schema_initialized
     if not schema_initialized:
-        await util_db.init_async_for(__name__, """
+        await util_db.init_for(__name__, """
             CREATE TABLE kv
                 ( namespace TEXT NOT NULL
                 , key TEXT ARRAY NOT NULL
@@ -61,7 +61,7 @@ def json_decode(text: Optional[str]) -> Any:
 @contextlib.asynccontextmanager
 async def connect() -> asyncpg.Connection:
     await init_schema()
-    conn = await util_db.connection_async()
+    conn = await util_db.connection()
     try:
         yield conn
     finally:

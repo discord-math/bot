@@ -24,7 +24,7 @@ class PrivilegesConf(Protocol, Awaitable[None]):
 conf: PrivilegesConf
 logger: logging.Logger = logging.getLogger(__name__)
 
-@plugins.init_async
+@plugins.init
 async def init() -> None:
     global conf
     conf = cast(PrivilegesConf, await util.db.kv.load(__name__))
