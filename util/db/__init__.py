@@ -1,5 +1,3 @@
-import psycopg2
-import psycopg2.extensions
 import asyncpg
 import sqlalchemy
 import sqlalchemy.schema
@@ -8,17 +6,11 @@ import sqlalchemy.dialects.postgresql
 import logging
 from typing import Dict, Callable, Any
 import static_config
-import util.db.log as util_db_log
 import util.db.async_log as util_db_async_log
 import util.db.dsn as util_db_dsn
 
 logger: logging.Logger = logging.getLogger(__name__)
 connection_dsn: str = static_config.DB["dsn"]
-
-def connection() -> util_db_log.LoggingConnection:
-    conn = psycopg2.connect(connection_dsn, connection_factory=util_db_log.LoggingConnection)
-    conn.initialize(logger)
-    return conn # type: ignore
 
 class LoggingConnection(util_db_async_log.LoggingConnection(logger)): # type: ignore
     pass
@@ -34,8 +26,7 @@ def create_async_engine(connect_args: Dict[str, Any] = {}, **kwargs: Any) -> sql
     args.setdefault("connection_class", LoggingConnection)
     return sqlalchemy.ext.asyncio.create_async_engine(async_connection_uri, connect_args=args, **kwargs)
 
-from util.db.initialization import (init as init, init_for as init_for, init_async as init_async,
-    init_async_for as init_async_for)
+from util.db.initialization import init_async as init_async, init_async_for as init_async_for
 
 def get_ddl(*cbs: Callable[[sqlalchemy.engine.Engine], None]) -> str:
     # By default sqlalchemy treats asyncpg as if it had paramstyle="format", which means it tries to escape percent

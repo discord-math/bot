@@ -4,7 +4,7 @@ from typing import Any, Callable, Awaitable, TypeVar
 
 R = TypeVar("R")
 
-def __await__(fun: Callable[..., Awaitable[R]]) -> Callable[..., Any]:
+def __await__(fun: Callable[..., Awaitable[Any]]) -> Callable[..., Any]:
     """Decorate a class's __await__ with this to be able to write it as an async def."""
     def wrapper(*args: Any, **kwargs: Any) -> Any:
         return fun(*args, **kwargs).__await__()
@@ -27,13 +27,3 @@ def concurrently(fun: Callable[..., R], *args: Any, **kwargs: Any) -> Awaitable[
     """
     return getloop().run_in_executor(None,
         lambda: fun(*args, **kwargs))
-
-def init_async(coro: Callable[..., Awaitable[None]], *args: Any, **kwargs: Any) -> None:
-    """
-    Perform asynchronous initialization for a plugin. Can be used as a decorator around an async function. Cancels the
-    initialization routine if the plugin is unloaded before it could complete.
-    """
-    task = getloop().create_task(coro(*args, **kwargs))
-    @plugins.finalizer
-    def cancel_initialization() -> None:
-        task.cancel()

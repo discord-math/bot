@@ -60,7 +60,6 @@ These are the plugins provide commands or otherwise user-visible functionality:
 The bot requires:
  - Python 3.9+ (!)
  - PostgreSQL 10+
- - psycopg2
  - asyncpg
  - sqlalchemy
  - sqlalchemy-orm

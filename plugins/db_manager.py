@@ -1,7 +1,6 @@
 import asyncio
 import json
 import asyncpg
-import psycopg2
 import discord
 from typing import List, Union, Any
 import plugins.commands
