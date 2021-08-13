@@ -601,6 +601,13 @@ class KickTicket(Ticket):
             modified_by=None,
             comment=audit.reason),)
 
+    async def hide(self, actorid: int, reason: Optional[str] = None) -> None:
+        logger.debug("Hiding Ticket #{}".format(self.id))
+        self.status = TicketStatus.HIDDEN
+        self.modified_by = actorid
+        if reason is not None:
+            self.append_comment(reason)
+
 @registry.mapped
 @register_action
 class BanTicket(Ticket):
