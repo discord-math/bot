@@ -1,10 +1,11 @@
+import contextlib
 import asyncpg
 import sqlalchemy
 import sqlalchemy.schema
 import sqlalchemy.ext.asyncio
 import sqlalchemy.dialects.postgresql
 import logging
-from typing import Dict, Callable, Any
+from typing import Dict, AsyncIterator, Callable, Any
 import static_config
 import util.db.log as util_db_log
 import util.db.dsn as util_db_dsn
@@ -18,8 +19,13 @@ class LoggingConnection(util_db_log.LoggingConnection(logger)): # type: ignore
 connection_uri: str = util_db_dsn.dsn_to_uri(connection_dsn)
 async_connection_uri: str = util_db_dsn.uri_to_asyncpg(connection_uri)
 
-async def connection() -> LoggingConnection:
-    return await asyncpg.connect(connection_uri, connection_class=LoggingConnection) # type: ignore
+@contextlib.asynccontextmanager
+async def connection() -> AsyncIterator[LoggingConnection]:
+    conn = await asyncpg.connect(connection_uri, connection_class=LoggingConnection)
+    try:
+        yield conn
+    finally:
+        await conn.close()
 
 def create_async_engine(connect_args: Dict[str, Any] = {}, **kwargs: Any) -> sqlalchemy.ext.asyncio.AsyncEngine:
     args = connect_args.copy()

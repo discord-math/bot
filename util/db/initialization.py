@@ -18,18 +18,17 @@ async def initialize_meta() -> None:
     global meta_initialized
     if not meta_initialized:
         logger.debug("Initializing migration metadata")
-        conn = await db.connection()
         try:
-            await conn.execute("""
-                CREATE SCHEMA IF NOT EXISTS meta
-                """)
-            await conn.execute("""
-                CREATE TABLE IF NOT EXISTS meta.schema_hashes
-                ( name TEXT NOT NULL PRIMARY KEY
-                , sha1 BYTEA NOT NULL )
-                """)
+            async with db.connection() as conn:
+                await conn.execute("""
+                    CREATE SCHEMA IF NOT EXISTS meta
+                    """)
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS meta.schema_hashes
+                    ( name TEXT NOT NULL PRIMARY KEY
+                    , sha1 BYTEA NOT NULL )
+                    """)
         finally:
-            await conn.close()
             meta_initialized = True
 
 async def init_for(name: str, schema: str) -> None:
@@ -43,8 +42,7 @@ async def init_for(name: str, schema: str) -> None:
     migration file in a configurable directory and run it, updating the known hash.
     """
     logger.debug("Schema for {}:\n{}".format(name, schema))
-    conn = await db.connection()
-    try:
+    async with db.connection() as conn:
         async with conn.transaction():
             await initialize_meta()
             old_sha = await conn.fetchval("SELECT sha1 FROM meta.schema_hashes WHERE name = $1", name)
@@ -70,8 +68,6 @@ async def init_for(name: str, schema: str) -> None:
             else:
                 await conn.execute(schema)
                 await conn.execute("INSERT INTO meta.schema_hashes (name, sha1) VALUES ($1, $2)", name, sha)
-    finally:
-        await conn.close()
 
 async def init(schema: str) -> None:
     """

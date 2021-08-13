@@ -7,10 +7,10 @@ probably have its own DB handling code.
 from __future__ import annotations
 import asyncio
 import asyncpg
+import contextlib
 import json
 import weakref
-import contextlib
-from typing import Optional, Dict, Iterator, Tuple, Set, Sequence, Union, Any, cast
+from typing import Optional, Dict, Iterator, AsyncIterator, Tuple, Set, Sequence, Union, Any, cast
 import util.asyncio
 import util.db as util_db
 import util.frozen_list
@@ -59,13 +59,10 @@ def json_decode(text: Optional[str]) -> Any:
     return json_freeze(json.loads(text)) if text is not None else None
 
 @contextlib.asynccontextmanager
-async def connect() -> asyncpg.Connection:
+async def connect() -> AsyncIterator[asyncpg.Connection]:
     await init_schema()
-    conn = await util_db.connection()
-    try:
+    async with util_db.connection() as conn:
         yield conn
-    finally:
-        await conn.close()
 
 async def get_raw_value(namespace: Sequence[str], key: Sequence[str]) -> Optional[str]:
     async with connect() as conn:

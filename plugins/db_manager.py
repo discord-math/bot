@@ -61,9 +61,8 @@ async def config_command(msg: discord.Message, args: plugins.commands.ArgParser)
 async def sql_command(msg: discord.Message, args: plugins.commands.ArgParser) -> None:
     data_outputs: List[List[str]] = []
     outputs: List[Union[str, List[str]]] = []
-    conn = await util.db.connection()
-    tx = conn.transaction()
-    try:
+    async with util.db.connection() as conn:
+        tx = conn.transaction()
         await tx.start()
         for arg in args:
             if isinstance(arg, (plugins.commands.CodeBlockArg, plugins.commands.InlineCodeArg)):
@@ -134,5 +133,3 @@ async def sql_command(msg: discord.Message, args: plugins.commands.ArgParser) ->
             else:
                 await tx.commit()
             await reply.remove_reaction("\u2705" if rollback else "\u21A9", member=discord_client.client.user)
-    finally:
-        await conn.close()
