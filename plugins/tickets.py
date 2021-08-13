@@ -1461,17 +1461,18 @@ async def cmd_ticket(msg: discord.Message, args: plugins.commands.ArgParser) -> 
         """
         arg = args.next_arg()
         if isinstance(arg, UM_Arg):
-            stmt = sqlalchemy.select(Ticket).where(
-                Ticket.status == TicketStatus.HIDDEN, Ticket.targetid == arg.id).order_by(Ticket.id)
-            tickets = (await session.execute(stmt)).scalars().all()
+            async with sessionmaker() as session:
+                stmt = sqlalchemy.select(Ticket).where(
+                    Ticket.status == TicketStatus.HIDDEN, Ticket.targetid == arg.id).order_by(Ticket.id)
+                tickets = (await session.execute(stmt)).scalars().all()
 
-            embeds = summarise_tickets(tickets, title='Hidden tickets for {}'.format(arg.id),
-                dm=msg.channel.type == discord.ChannelType.private)
+                embeds = summarise_tickets(tickets, title='Hidden tickets for {}'.format(arg.id),
+                    dm=msg.channel.type == discord.ChannelType.private)
 
-            if embeds:
-                await pager(msg.channel, [Page(embed=embed) for embed in embeds])
-            else:
-                await reply("No hidden tickets found for this user.")
+                if embeds:
+                    await pager(msg.channel, [Page(embed=embed) for embed in embeds])
+                else:
+                    await reply("No hidden tickets found for this user.")
         elif isinstance(arg, S_Arg) and arg.text.isdigit():
             # Assume provided number is a ticket id
             async with sessionmaker() as session:
