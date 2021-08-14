@@ -1,13 +1,13 @@
 import re
 import discord
-from typing import Optional, Protocol, cast
+from typing import Optional, Awaitable, Protocol, cast
 import plugins
 import util.discord
 import util.db.kv
 
-class TalksConf(Protocol):
-    channel: Optional[str]
-    role: Optional[str]
+class TalksConf(Protocol, Awaitable[None]):
+    channel: Optional[int]
+    role: Optional[int]
     regex: Optional[str]
 
 conf: TalksConf
@@ -17,19 +17,18 @@ async def init() -> None:
     global conf
     conf = cast(TalksConf, await util.db.kv.load(__name__))
 
+    conf.channel = int(conf.channel) if conf.channel is not None else None
+    conf.role = int(conf.role) if conf.role is not None else None
+    await conf
+
 @util.discord.event("message")
 async def notification_message(msg: discord.Message) -> None:
-    try:
-        if not msg.channel or msg.channel.id != int(conf.channel or 0):
-            return
-    except ValueError:
+    if msg.channel is None or msg.channel.id != conf.channel:
         return
 
-    try:
-        role_id = int(conf.role or 0)
-        if any(role.id == role_id for role in msg.role_mentions):
-            return
-    except ValueError:
+    if (role_id := conf.role) is None:
+        return
+    if any(role.id == role_id for role in msg.role_mentions):
         return
 
     regex = str(conf.regex or "")

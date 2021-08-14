@@ -71,12 +71,6 @@ async def init_conf() -> None:
     global conf
     conf = cast(TicketsConf, await util.db.kv.load(__name__))
 
-    conf.guild = int(conf.guild)
-    conf.ticket_list = int(conf.ticket_list)
-    conf.last_auditid = conf.last_auditid and int(conf.last_auditid)
-    conf.tracked_roles = util.frozen_list.FrozenList(int(rid) for rid in conf.tracked_roles)
-    await conf
-
 # ----------- Data -----------
 
 registry: sqlalchemy.orm.registry = sqlalchemy.orm.registry()

@@ -10,7 +10,6 @@ import util.db.kv
 import plugins
 
 class AutoloadConf(Protocol, Awaitable[None]):
-    autoload: Optional[List[str]]
     def __getitem__(self, key: str) -> Optional[bool]: ...
     def __setitem__(self, key: str, val: Optional[bool]) -> None: ...
     def __iter__(self) -> Iterator[Tuple[str]]: ...
@@ -22,12 +21,6 @@ conf: AutoloadConf
 async def init() -> None:
     global conf
     conf = cast(AutoloadConf, await util.db.kv.load(__name__))
-
-    if conf.autoload is not None:
-        for plugin in conf.autoload:
-            conf[plugin] = True
-        conf.autoload = None
-    await conf
 
     async def autoload() -> None:
         for name, in conf:

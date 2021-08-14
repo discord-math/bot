@@ -7,7 +7,7 @@ import sqlalchemy.dialects.postgresql
 import discord
 import logging
 import datetime
-from typing import Dict, Tuple, Optional, Any, Protocol, cast
+from typing import Dict, Tuple, Optional, Awaitable, Any, Protocol, cast
 import discord_client
 import util.db
 import util.db.kv
@@ -39,11 +39,11 @@ class ModmailThread:
     thread_first_message_id: int = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True)
     last_used: datetime.datetime = sqlalchemy.Column(sqlalchemy.TIMESTAMP, nullable=False)
 
-class ModmailConf(Protocol):
+class ModmailConf(Protocol, Awaitable[None]):
     token: str
-    guild: str
-    channel: str
-    role: str
+    guild: int
+    channel: int
+    role: int
     thread_expiry: int
 
 conf: ModmailConf
@@ -55,6 +55,11 @@ message_map: Dict[int, ModmailMessage] = {}
 async def init() -> None:
     global conf
     conf = cast(ModmailConf, await util.db.kv.load(__name__))
+
+    conf.guild = int(conf.guild)
+    conf.channel = int(conf.channel)
+    conf.role = int(conf.role)
+    await conf
 
     await util.db.init(util.db.get_ddl(
         sqlalchemy.schema.CreateSchema("modmail").execute,

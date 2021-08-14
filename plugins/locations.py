@@ -11,16 +11,9 @@ import plugins.commands
 import plugins.privileges
 
 class LocationsConf(Protocol, Awaitable[None]):
-    @overload
-    def __getitem__(self, priv: str) -> Optional[FrozenDict[str, FrozenList[str]]]: ...
-    @overload
     def __getitem__(self, key: Tuple[str, Literal["channels", "categories"]]) -> Optional[FrozenList[int]]: ...
-    @overload
-    def __setitem__(self, key: Tuple[str, ...], value: None) -> None: ...
-    @overload
     def __setitem__(self, key: Tuple[str, Literal["channels", "categories"]],
         value: Optional[Union[List[int], FrozenList[int]]]) -> None: ...
-    def __iter__(self) -> Iterator[Tuple[str, ...]]: ...
 
 conf: LocationsConf
 
@@ -30,16 +23,6 @@ logger: logging.Logger = logging.getLogger(__name__)
 async def init() -> None:
     global conf
     conf = cast(LocationsConf, await util.db.kv.load(__name__))
-
-    locs = {k[0] for k in conf if len(k) == 1}
-    for loc in locs:
-        obj = conf[loc]
-        assert obj
-        conf[loc, "channels"] = [int(cid) for cid in obj.get("channels", ())]
-        conf[loc, "categories"] = [int(cid) for cid in obj.get("categories", ())]
-    for loc in locs:
-        conf[loc,] = None
-    await conf
 
 def in_location(loc: str, channel: discord.abc.GuildChannel) -> bool:
     chans = conf[loc, "channels"]

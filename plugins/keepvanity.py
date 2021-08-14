@@ -1,14 +1,14 @@
 import asyncio
 import discord
-from typing import Optional, Protocol, cast
+from typing import Optional, Awaitable, Protocol, cast
 import discord_client
 import plugins
 import util.discord
 import util.db.kv
 import util.asyncio
 
-class KeepvanityConf(Protocol):
-    guild: str
+class KeepvanityConf(Protocol, Awaitable[None]):
+    guild: int
     vanity: Optional[str]
 
 conf: KeepvanityConf
@@ -18,9 +18,12 @@ async def init() -> None:
     global conf
     conf = cast(KeepvanityConf, await util.db.kv.load(__name__))
 
+    conf.guild = int(conf.guild)
+    await conf
+
 async def check_guild_vanity(guild: discord.Guild) -> None:
     try:
-        if guild.id != int(conf.guild or 0):
+        if guild.id != conf.guild:
             return
     except ValueError:
         return

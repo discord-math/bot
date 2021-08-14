@@ -10,16 +10,9 @@ import util.discord
 import plugins.commands
 
 class PrivilegesConf(Protocol, Awaitable[None]):
-    @overload
-    def __getitem__(self, priv: str) -> Optional[FrozenDict[str, FrozenList[str]]]: ...
-    @overload
     def __getitem__(self, key: Tuple[str, Literal["users", "roles"]]) -> Optional[FrozenList[int]]: ...
-    @overload
     def __setitem__(self, key: Tuple[str, Literal["users", "roles"]],
         value: Optional[Union[List[int], FrozenList[int]]]) -> None: ...
-    @overload
-    def __setitem__(self, key: Tuple[str, ...], value: None) -> None: ...
-    def __iter__(self) -> Iterator[Tuple[str, ...]]: ...
 
 conf: PrivilegesConf
 logger: logging.Logger = logging.getLogger(__name__)
@@ -28,16 +21,6 @@ logger: logging.Logger = logging.getLogger(__name__)
 async def init() -> None:
     global conf
     conf = cast(PrivilegesConf, await util.db.kv.load(__name__))
-
-    privs = {k[0] for k in conf if len(k) == 1}
-    for priv in privs:
-        obj = conf[priv]
-        assert obj
-        conf[priv, "users"] = [int(uid) for uid in obj.get("users", ())]
-        conf[priv, "roles"] = [int(rid) for rid in obj.get("roles", ())]
-    for priv in privs:
-        conf[priv,] = None
-    await conf
 
 def has_privilege(priv: str, user_or_member: Union[discord.User, discord.Member]) -> bool:
     users = conf[priv, "users"]
