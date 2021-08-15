@@ -2,7 +2,8 @@ import asyncio
 import json
 import asyncpg
 import discord
-from typing import List, Union, Any
+import discord.ext.commands
+from typing import List, Optional, Union, Any
 import plugins.commands
 import plugins.privileges
 import plugins.reactions
@@ -12,49 +13,38 @@ import util.db
 import util.db.kv
 import util.asyncio
 
-@plugins.commands.command("config")
-@plugins.privileges.priv("shell")
-async def config_command(msg: discord.Message, args: plugins.commands.ArgParser) -> None:
-    arg = args.next_arg()
-    if arg is None:
-        await msg.channel.send(", ".join(util.discord.format("{!i}", nsp) for nsp in await util.db.kv.get_namespaces()))
+@plugins.commands.command_ext("config", cls=discord.ext.commands.Group, invoke_without_command=True)
+@plugins.privileges.priv_ext("shell")
+async def config_command(ctx: discord.ext.commands.Context, namespace: Optional[str], key: Optional[str],
+    value: Optional[Union[util.discord.CodeBlock, util.discord.Inline, util.discord.Quoted]]) -> None:
+    if namespace is None:
+        await ctx.send(", ".join(util.discord.format("{!i}", nsp) for nsp in await util.db.kv.get_namespaces()))
         return
 
-    if not isinstance(arg, plugins.commands.StringArg): return
+    conf = await util.db.kv.load(namespace)
 
-    if arg.text == "--delete":
-        nsp = args.next_arg()
-        key = args.next_arg()
-        if not isinstance(nsp, plugins.commands.StringArg): return
-        if not isinstance(key, plugins.commands.StringArg): return
-
-        conf = await util.db.kv.load(nsp.text)
-        conf[key.text.split(",")] = None
-
-        await msg.channel.send("\u2705")
-        return
-
-    nsp = arg
-    key = args.next_arg()
     if key is None:
-        conf = await util.db.kv.load(nsp.text)
-        await msg.channel.send("; ".join(",".join(util.discord.format("{!i}", k) for k in key) for key in conf))
+        await ctx.send("; ".join(",".join(util.discord.format("{!i}", key) for key in keys) for keys in conf))
         return
 
-    if not isinstance(key, plugins.commands.StringArg): return
+    keys = key.split(",")
 
-    value = args.next_arg()
     if value is None:
-        conf = await util.db.kv.load(nsp.text)
-        await msg.channel.send(util.discord.format("{!i}", util.db.kv.json_encode(conf[key.text.split(",")])))
+        await ctx.send(util.discord.format("{!i}", util.db.kv.json_encode(conf[keys])))
         return
 
-    if not isinstance(value, plugins.commands.StringArg): return
-
-    conf = await util.db.kv.load(nsp.text)
-    conf[key.text.split(",")] = json.loads(value.text)
+    conf[keys] = json.loads(value.text)
     await conf
-    await msg.channel.send("\u2705")
+    await ctx.send("\u2705")
+
+@config_command.command("--delete")
+@plugins.privileges.priv_ext("shell")
+async def config_delete(ctx: discord.ext.commands.Context, namespace: str, key: str) -> None:
+    conf = await util.db.kv.load(namespace)
+    keys = key.split(",")
+    conf[keys] = None
+    await conf
+    await ctx.send("\u2705")
 
 @plugins.commands.command_ext("sql")
 @plugins.privileges.priv_ext("shell")

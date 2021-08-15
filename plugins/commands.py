@@ -190,6 +190,8 @@ async def on_command(ctx: discord.ext.commands.Context) -> None:
 async def on_command_error(ctx: discord.ext.commands.Context, exc: Exception) -> None:
     if isinstance(exc, discord.ext.commands.CommandNotFound):
         return
+    elif isinstance(exc, discord.ext.commands.CheckFailure):
+        return
     elif isinstance(exc, discord.ext.commands.UserInputError):
         # todo: display usage
         await ctx.send("Error: {}".format(exc.args[0]), allowed_mentions=discord.AllowedMentions.none())

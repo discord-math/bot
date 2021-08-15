@@ -49,9 +49,25 @@ def event(name: str) -> Callable[
         return fun
     return decorator
 
-class CodeBlock:
-    __slots__ = "text", "language"
+class Quoted:
+    __slots__ = "text"
     text: str
+
+    def __init__(self, text: str):
+        self.text = text
+
+    def __str__(self) -> str:
+        return self.text
+
+    def __repr__(self) -> str:
+        return "Quoted({!r})".format(self.text)
+
+    @classmethod
+    async def convert(cls, ctx: discord.ext.commands.Context, arg: str) -> Quoted:
+        return cls(arg)
+
+class CodeBlock(Quoted):
+    __slots__ = "language"
     language: Optional[str]
 
     def __init__(self, text: str, language: Optional[str] = None):
@@ -74,10 +90,10 @@ class CodeBlock:
     async def convert(cls, ctx: discord.ext.commands.Context, arg: str) -> CodeBlock:
         if (match := cls.codeblock_re.match(ctx.view.buffer, pos=ctx.view.index - len(arg))) is not None: # type: ignore
             ctx.view.index = match.end() # type: ignore
-            return CodeBlock(match["block"], match["language"] or None)
+            return cls(match["block"], match["language"] or None)
         raise discord.ext.commands.ArgumentParsingError("Please provide a codeblock")
 
-class Inline:
+class Inline(Quoted):
     __slots__ = "text"
     text: str
 
@@ -105,7 +121,7 @@ class Inline:
     async def convert(cls, ctx: discord.ext.commands.Context, arg: str) -> Inline:
         if (match := cls.inline_re.match(ctx.view.buffer, pos=ctx.view.index - len(arg))) is not None: # type: ignore
             ctx.view.index = match.end() # type: ignore
-            return Inline(match[1] or match[2])
+            return cls(match[1] or match[2])
         raise discord.ext.commands.ArgumentParsingError("Please provide an inline")
 
 class Formatter(string.Formatter):
