@@ -344,6 +344,7 @@ async def reload(name: str) -> types.ModuleType:
                 raise
             try:
                 ret = await do_load(name)
+                reload_success.add(name)
             finally:
                 await cont_reload()
             return ret
