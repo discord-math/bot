@@ -8,7 +8,7 @@ import traceback
 import os
 import itertools
 import discord
-from typing import Dict, List, Iterator, Any, Callable, Iterable, TypeVar
+from typing import Dict, List, Iterator, Union, Any, Callable, Iterable, TypeVar
 import plugins.commands
 import plugins.privileges
 import util.discord
@@ -16,22 +16,21 @@ import discord_client
 
 T = TypeVar("T")
 
-@plugins.commands.command("exec")
-@plugins.commands.command("eval")
-@plugins.privileges.priv("shell")
-async def run_code(msg: discord.Message, args: plugins.commands.ArgParser) -> None:
+@plugins.commands.command_ext("exec", aliases=["eval"])
+@plugins.privileges.priv_ext("shell")
+async def exec_command(ctx: discord.ext.commands.Context,
+    args: discord.ext.commands.Greedy[Union[util.discord.CodeBlock, util.discord.Inline, str]]) -> None:
     """
-    Execute every code block in the commandline as python code. The code can
-    be an expression or a series of statements. The code has all loaded modules
-    in scope, as well as "msg" and "client". The print function is redirected.
-    The code also can use top-level "await".
+    Execute all code blocks in the command line as python code.
+    The code can be an expression on a series of statements. The code has all loaded modules in scope, as well as "ctx"
+    and "client". The print function is redirected. The code can also use top-level "await".
     """
     outputs = []
     code_scope: Dict[str, Any] = dict(sys.modules)
     # Using real builtins to avoid dependency tracking
     code_scope["__builtins__"] = builtins
     code_scope.update(builtins.__dict__)
-    code_scope["msg"] = msg
+    code_scope["ctx"] = ctx
     code_scope["client"] = discord_client.client
     def mk_code_print(fp: io.StringIO) -> Callable[..., None]:
         def code_print( # type: ignore
@@ -40,16 +39,15 @@ async def run_code(msg: discord.Message, args: plugins.commands.ArgParser) -> No
         return code_print
     try:
         for arg in args:
-            if (isinstance(arg, plugins.commands.CodeBlockArg)
-                or isinstance(arg, plugins.commands.InlineCodeArg)):
+            if isinstance(arg, (util.discord.CodeBlock, util.discord.Inline)):
                 fp = io.StringIO()
                 outputs.append(fp)
                 code_scope["print"] = mk_code_print(fp)
                 try:
-                    code = compile(arg.text, "<msg {}>".format(msg.id),
+                    code = compile(arg.text, "<msg {}>".format(ctx.message.id),
                         "eval", ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
                 except:
-                    code = compile(arg.text, "<msg {}>".format(msg.id),
+                    code = compile(arg.text, "<msg {}>".format(ctx.message.id),
                         "exec", ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
                 fun = types.FunctionType(code, code_scope)
                 ret = fun()
@@ -105,4 +103,4 @@ async def run_code(msg: discord.Message, args: plugins.commands.ArgParser) -> No
         10)
 
     for text, file_output in itertools.zip_longest(message_outputs, file_outputs):
-        await msg.channel.send(text, files=file_output)
+        await ctx.send(text, files=file_output)

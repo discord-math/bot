@@ -56,16 +56,17 @@ async def config_command(msg: discord.Message, args: plugins.commands.ArgParser)
     await conf
     await msg.channel.send("\u2705")
 
-@plugins.commands.command("sql")
-@plugins.privileges.priv("shell")
-async def sql_command(msg: discord.Message, args: plugins.commands.ArgParser) -> None:
+@plugins.commands.command_ext("sql")
+@plugins.privileges.priv_ext("shell")
+async def sql_command(ctx: discord.ext.commands.Context,
+    args: discord.ext.commands.Greedy[Union[util.discord.CodeBlock, util.discord.Inline, str]]) -> None:
     data_outputs: List[List[str]] = []
     outputs: List[Union[str, List[str]]] = []
     async with util.db.connection() as conn:
         tx = conn.transaction()
         await tx.start()
         for arg in args:
-            if isinstance(arg, (plugins.commands.CodeBlockArg, plugins.commands.InlineCodeArg)):
+            if isinstance(arg, (util.discord.CodeBlock, util.discord.Inline)):
                 try:
                     stmt = await conn.prepare(arg.text)
                     results = (await stmt.fetch())[:1000]
@@ -101,7 +102,7 @@ async def sql_command(msg: discord.Message, args: plugins.commands.ArgParser) ->
         text = "\n".join(util.discord.format("{!b}", "\n".join(output))
             if isinstance(output, list) else output for output in outputs)[:2000]
 
-        reply = await msg.channel.send(text)
+        reply = await ctx.send(text)
 
         # If we've been assigned a transaction ID, means we've changed
         # something. Prompt the user to commit.
@@ -116,8 +117,8 @@ async def sql_command(msg: discord.Message, args: plugins.commands.ArgParser) ->
 
         await reply.add_reaction("\u21A9")
         await reply.add_reaction("\u2705")
-        with plugins.reactions.ReactionMonitor(channel_id=msg.channel.id, message_id=reply.id,
-            author_id=msg.author.id, event="add", filter=lambda _, p: p.emoji.name in ["\u21A9", "\u2705"],
+        with plugins.reactions.ReactionMonitor(channel_id=ctx.channel.id, message_id=reply.id,
+            author_id=ctx.author.id, event="add", filter=lambda _, p: p.emoji.name in ["\u21A9", "\u2705"],
             timeout_each=60) as mon:
 
             rollback = True

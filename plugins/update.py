@@ -17,14 +17,11 @@ async def init() -> None:
     global conf
     conf = cast(UpdateConf, await util.db.kv.load(__name__))
 
-@plugins.commands.command("update")
-@plugins.privileges.priv("admin")
-async def update_command(msg: discord.Message, args: plugins.commands.ArgParser) -> None:
-    cwd = None
-    name = args.next_arg()
-    if isinstance(name, plugins.commands.StringArg):
-        cwd = conf[name.text]
-
+@plugins.commands.command_ext("update")
+@plugins.privileges.priv_ext("admin")
+async def update_command(ctx: discord.ext.commands.Context, bot_directory: Optional[str]) -> None:
+    """Pull changes from git remote"""
+    cwd = conf[bot_directory] if bot_directory is not None else None
     git_pull = await asyncio.create_subprocess_exec("git", "pull", "--ff-only", cwd=cwd,
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
     try:
@@ -33,4 +30,4 @@ async def update_command(msg: discord.Message, args: plugins.commands.ArgParser)
     finally:
         await git_pull.wait()
 
-    await msg.channel.send(util.discord.format("{!b}", output))
+    await ctx.send(util.discord.format("{!b}", output))
