@@ -1,12 +1,13 @@
 """
 Some common utilities for interacting with discord.
 """
-
+from __future__ import annotations
 import asyncio
 import re
 import math
 import discord
 import discord.abc
+import discord.ext.commands
 import string
 import logging
 from typing import (Any, List, Sequence, Callable, Iterable, Optional, Union, Coroutine, AsyncContextManager, Generic,
@@ -61,13 +62,20 @@ class CodeBlock:
         text = self.text.replace("``", "`\u200D`")
         return "```{}\n".format(self.language or "") + text + "```"
 
-    codeblock_re: re.Pattern[str] = re.compile(r"```(?P<language>\S*\n(?!```))?(?P<block>(?:(?!```).)+)```", re.S)
+    def __repr__(self) -> str:
+        if self.language is None:
+            return "CodeBlock({!r})".format(self.text)
+        else:
+            return "CodeBlock({!r}, language={!r})".format(self.text, self.language)
+
+    codeblock_re: re.Pattern[str] = re.compile(r"```(?:(?P<language>\S*)\n(?!```))?(?P<block>(?:(?!```).)+)```", re.S)
 
     @classmethod
     async def convert(cls, ctx: discord.ext.commands.Context, arg: str) -> CodeBlock:
-        if match := cls.codeblock_re.fullmatch(arg):
-            return CodeBlock(match["block"], match["language"])
-        raise discord.ext.commands.ArgumentParsingError(format("Please provide a codeblock"))
+        if (match := cls.codeblock_re.match(ctx.view.buffer, pos=ctx.view.index - len(arg))) is not None: # type: ignore
+            ctx.view.index = match.end() # type: ignore
+            return CodeBlock(match["block"], match["language"] or None)
+        raise discord.ext.commands.ArgumentParsingError("Please provide a codeblock")
 
 class Inline:
     __slots__ = "text"
@@ -88,13 +96,17 @@ class Inline:
             return "``" + text + "``"
         return "`" + text + "`"
 
-    inline_re: re.Pattern[str] = re.compile(r"``(?P<code2>(?:(?!``).)+)``|`(?P<code1>[^`]+)`", re.S)
+    def __repr__(self) -> str:
+        return "Inline({!r})".format(self.text)
+
+    inline_re: re.Pattern[str] = re.compile(r"``((?:(?!``).)+)``|`([^`]+)`", re.S)
 
     @classmethod
     async def convert(cls, ctx: discord.ext.commands.Context, arg: str) -> Inline:
-        if match := cls.inline_re.fullmatch(arg):
-            return Inline(match["code1"] or match["code2"])
-        raise discord.ext.commands.ArgumentParsingError(format("Please provide an inline"))
+        if (match := cls.inline_re.match(ctx.view.buffer, pos=ctx.view.index - len(arg))) is not None: # type: ignore
+            ctx.view.index = match.end() # type: ignore
+            return Inline(match[1] or match[2])
+        raise discord.ext.commands.ArgumentParsingError("Please provide an inline")
 
 class Formatter(string.Formatter):
     """
