@@ -180,14 +180,31 @@ discord_client.client.command_prefix = bot_prefix
 def cleanup_prefix() -> None:
     discord_client.client.command_prefix = ()
 
+@util.discord.event("command")
+async def on_command(ctx: discord.ext.commands.Context) -> None:
+    logger.info(util.discord.format("Command {!r} from {!m} in {!c}",
+        ctx.command.qualified_name, ctx.author.id, ctx.channel.id))
+    return
+
 @util.discord.event("command_error")
 async def on_command_error(ctx: discord.ext.commands.Context, exc: Exception) -> None:
     if isinstance(exc, discord.ext.commands.CommandNotFound):
         return
-    elif isinstance(exc, util.discord.UserError):
-        await ctx.send("Error: {}".format(exc.text))
+    elif isinstance(exc, discord.ext.commands.UserInputError):
+        # todo: display usage
+        await ctx.send("Error: {}".format(exc.args[0]), allowed_mentions=discord.AllowedMentions.none())
+        return
+    elif isinstance(exc, discord.ext.commands.CommandInvokeError):
+        logger.error(util.discord.format("Error in command {} {!r} {!r} from {!m} in {!c}",
+            ctx.command.qualified_name, tuple(ctx.args), ctx.kwargs,
+            ctx.author.id, ctx.channel.id), exc_info=exc.__cause__)
+        return
+    elif isinstance(exc, discord.ext.commands.CommandError):
+        await ctx.send("Error: {}".format(exc.args[0]), allowed_mentions=discord.AllowedMentions.none())
         return
     else:
+        logger.error(util.discord.format("Unknown exception in command {} {!r} {!r} from {!m} in {!c}",
+            ctx.command.qualified_name, tuple(ctx.args), ctx.kwargs), exc_info=exc)
         return
 
 @util.discord.event("message")
@@ -200,14 +217,15 @@ async def message_find_command(msg: discord.Message) -> None:
             name = cmd.text.lower()
             if name in commands:
                 try:
-                    logger.info("Command {!r} from <@{}> in <#{}>".format(cmdline, msg.author.id, msg.channel.id))
+                    logger.info(util.discord.format("Command {!r} from {!m} in {!c}",
+                        cmdline, msg.author.id, msg.channel.id))
                     await commands[name](msg, parser)
                 except util.discord.UserError as exc:
-                    await msg.channel.send("Error: {}".format(exc.text))
+                    await msg.channel.send("Error ({}): {}".format(type(exc), exc.args[0]),
+                        allowed_mentions=discord.AllowedMentions.none())
                 except:
-                    logger.error(
-                        "Error in command {!r} from <@{}> in <#{}>".format(name, msg.author.id, msg.channel.id),
-                        exc_info=True)
+                    logger.error(util.discord.format("Error in command {!r} from {!m} in {!c}",
+                        name, msg.author.id, msg.channel.id), exc_info=True)
     await discord_client.client.process_commands(msg)
 
 def unsafe_hook_command(name: str, fun: Callable[[discord.Message, ArgParser], Awaitable[None]]) -> None:
