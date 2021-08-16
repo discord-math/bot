@@ -14,6 +14,7 @@ from typing import (List, Dict, Set, Tuple, Optional, Iterator, AsyncIterator, S
     Awaitable, Iterable, Protocol, cast, overload)
 import discord
 import discord.abc
+import discord.ext.commands
 
 import discord_client
 import util.db
@@ -21,9 +22,9 @@ import util.discord
 import util.asyncio
 import util.frozen_list
 
-import plugins.commands
 import plugins.reactions
 import plugins.privileges
+import plugins.cogs
 import plugins
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -1093,34 +1094,41 @@ async def init_tasks() -> None:
 
 # ------------ Commands ------------
 
-async def resolve_ticket(ref: Optional[discord.MessageReference], args: plugins.commands.ArgParser,
-    session: sqlalchemy.ext.asyncio.AsyncSession) -> Optional[Ticket]:
+async def resolve_ticket(ref: Optional[discord.MessageReference],
+    ticket_arg: Optional[Union[discord.PartialMessage, int]],
+    session: sqlalchemy.ext.asyncio.AsyncSession) -> Ticket:
     """
-    Resolves a ticket from the given message and command args, if possible.
-    Ticket is extracted from either the referenced message or the first arg.
+    Resolves a ticket from the given message and command arg, if possible.
     """
-    ticket = None
-    if ref is not None:
-        if (ref_msg := ref.resolved) and isinstance(ref_msg, discord.Message):
-            if ref_msg.author == discord_client.client.user and ref_msg.embeds:
-                embed = ref_msg.embeds[0]
-                name = embed.author.name
-                if isinstance(name, str) and name.startswith("Ticket #"):
-                    ticket_id = int(name[8:].split(' ', maxsplit=1)[0])
-                    ticket = await session.get(Ticket, ticket_id)
-    if ticket is None:
-        ticketarg = args.next_arg()
-        if ticketarg is not None and isinstance(ticketarg, plugins.commands.StringArg):
-            maybe_id = int(ticketarg.text)
-            # This is either a message snowflake (a big number) or a ticket id (small number). The leading 42 bits of a
-            # snowflake are the timestamp and we assume that if all of those are zero, it's probably not a snowflake as
-            # that would imply an epoch time of 0 milliseconds.
-            if maybe_id < 2**(10+12):
-                ticket = await session.get(Ticket, maybe_id)
-            else:
-                stmt = sqlalchemy.select(Ticket).where(Ticket.list_msgid == maybe_id)
-                ticket = (await session.execute(stmt)).scalars().first()
-    return ticket
+    if isinstance(ticket_arg, int):
+        # This is either a message snowflake (a big number) or a ticket id (small number). The leading 42 bits of a
+        # snowflake are the timestamp and we assume that if all of those are zero, it's probably not a snowflake as
+        # that would imply an epoch time of 0 milliseconds.
+        if ticket_arg < 1 << 22:
+            ticket = cast(Optional[Ticket], await session.get(Ticket, ticket_arg))
+            if ticket is None:
+                raise util.discord.InvocationError("No ticket with ID {}".format(ticket_arg))
+            return ticket
+        else:
+            stmt = sqlalchemy.select(Ticket).where(Ticket.list_msgid == ticket_arg)
+            ticket = cast(Optional[Ticket], (await session.execute(stmt)).scalars().first())
+            if ticket is None:
+                raise util.discord.InvocationError("Message ID {} is not referring to a ticket".format(ticket_arg))
+            return ticket
+    elif isinstance(ticket_arg, discord.PartialMessage):
+        stmt = sqlalchemy.select(Ticket).where(Ticket.list_msgid == ticket_arg.id)
+        ticket = cast(Optional[Ticket], (await session.execute(stmt)).scalars().first())
+        if ticket is None:
+            raise util.discord.InvocationError("Message ID {} is not referring to a ticket".format(ticket_arg.id))
+        return ticket
+    elif ref is not None:
+        stmt = sqlalchemy.select(Ticket).where(Ticket.list_msgid == ref.message_id)
+        ticket = cast(Optional[Ticket], (await session.execute(stmt)).scalars().first())
+        if ticket is None:
+            raise util.discord.InvocationError("Message ID {} is not referring to a ticket".format(ref.message_id))
+        return ticket
+    else:
+        raise util.discord.InvocationError("Specify a ticket by ID, message ID, or by replying to it")
 
 def summarise_tickets(tickets: Sequence[Ticket], title: str, *, dm: bool = False
     ) -> Optional[Iterator[discord.Embed]]:
@@ -1199,243 +1207,210 @@ async def pager(dest: discord.abc.Messageable, pages: List[Page]) -> None:
         except asyncio.CancelledError:
             pass
 
+@plugins.cogs.cog
+class Tickets(discord.ext.typed_commands.Cog[discord.ext.commands.Context]):
+    """Manage infraction history"""
+    @discord.ext.commands.command("note")
+    @plugins.privileges.priv_ext("mod")
+    async def note_command(self, ctx: discord.ext.commands.Context, target: util.discord.PartialUserConverter, *,
+        note: Optional[str]) -> None:
+        """Create a note on the target user."""
+        if note is None:
+            # Request the note dynamically
+            prompt = await ctx.send("Please enter the note:")
+            del_reaction = '\u274C'
+            await prompt.add_reaction(del_reaction)
+            with plugins.reactions.ReactionMonitor(channel_id=ctx.channel.id, message_id=prompt.id,
+                author_id=ctx.author.id, event="add", filter=lambda _, p: p.emoji.name == del_reaction) as mon:
+                msg_task = asyncio.create_task(
+                    discord_client.client.wait_for('message',
+                        check=lambda msg: msg.channel == ctx.channel and msg.author == ctx.author))
+                reaction_task = asyncio.ensure_future(mon)
+                try:
+                    done, pending = await asyncio.wait((msg_task, reaction_task),
+                        timeout=300, return_when=asyncio.FIRST_COMPLETED)
+                except asyncio.TimeoutError:
+                    await ctx.send("Note prompt timed out, please try again.")
 
-@plugins.commands.command("note")
-@plugins.privileges.priv("mod")
-async def cmd_note(msg: discord.Message, args: plugins.commands.ArgParser) -> None:
-    """
-    Create a note on the target user.
-    """
-    if not isinstance(target_arg := args.next_arg(), plugins.commands.UserMentionArg):
-        # TODO: Usage
-        return
-    targetid = target_arg.id
+                if msg_task in done:
+                    note = msg_task.result().content
+                elif reaction_task in done:
+                    await ctx.send("Note prompt cancelled, no note was created.")
+                msg_task.cancel()
+                reaction_task.cancel()
 
-    note = args.get_rest()
-    if not note:
-        # Request the note dynamically
-        prompt = await msg.channel.send("Please enter the note:")
-        del_reaction = '\u274C'
-        await prompt.add_reaction(del_reaction)
-        with plugins.reactions.ReactionMonitor(channel_id=msg.channel.id, message_id=prompt.id, author_id=msg.author.id,
-            event="add", filter=lambda _, p: p.emoji.name == del_reaction) as mon:
-            msg_task = asyncio.create_task(
-                discord_client.client.wait_for('message',
-                    check=lambda msg_: msg_.channel == msg.channel and msg_.author == msg.author))
-            reaction_task = asyncio.ensure_future(mon)
-            try:
-                done, pending = await asyncio.wait((msg_task, reaction_task),
-                    timeout=300, return_when=asyncio.FIRST_COMPLETED)
-            except asyncio.TimeoutError:
-                await msg.channel.send("Note prompt timed out, please try again.")
+        if note is not None:
+            async with sessionmaker() as session:
+                ticket = NoteTicket(
+                    mod=await TicketMod.get(session, ctx.author.id),
+                    targetid=target.id,
+                    created_at=datetime.datetime.utcnow(),
+                    modified_by=ctx.author.id,
+                    stage=TicketStage.COMMENTED,
+                    status=TicketStatus.IN_EFFECT,
+                    comment=note)
+                session.add(ticket)
+                async with Ticket.publish_all(session):
+                    await session.commit()
+                await session.commit()
 
-            if msg_task in done:
-                note = msg_task.result().content
-            elif reaction_task in done:
-                await msg.channel.send("Note prompt cancelled, no note was created.")
-            msg_task.cancel()
-            reaction_task.cancel()
+            await ctx.send(embed=discord.Embed(
+                description="[#{}]({}): Note created!".format(ticket.id, ticket.jump_link)))
 
-    if note:
+    @discord.ext.commands.group("ticket", aliases=["tickets"])
+    @plugins.privileges.priv_ext("mod")
+    async def ticket_command(self, ctx: discord.ext.commands.Context) -> None:
+        pass
+
+    @ticket_command.command("top")
+    async def ticket_top(self, ctx: discord.ext.commands.Context) -> None:
+        """Re-deliver the ticket at the top of your queue to your DMs."""
         async with sessionmaker() as session:
-            ticket = NoteTicket(
-                mod=await TicketMod.get(session, msg.author.id),
-                targetid=targetid,
-                created_at=datetime.datetime.utcnow(),
-                modified_by=msg.author.id,
-                stage=TicketStage.COMMENTED,
-                status=TicketStatus.IN_EFFECT,
-                comment=note)
-            session.add(ticket)
-            await session.commit()
-            await ticket.publish()
-
-        # Ack note creation
-        await msg.channel.send(embed=discord.Embed(
-            description="[#{}]({}): Note created!".format(ticket.id, ticket.jump_link)))
-
-@plugins.commands.command("tickets")
-@plugins.commands.command("ticket")
-@plugins.privileges.priv("mod")
-async def cmd_ticket(msg: discord.Message, args: plugins.commands.ArgParser) -> None:
-    user = msg.author
-    reply = msg.channel.send
-    no_mentions = discord.AllowedMentions.none()
-
-    S_Arg = plugins.commands.StringArg
-    UM_Arg = plugins.commands.UserMentionArg
-
-    tickets: Iterable[Ticket]
-    embeds: Optional[Iterable[discord.Embed]]
-
-    cmd_arg = args.next_arg()
-    if not isinstance(cmd_arg, S_Arg):
-        return
-    cmd = cmd_arg.text.lower()
-
-    if cmd == "top":
-        """
-        Usage: ticket top
-        DM you the ticket at the top of your queue (if any).
-        Re-deliver the ticket at the top of your queue to your DMS.
-        """
-        async with sessionmaker() as session:
-            mod = await session.get(TicketMod, user.id,
+            mod = await session.get(TicketMod, ctx.author.id,
                 options=(sqlalchemy.orm.joinedload(TicketMod.queue_top),))
+
             if mod is None or mod.queue_top is None:
-                await reply("Your queue is empty, good job!")
+                await ctx.send("Your queue is empty, good job!")
             else:
                 await mod.try_redelivery(mod.queue_top)
-                if msg.channel.type != discord.ChannelType.private:
-                    await reply("Ticket #{} has been delivered to your DMs.".format(mod.queue_top.id))
+                if ctx.channel.type != discord.ChannelType.private:
+                    await ctx.send("Ticket #{} has been delivered to your DMs.".format(mod.queue_top.id))
+
             await session.commit()
-    elif cmd == "queue":
-        """
-        Usage: ticket queue [modmention]
-        Show the specified moderator's (or your own) ticket queue.
-        """
-        modarg = args.next_arg()
-        if modarg is None or isinstance(modarg, UM_Arg):
-            modid = modarg.id if modarg is not None else user.id
-            moduser: Union[int, discord.Member] = modid
-            if msg.guild is not None:
-                try:
-                    moduser = await msg.guild.fetch_member(modid)
-                except (discord.Forbidden, discord.NotFound):
-                    pass
-            embeds = None
 
-            async with sessionmaker() as session:
-                stmt = sqlalchemy.select(Ticket).where(Ticket.modid == modid, Ticket.stage != TicketStage.COMMENTED
-                    ).order_by(Ticket.id)
-                tickets = (await session.execute(stmt)).scalars().all()
-                embeds = summarise_tickets(tickets, "Queue for {}".format(moduser),
-                    dm=msg.channel.type == discord.ChannelType.private)
+    @ticket_command.command("queue")
+    async def ticket_queue(self, ctx: discord.ext.commands.Context, mod: Optional[util.discord.PartialUserConverter]
+        ) -> None:
+        """Show the specified moderator's (or your own) ticket queue."""
+        user = ctx.author if mod is None else mod
 
-            if embeds:
-                await pager(msg.channel, [Page(embed=embed) for embed in embeds])
-            else:
-                await reply(util.discord.format("{!m} has an empty queue!", moduser),
-                    allowed_mentions=no_mentions)
-    elif cmd == "take":
-        """
-        Usage: ticket take <ticket>
-        Claim a ticket (i.e. set the responsible moderator to yourself).
-        """
         async with sessionmaker() as session:
-            if (ticket := await resolve_ticket(msg.reference, args, session)) is None:
-                await reply("No ticket referenced or ticket could not be found.")
-            elif ticket.modid == user.id:
-                await reply("This is already your ticket!")
+            stmt = sqlalchemy.select(Ticket).where(Ticket.modid == user.id, Ticket.stage != TicketStage.COMMENTED
+                ).order_by(Ticket.id)
+            tickets = (await session.execute(stmt)).scalars().all()
+            embeds = summarise_tickets(tickets, "Queue for {}".format(user),
+                dm=ctx.channel.type == discord.ChannelType.private)
+
+        if embeds:
+            await pager(ctx.channel, [Page(embed=embed) for embed in embeds])
+        else:
+            await ctx.send(util.discord.format("{!m} has an empty queue!", user),
+                allowed_mentions=discord.AllowedMentions.none())
+
+    @ticket_command.command("take")
+    async def ticket_take(self, ctx: discord.ext.commands.Context, ticket: Optional[Union[discord.PartialMessage, int]]
+        ) -> None:
+        """Assign the specified ticket to yourself."""
+        async with sessionmaker() as session:
+            tkt = await resolve_ticket(ctx.message.reference, ticket, session)
+            if tkt.modid == ctx.author.id:
+                await ctx.send("This is already your ticket!")
             else:
-                await ticket.mod.transfer(ticket, user.id, actorid=user.id)
-                await ticket.publish()
+                await tkt.mod.transfer(tkt, ctx.author.id, actorid=ctx.author.id)
+                await tkt.publish()
                 await session.commit()
 
-                await reply("You have claimed ticket #{}.".format(ticket.id))
-    elif cmd == "assign":
-        """
-        Usage: ticket assign <ticket> <modmention>
-        Assign the specified ticket to the specified moderator.
-        """
-        async with sessionmaker() as session:
-            if (ticket := await resolve_ticket(msg.reference, args, session)) is None:
-                await reply("No ticket referenced or ticket could not be found.")
-            elif not isinstance((mod_arg := args.next_arg()), UM_Arg):
-                await reply("Please provide a moderator mention!")
-            else:
-                if mod_arg.id == ticket.modid:
-                    await reply(util.discord.format("Ticket #{} is already assigned to {!m}", ticket.id, mod_arg.id),
-                        allowed_mentions=no_mentions)
-                else:
-                    await ticket.mod.transfer(ticket, mod_arg.id, actorid=user.id)
-                    await ticket.publish()
-                    await session.commit()
+                await ctx.send("You have claimed Ticket #{}.".format(tkt.id))
 
-                    await reply(util.discord.format("Assigned Ticket #{} to {!m}", ticket.id, mod_arg.id),
-                        allowed_mentions=no_mentions)
-    elif cmd == "set":
-        """
-        Set or reset the duration and comment for a ticket.
-        """
+    @ticket_command.command("assign")
+    async def ticket_assign(self, ctx: discord.ext.commands.Context,
+        ticket: Optional[Union[discord.PartialMessage, int]], mod: util.discord.PartialUserConverter) -> None:
+        """Assign the specified ticket to the specified moderator."""
         async with sessionmaker() as session:
-            if (ticket := await resolve_ticket(msg.reference, args, session)) is None:
-                await reply("No ticket referenced or ticket could not be found.")
+            tkt = await resolve_ticket(ctx.message.reference, ticket, session)
+            if mod.id == tkt.modid:
+                await ctx.send(util.discord.format("Ticket #{} is already assigned to {!m}", tkt.id, mod.id),
+                    allowed_mentions=discord.AllowedMentions.none())
             else:
-                ticket.duration, comment, message = TicketMod.parse_ticket_comment(ticket, args.get_rest())
-                if comment:
-                    ticket.comment = comment
-                ticket.modified_by = user.id
-                await ticket.publish()
+                await tkt.mod.transfer(tkt, mod.id, actorid=ctx.author.id)
+                await tkt.publish()
                 await session.commit()
 
-                await reply("Ticket comment set! " + message)
-    elif cmd == "append":
-        """
-        Append to the ticket reason.
-        """
-        async with sessionmaker() as session:
-            if (ticket := await resolve_ticket(msg.reference, args, session)) is None:
-                await reply("No ticket referenced or ticket could not be found.")
-            elif not (text := args.get_rest()):
-                # TODO: Usage
-                pass
-            elif len(ticket.comment or "") + len(text) > 2000:
-                await reply("Cannot append, exceeds maximum comment length!")
-            else:
-                ticket.append_comment(text)
-                ticket.modified_by = user.id
-                await ticket.publish()
-                await session.commit()
+                await ctx.send(util.discord.format("Assigned Ticket #{} to {!m}", tkt.id, mod.id),
+                    allowed_mentions=discord.AllowedMentions.none())
 
-                await reply(
-                    embed=discord.Embed(description="[#{}]({}): Ticket updated.".format(ticket.id, ticket.jump_link))
-                )
-    elif cmd == "revert":
-        """
-        Manually revert a ticket.
-        """
+    @ticket_command.command("set")
+    async def ticket_set(self, ctx: discord.ext.commands.Context,
+        ticket: Optional[Union[discord.PartialMessage, int]], *, duration_comment: str) -> None:
+        """Set the duration and comment for a ticket."""
         async with sessionmaker() as session:
-            if (ticket := await resolve_ticket(msg.reference, args, session)) is None:
-                await reply("No ticket referenced or ticket could not be found.")
-            elif not ticket.can_revert:
-                await reply("This ticket type ({}) cannot be reverted!".format(ticket.type.value))
-            elif not ticket.status in (TicketStatus.IN_EFFECT, TicketStatus.EXPIRE_FAILED):
-                await reply(embed=discord.Embed(
+            tkt = await resolve_ticket(ctx.message.reference, ticket, session)
+            tkt.duration, comment, message = TicketMod.parse_ticket_comment(tkt, duration_comment)
+
+            if comment:
+                tkt.comment = comment
+            tkt.modified_by = ctx.author.id
+            await tkt.publish()
+            await session.commit()
+
+            await ctx.send(embed=discord.Embed(description="[#{}]({}): Ticket updated. {}".format(
+                tkt.id, tkt.jump_link, message)))
+
+    @ticket_command.command("append")
+    async def ticket_append(self, ctx: discord.ext.commands.Context,
+        ticket: Optional[Union[discord.PartialMessage, int]], *, comment: str) -> None:
+        """Append to a ticket's comment."""
+        async with sessionmaker() as session:
+            tkt = await resolve_ticket(ctx.message.reference, ticket, session)
+            if len(tkt.comment or "") + len(comment) > 2000:
+                raise util.discord.UserError("Cannot append, exceeds maximum comment length!")
+
+            tkt.append_comment(comment)
+            tkt.modified_by = ctx.author.id
+            await tkt.publish()
+            await session.commit()
+
+            await ctx.send(embed=discord.Embed(description="[#{}]({}): Ticket updated.".format(
+                tkt.id, tkt.jump_link)))
+
+    @ticket_command.command("revert")
+    async def ticket_revert(self, ctx: discord.ext.commands.Context,
+        ticket: Optional[Union[discord.PartialMessage, int]]) -> None:
+        """Manually revert a ticket."""
+        async with sessionmaker() as session:
+            tkt = await resolve_ticket(ctx.message.reference, ticket, session)
+            if not tkt.can_revert:
+                raise util.discord.UserError("This ticket type ({}) cannot be reverted!".format(tkt.type.value))
+            if not tkt.status in (TicketStatus.IN_EFFECT, TicketStatus.EXPIRE_FAILED):
+                await ctx.send(embed=discord.Embed(
                     description=("[#{}]({}): Cannot be reverted as it is no longer active!".format(
-                        ticket.id, ticket.jump_link))))
-            else:
-                await ticket.revert(user.id)
-                await ticket.publish()
-                await session.commit()
+                        tkt.id, tkt.jump_link))))
+                return
 
-                await reply(embed=discord.Embed(
-                    description="[#{}]({}): Ticket reverted.".format(ticket.id, ticket.jump_link)))
-    elif cmd == "hide":
-        """
-        Hide (and revert) a ticket.
-        """
+            await tkt.revert(ctx.author.id)
+            await tkt.publish()
+            await session.commit()
+
+            await ctx.send(embed=discord.Embed(
+                description="[#{}]({}): Ticket reverted.".format(tkt.id, tkt.jump_link)))
+
+    @ticket_command.command("hide")
+    async def ticket_hide(self, ctx: discord.ext.commands.Context,
+        ticket: Optional[Union[discord.PartialMessage, int]], *, comment: Optional[str]) -> None:
+        """Hide (and revert) a ticket."""
         async with sessionmaker() as session:
-            if (ticket := await resolve_ticket(msg.reference, args, session)) is None:
-                await reply("No ticket referenced or ticket could not be found.")
-            elif ticket.hidden:
-                await reply(embed=discord.Embed(description="#{}: Is already hidden!".format(ticket.id)))
-            else:
-                reason = args.get_rest() or None
-                await ticket.hide(user.id, reason=reason)
-                await ticket.publish()
-                await session.commit()
+            tkt = await resolve_ticket(ctx.message.reference, ticket, session)
+            if tkt.hidden:
+                await ctx.send(embed=discord.Embed(description="#{}: Is already hidden!".format(tkt.id)))
+                return
 
-                await reply(embed=discord.Embed(description="#{}: Ticket hidden.".format(ticket.id)))
-    elif cmd == "show":
-        """
-        Show ticket(s) by ticketid or userid
-        """
-        arg = args.next_arg()
-        if isinstance(arg, UM_Arg):
-            # Collect tickets for the mentioned user
-            async with sessionmaker() as session:
-                stmt = sqlalchemy.select(Ticket).where(Ticket.targetid == arg.id).order_by(Ticket.id)
+            await tkt.hide(ctx.author.id, reason=comment)
+            await tkt.publish()
+            await session.commit()
+
+            await ctx.send(embed=discord.Embed(description="#{}: Ticket hidden.".format(tkt.id)))
+
+    @ticket_command.command("show")
+    async def ticket_show(self, ctx: discord.ext.commands.Context, *,
+        user_or_id: Union[util.discord.PartialUserConverter, discord.PartialMessage, int]
+        ) -> None:
+        """Show tickets affecting given user, or a ticket with a specific ID."""
+        async with sessionmaker() as session:
+            if isinstance(user_or_id, (discord.PartialMessage, int)):
+                tkt = await resolve_ticket(None, user_or_id, session)
+                await ctx.send(embed=tkt.to_embed(dm=ctx.channel.type == discord.ChannelType.private))
+            else:
+                stmt = sqlalchemy.select(Ticket).where(Ticket.targetid == user_or_id.id).order_by(Ticket.id)
                 tickets = (await session.execute(stmt)).scalars().all()
 
                 shown = []
@@ -1446,105 +1421,89 @@ async def cmd_ticket(msg: discord.Message, args: plugins.commands.ArgParser) -> 
                     else:
                         shown.append(tkt)
 
-                embeds = summarise_tickets(shown, title='Tickets for {}'.format(arg.id),
-                    dm=msg.channel.type == discord.ChannelType.private)
-                hidden_field = ', '.join('#{}'.format(ticket.id) for ticket in hidden)
+                embeds: Optional[Iterable[discord.Embed]] = summarise_tickets(shown,
+                    title='Tickets for {}'.format(user_or_id.id),
+                    dm=ctx.channel.type == discord.ChannelType.private)
+                hidden_field = ', '.join('#{}'.format(tkt.id) for tkt in hidden)
 
                 if hidden_field:
-                    embeds = embeds or (discord.Embed(title='Tickets for {}'.format(arg.id)),)
+                    embeds = embeds or (discord.Embed(title='Tickets for {}'.format(user_or_id.id)),)
                     embeds = (embed.add_field(name="Hidden", value=hidden_field) for embed in embeds)
 
                 if embeds:
-                    await pager(msg.channel, [Page(embed=embed) for embed in embeds])
+                    await pager(ctx.channel, [Page(embed=embed) for embed in embeds])
                 else:
-                    await reply("No tickets found for this user.")
-        elif isinstance(arg, S_Arg) and arg.text.isdigit():
-            # Assume provided number is a ticket id
-            async with sessionmaker() as session:
-                if (ticket := await session.get(Ticket, int(arg.text))) is not None:
-                    await reply(embed=ticket.to_embed(dm=msg.channel.type == discord.ChannelType.private))
-                else:
-                    await reply("No tickets found with this id!")
-    elif cmd == "showhidden":
-        """
-        Show hidden ticket(s) by ticketid or userid
-        """
-        arg = args.next_arg()
-        if isinstance(arg, UM_Arg):
-            async with sessionmaker() as session:
+                    await ctx.send("No tickets found for this user.")
+
+    @ticket_command.command("showhidden")
+    async def ticket_showhidden(self, ctx: discord.ext.commands.Context, *,
+        user_or_id: Union[util.discord.PartialUserConverter, discord.PartialMessage, int]
+        ) -> None:
+        """Show hidden tickets affecting given user, or a ticket with a specific ID."""
+        async with sessionmaker() as session:
+            if isinstance(user_or_id, (discord.PartialMessage, int)):
+                tkt = await resolve_ticket(None, user_or_id, session)
+                await ctx.send(embed=tkt.to_embed(dm=ctx.channel.type == discord.ChannelType.private))
+            else:
                 stmt = sqlalchemy.select(Ticket).where(
-                    Ticket.status == TicketStatus.HIDDEN, Ticket.targetid == arg.id).order_by(Ticket.id)
+                    Ticket.status == TicketStatus.HIDDEN, Ticket.targetid == user_or_id.id).order_by(Ticket.id)
                 tickets = (await session.execute(stmt)).scalars().all()
 
-                embeds = summarise_tickets(tickets, title='Hidden tickets for {}'.format(arg.id),
-                    dm=msg.channel.type == discord.ChannelType.private)
+                embeds = summarise_tickets(tickets, title='Hidden tickets for {}'.format(user_or_id.id),
+                    dm=ctx.channel.type == discord.ChannelType.private)
 
                 if embeds:
-                    await pager(msg.channel, [Page(embed=embed) for embed in embeds])
+                    await pager(ctx.channel, [Page(embed=embed) for embed in embeds])
                 else:
-                    await reply("No hidden tickets found for this user.")
-        elif isinstance(arg, S_Arg) and arg.text.isdigit():
-            # Assume provided number is a ticket id
-            async with sessionmaker() as session:
-                if (ticket := await session.get(Ticket, int(arg.text))) is not None:
-                    await reply(embed=ticket.to_embed(dm=msg.channel.type == discord.ChannelType.private))
-                else:
-                    await reply("No tickets found with this id!")
-    elif cmd == "history":
-        """
-        Show revision history for a given ticket
-        """
-        pass
-    else:
-        pass
+                    await ctx.send("No hidden tickets found for this user.")
 
-# ------------ Event handlers ------------
-
-@util.discord.event("member_ban")
-@util.discord.event("member_unban")
-@util.discord.event("member_remove")
-async def on_member_remove(*args: Any) -> None:
-    audit_log_updated()
-
-@util.discord.event("voice_state_update")
-async def process_voice_state(member: discord.Member, before: discord.VoiceState, after: discord.VoiceState) -> None:
-    if before.deaf != after.deaf or before.mute != after.mute:
-        audit_log_updated()
-    if after.channel is not None:
-        if member.id in conf.pending_unmutes:
-            try:
-                await member.edit(mute=False)
-                conf.pending_unmutes = util.frozen_list.FrozenList(
-                    filter(lambda i: i != member.id, conf.pending_unmutes))
-                logger.debug("Processed unmute for {}".format(member.id))
-            except discord.HTTPException as exc:
-                if exc.text != "Target user is not connected to voice.":
-                    raise
-        if member.id in conf.pending_undeafens:
-            try:
-                await member.edit(deafen=False)
-                conf.pending_undeafens = util.frozen_list.FrozenList(
-                    filter(lambda i: i != member.id, conf.pending_undeafens))
-                logger.debug("Processed undeafen for {}".format(member.id))
-            except discord.HTTPException as exc:
-                if exc.text != "Target user is not connected to voice.":
-                    raise
-
-@util.discord.event("member_update")
-async def process_member_update(before: discord.Member, after: discord.Member) -> None:
-    if before.roles != after.roles:
+    @discord.ext.commands.Cog.listener("on_member_ban")
+    @discord.ext.commands.Cog.listener("on_member_unban")
+    @discord.ext.commands.Cog.listener("on_member_remove")
+    async def on_member_remove(self, *args: Any) -> None:
         audit_log_updated()
 
-@util.discord.event("message")
-async def moderator_message(msg: discord.Message) -> None:
-    if msg.channel.type == discord.ChannelType.private:
-        if msg.author.id in queued_mods:
-            async with sessionmaker() as session:
-                mod = await session.get(TicketMod, msg.author.id,
-                    options=(sqlalchemy.orm.joinedload(TicketMod.queue_top),))
-                if mod is None:
-                    return
-                await mod.process_message(msg)
-                async with Ticket.publish_all(session):
+
+    @discord.ext.commands.Cog.listener("on_voice_state_update")
+    async def process_voice_state(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState
+        ) -> None:
+        if before.deaf != after.deaf or before.mute != after.mute:
+            audit_log_updated()
+        if after.channel is not None:
+            if member.id in conf.pending_unmutes:
+                try:
+                    await member.edit(mute=False)
+                    conf.pending_unmutes = util.frozen_list.FrozenList(
+                        filter(lambda i: i != member.id, conf.pending_unmutes))
+                    logger.debug("Processed unmute for {}".format(member.id))
+                except discord.HTTPException as exc:
+                    if exc.text != "Target user is not connected to voice.":
+                        raise
+            if member.id in conf.pending_undeafens:
+                try:
+                    await member.edit(deafen=False)
+                    conf.pending_undeafens = util.frozen_list.FrozenList(
+                        filter(lambda i: i != member.id, conf.pending_undeafens))
+                    logger.debug("Processed undeafen for {}".format(member.id))
+                except discord.HTTPException as exc:
+                    if exc.text != "Target user is not connected to voice.":
+                        raise
+
+    @discord.ext.commands.Cog.listener("on_member_update")
+    async def process_member_update(self, before: discord.Member, after: discord.Member) -> None:
+        if before.roles != after.roles:
+            audit_log_updated()
+
+    @discord.ext.commands.Cog.listener("on_message")
+    async def moderator_message(self, msg: discord.Message) -> None:
+        if msg.channel.type == discord.ChannelType.private:
+            if msg.author.id in queued_mods:
+                async with sessionmaker() as session:
+                    mod = await session.get(TicketMod, msg.author.id,
+                        options=(sqlalchemy.orm.joinedload(TicketMod.queue_top),))
+                    if mod is None:
+                        return
+                    await mod.process_message(msg)
+                    async with Ticket.publish_all(session):
+                        await session.commit()
                     await session.commit()
-                await session.commit()
