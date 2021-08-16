@@ -66,6 +66,20 @@ class Quoted:
     async def convert(cls, ctx: discord.ext.commands.Context, arg: str) -> Quoted:
         return cls(arg)
 
+def undo_get_quoted_word(view: discord.ext.commands.view.StringView, arg: str) -> int: # type: ignore
+    escaped_quotes = discord.ext.commands.view._all_quotes # type: ignore
+    offset = 0
+    last = view.buffer[view.index - 1]
+    if last == "\\":
+        offset = 1
+    elif not arg.endswith(last):
+        for open_quote, close_quote in discord.ext.commands.view._quotes.items(): # type: ignore
+            if close_quote == last:
+                escaped_quotes = (open_quote, close_quote)
+                offset = 2
+                break
+    return cast(int, view.index) - offset - len(arg) - sum(ch in escaped_quotes for ch in arg)
+
 class CodeBlock(Quoted):
     __slots__ = "language"
     language: Optional[str]
@@ -88,7 +102,8 @@ class CodeBlock(Quoted):
 
     @classmethod
     async def convert(cls, ctx: discord.ext.commands.Context, arg: str) -> CodeBlock:
-        if (match := cls.codeblock_re.match(ctx.view.buffer, pos=ctx.view.index - len(arg))) is not None: # type: ignore
+        if (match := cls.codeblock_re.match(ctx.view.buffer, pos=undo_get_quoted_word(ctx.view, arg)) # type: ignore
+            ) is not None:
             ctx.view.index = match.end() # type: ignore
             return cls(match["block"], match["language"] or None)
         raise discord.ext.commands.ArgumentParsingError("Please provide a codeblock")
@@ -119,7 +134,8 @@ class Inline(Quoted):
 
     @classmethod
     async def convert(cls, ctx: discord.ext.commands.Context, arg: str) -> Inline:
-        if (match := cls.inline_re.match(ctx.view.buffer, pos=ctx.view.index - len(arg))) is not None: # type: ignore
+        if (match := cls.inline_re.match(ctx.view.buffer, pos=undo_get_quoted_word(ctx.view, arg)) # type: ignore
+            ) is not None:
             ctx.view.index = match.end() # type: ignore
             return cls(match[1] or match[2])
         raise discord.ext.commands.ArgumentParsingError("Please provide an inline")
