@@ -942,17 +942,18 @@ async def poll_audit_log() -> None:
                                 for ticket in await create_handler(session, entry):
                                     session.add(ticket)
                                     logger.debug("Created {!r} from audit {}".format(ticket.describe(), entry.id))
+                                    await session.commit() # to get ID
+                                    await ticket.publish()
                             for revert_handler in revert_handlers.get(entry.action, ()):
                                 for ticket in await revert_handler(session, entry):
                                     ticket.status = TicketStatus.REVERTED
                                     ticket.modified_by = entry.user.id
                                     logger.debug("Reverted Ticket #{} from audit {}".format(ticket.id, entry.id))
+                                    await ticket.publish()
                     except asyncio.CancelledError:
                         raise
                     except:
                         logger.error("Processing audit entry {}".format(entry), exc_info=True)
-                async with Ticket.publish_all(session):
-                    await session.commit()
                 await session.commit()
 
         except asyncio.CancelledError:
@@ -1175,8 +1176,9 @@ async def pager(dest: discord.abc.Messageable, pages: List[Page]) -> None:
         await msg.add_reaction(r)
 
     index = 0
-    with plugins.reactions.ReactionMonitor(channel_id=msg.channel.id, message_id=msg.id, event='add',
-        filter=lambda _, p: p.emoji.name in reactions, timeout_each=120) as mon:
+    with plugins.reactions.ReactionMonitor(channel_id=msg.channel.id, message_id=msg.id, event="add",
+        filter=lambda _, p: p.user_id != discord_client.client.user.id and p.emoji.name in reactions,
+        timeout_each=120) as mon:
         try:
             while True:
                 _, payload = await mon
