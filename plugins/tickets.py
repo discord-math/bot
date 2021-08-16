@@ -63,6 +63,7 @@ class TicketsConf(Protocol, Awaitable[None]):
     prompt_interval: int # How often to ping about delivered tickets
     pending_unmutes: util.frozen_list.FrozenList[int] # List of users peding VC unmute
     pending_undeafens: util.frozen_list.FrozenList[int] # List of users peding VC undeafen
+    audit_log_precision: float # How long to allow the audit log to catch up
 
 conf: TicketsConf
 
@@ -916,10 +917,11 @@ async def poll_audit_log() -> None:
         try:
             try:
                 await asyncio.wait_for(audit_log_event.wait(), timeout=600)
-                await asyncio.sleep(1)
+                while True:
+                    audit_log_event.clear()
+                    await asyncio.wait_for(audit_log_event.wait(), timeout=conf.audit_log_precision)
             except asyncio.TimeoutError:
                 pass
-            audit_log_event.clear()
 
             logger.debug("Reading audit entries since {}".format(last))
             # audit_logs(after) is currently broken so we read the entire audit
