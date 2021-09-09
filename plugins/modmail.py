@@ -13,6 +13,7 @@ import util.db
 import util.db.kv
 import plugins
 import plugins.reactions
+import plugins.cogs
 
 registry: sqlalchemy.orm.registry = sqlalchemy.orm.registry()
 
@@ -149,55 +150,58 @@ class ModMailClient(discord.Client):
                 await create_thread(msg.author.id, copy_first.id)
             await msg.add_reaction("\u2709")
 
-@util.discord.event("message")
-async def modmail_reply(msg: discord.Message) -> None:
-    if msg.reference and msg.reference.message_id in message_map and not msg.author.bot:
-        modmail = message_map[msg.reference.message_id]
+@plugins.cogs.cog
+class Modmail(discord.ext.typed_commands.Cog[discord.ext.commands.Context]):
+    """Handle modmail messages"""
+    @discord.ext.commands.Cog.listener("on_message")
+    async def modmail_reply(self, msg: discord.Message) -> None:
+        if msg.reference and msg.reference.message_id in message_map and not msg.author.bot:
+            modmail = message_map[msg.reference.message_id]
 
-        anon_react = "\U0001F574"
-        named_react = "\U0001F9CD"
-        cancel_react = "\u274C"
+            anon_react = "\U0001F574"
+            named_react = "\U0001F9CD"
+            cancel_react = "\u274C"
 
-        try:
-            query = await msg.channel.send(
-                "Reply anonymously {}, personally {}, or cancel {}".format(anon_react, named_react, cancel_react))
-        except (discord.NotFound, discord.Forbidden):
-            return
-
-        reactions = (anon_react, named_react, cancel_react)
-        try:
-            with plugins.reactions.ReactionMonitor(channel_id=query.channel.id, message_id=query.id,
-                author_id=msg.author.id, event="add", filter=lambda _, p: p.emoji.name in reactions,
-                timeout_each=120) as mon:
-                for react in reactions:
-                    await query.add_reaction(react)
-                _, payload = await mon
-                reaction = payload.emoji.name
-        except (discord.NotFound, discord.Forbidden):
-            return
-        except asyncio.TimeoutError:
-            reaction = cancel_react
-
-        await query.delete()
-        if reaction == cancel_react:
-            await msg.channel.send("Cancelled")
-        else:
-            header = ""
-            if reaction == named_react:
-                name = isinstance(msg.author, discord.Member) and msg.author.nick or msg.author.name
-                header = util.discord.format("**From {}** {!m}:\n\n", name, msg.author)
             try:
-                chan = await client.fetch_channel(modmail.dm_channel_id)
-                if not isinstance(chan, discord.DMChannel):
-                    await msg.channel.send("Could not deliver DM (DM closed)")
-                    return
-                await chan.send(header + msg.content,
-                    reference=discord.MessageReference(
-                        message_id=modmail.dm_message_id, channel_id=modmail.dm_channel_id, fail_if_not_exists=False))
+                query = await msg.channel.send(
+                    "Reply anonymously {}, personally {}, or cancel {}".format(anon_react, named_react, cancel_react))
             except (discord.NotFound, discord.Forbidden):
-                await msg.channel.send("Could not deliver DM (User left guild?)")
+                return
+
+            reactions = (anon_react, named_react, cancel_react)
+            try:
+                with plugins.reactions.ReactionMonitor(channel_id=query.channel.id, message_id=query.id,
+                    author_id=msg.author.id, event="add", filter=lambda _, p: p.emoji.name in reactions,
+                    timeout_each=120) as mon:
+                    for react in reactions:
+                        await query.add_reaction(react)
+                    _, payload = await mon
+                    reaction = payload.emoji.name
+            except (discord.NotFound, discord.Forbidden):
+                return
+            except asyncio.TimeoutError:
+                reaction = cancel_react
+
+            await query.delete()
+            if reaction == cancel_react:
+                await msg.channel.send("Cancelled")
             else:
-                await msg.channel.send("Message delivered")
+                header = ""
+                if reaction == named_react:
+                    name = isinstance(msg.author, discord.Member) and msg.author.nick or msg.author.name
+                    header = util.discord.format("**From {}** {!m}:\n\n", name, msg.author)
+                try:
+                    chan = await client.fetch_channel(modmail.dm_channel_id)
+                    if not isinstance(chan, discord.DMChannel):
+                        await msg.channel.send("Could not deliver DM (DM closed)")
+                        return
+                    await chan.send(header + msg.content,
+                        reference=discord.MessageReference(message_id=modmail.dm_message_id,
+                            channel_id=modmail.dm_channel_id, fail_if_not_exists=False))
+                except (discord.NotFound, discord.Forbidden):
+                    await msg.channel.send("Could not deliver DM (User left guild?)")
+                else:
+                    await msg.channel.send("Message delivered")
 
 client: discord.Client = ModMailClient(
     loop=asyncio.get_event_loop(),
