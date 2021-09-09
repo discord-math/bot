@@ -6,7 +6,7 @@ import io
 from itertools import count
 import re
 import time
-from typing import Iterator, Optional, Protocol, TypedDict, cast
+from typing import Iterator, Optional, Tuple, Protocol, TypedDict, cast
 import discord_client
 import logging
 import plugins.commands
@@ -24,7 +24,7 @@ class Reminder(TypedDict):
 class RemindersConf(Protocol):
     def __getitem__(self, user_id: str) -> Optional[FrozenList[Reminder]]: ...
     def __setitem__(self, user_id: str, obj: Optional[FrozenList[Reminder]]) -> None: ...
-    def __iter__(self) -> Iterator[str]: ...
+    def __iter__(self) -> Iterator[Tuple[str]]: ...
 
 conf: RemindersConf
 logger = logging.getLogger(__name__)
@@ -114,7 +114,7 @@ async def expire_reminders() -> None:
         try:
             now = datetime.now(timezone.utc).timestamp()
             next_expiry = None
-            for user_id in conf:
+            for user_id, in conf:
                 reminders = conf[user_id]
                 if reminders is None: continue
                 for reminder in reminders:
