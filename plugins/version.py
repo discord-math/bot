@@ -5,6 +5,7 @@ import plugins.privileges
 import util.discord
 import discord.ext.commands
 
+@plugins.commands.cleanup
 @plugins.commands.command_ext("version")
 @plugins.privileges.priv_ext("mod")
 async def version_command(ctx: discord.ext.commands.Context) -> None:

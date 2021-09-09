@@ -8,7 +8,7 @@ import logging
 import discord
 import discord.ext.commands
 import discord.ext.typed_commands
-from typing import (Dict, Iterator, Optional, Callable, Awaitable, Coroutine, Any, Type, TypeVar, Protocol, cast,
+from typing import (Dict, Set, Iterator, Optional, Callable, Awaitable, Coroutine, Any, Type, TypeVar, Protocol, cast,
     overload)
 import util.discord
 import discord_client
@@ -188,26 +188,37 @@ async def on_command(ctx: discord.ext.commands.Context) -> None:
 
 @util.discord.event("command_error")
 async def on_command_error(ctx: discord.ext.commands.Context, exc: Exception) -> None:
-    if isinstance(exc, discord.ext.commands.CommandNotFound):
-        return
-    elif isinstance(exc, discord.ext.commands.CheckFailure):
-        return
-    elif isinstance(exc, discord.ext.commands.UserInputError):
-        # todo: display usage
-        await ctx.send("Error: {}".format(exc.args[0]), allowed_mentions=discord.AllowedMentions.none())
-        return
-    elif isinstance(exc, discord.ext.commands.CommandInvokeError):
-        logger.error(util.discord.format("Error in command {} {!r} {!r} from {!m} in {!c}",
-            ctx.command.qualified_name, tuple(ctx.args), ctx.kwargs,
-            ctx.author.id, ctx.channel.id), exc_info=exc.__cause__)
-        return
-    elif isinstance(exc, discord.ext.commands.CommandError):
-        await ctx.send("Error: {}".format(exc.args[0]), allowed_mentions=discord.AllowedMentions.none())
-        return
-    else:
-        logger.error(util.discord.format("Unknown exception in command {} {!r} {!r} from {!m} in {!c}",
-            ctx.command.qualified_name, tuple(ctx.args), ctx.kwargs), exc_info=exc)
-        return
+    try:
+        if isinstance(exc, discord.ext.commands.CommandNotFound):
+            return
+        elif isinstance(exc, discord.ext.commands.CheckFailure):
+            return
+        elif isinstance(exc, discord.ext.commands.UserInputError):
+            message = "Error: {}".format(exc.args[0])
+            if ctx.command is not None:
+                if getattr(ctx.command, "suppress_usage", False):
+                    return
+                if ctx.invoked_with is not None and ctx.invoked_parents is not None:
+                    usage = " ".join(s for s in ctx.invoked_parents + [ctx.invoked_with, ctx.command.signature] if s)
+                else:
+                    usage = " ".join(s for s in [ctx.command.qualified_name, ctx.command.signature] if s)
+                message += util.discord.format("\nUsage: {!i}", usage)
+            await ctx.send(message, allowed_mentions=discord.AllowedMentions.none())
+            return
+        elif isinstance(exc, discord.ext.commands.CommandInvokeError):
+            logger.error(util.discord.format("Error in command {} {!r} {!r} from {!m} in {!c}",
+                ctx.command.qualified_name, tuple(ctx.args), ctx.kwargs,
+                ctx.author.id, ctx.channel.id), exc_info=exc.__cause__)
+            return
+        elif isinstance(exc, discord.ext.commands.CommandError):
+            await ctx.send("Error: {}".format(exc.args[0]), allowed_mentions=discord.AllowedMentions.none())
+            return
+        else:
+            logger.error(util.discord.format("Unknown exception in command {} {!r} {!r} from {!m} in {!c}",
+                ctx.command.qualified_name, tuple(ctx.args), ctx.kwargs), exc_info=exc)
+            return
+    finally:
+        await finalize_cleanup(ctx)
 
 @util.discord.event("message")
 async def message_find_command(msg: discord.Message) -> None:
@@ -259,7 +270,7 @@ def command(name: str) -> Callable[[Callable[[discord.Message, ArgParser], Await
         return fun
     return decorator
 
-T = TypeVar("T")
+T = TypeVar("T", bound=discord.ext.typed_commands.Command[discord.ext.commands.Context])
 
 @overload
 def command_ext(name: Optional[str] = None, cls: Type[T] = ..., *args: Any, **kwargs: Any) -> Callable[
@@ -283,3 +294,84 @@ def command_ext(name: Optional[str] = None, cls: Any = discord.ext.commands.Comm
             discord_client.client.remove_command(cmd.name)
         return cmd
     return decorator
+
+def suppress_usage(cmd: T) -> T:
+    cmd.suppress_usage = True # type: ignore
+    return cmd
+
+class CleanupReference:
+    __slots__ = "messages", "task"
+    messages: Set[discord.PartialMessage]
+    task: Optional[asyncio.Task[None]]
+
+    def __init__(self, ctx: discord.ext.commands.Context):
+        self.messages = set()
+        chan_id = ctx.channel.id
+        msg_id = ctx.message.id
+        async def cleanup_task() -> None:
+            await ctx.bot.wait_for("raw_message_delete",
+                check=lambda m: m.channel_id == chan_id and m.message_id == msg_id)
+        self.task = asyncio.create_task(cleanup_task())
+
+    def __del__(self) -> None:
+        if self.task is not None:
+            self.task.cancel()
+            self.task = None
+
+    def add(self, msg: discord.Message) -> None:
+        self.messages.add(discord.PartialMessage(channel=msg.channel, id=msg.id)) # type: ignore
+
+    async def finalize(self) -> None:
+        if self.task is None:
+            return
+        try:
+            if len(self.messages) != 0:
+                await asyncio.wait_for(self.task, 300)
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            pass
+        else:
+            for msg in self.messages:
+                try:
+                    await msg.delete()
+                except (discord.NotFound, discord.Forbidden):
+                    pass
+        finally:
+            self.task.cancel()
+            self.task = None
+
+def init_cleanup(ctx: discord.ext.commands.Context) -> None:
+    if not hasattr(ctx, "cleanup"):
+        ref = CleanupReference(ctx)
+        ctx.cleanup = ref # type: ignore
+
+        old_send = ctx.send
+        async def send(*args: Any, **kwargs: Any) -> discord.Message:
+            msg = await old_send(*args, **kwargs)
+            ref.add(msg)
+            return msg
+        ctx.send = send # type: ignore
+
+async def finalize_cleanup(ctx: discord.ext.commands.Context) -> None:
+    if (ref := getattr(ctx, "cleanup", None)) is not None:
+        await ref.finalize()
+
+def add_cleanup(ctx: discord.ext.commands.Context, msg: discord.Message) -> None:
+    if (ref := getattr(ctx, "cleanup", None)) is not None:
+        ref.add(msg)
+
+def cleanup(cmd: T) -> T:
+    old_invoke = cmd.invoke
+    async def invoke(ctx: discord.ext.commands.Context) -> None:
+        init_cleanup(ctx)
+        await old_invoke(ctx)
+        await finalize_cleanup(ctx)
+    cmd.invoke = invoke # type: ignore
+
+    old_on_error = getattr(cmd, "on_error", None)
+    async def on_error(ctx: discord.ext.commands.Context, exc: Exception) -> None:
+        init_cleanup(ctx)
+        if old_on_error is not None:
+            await old_on_error(exc)
+    cmd.on_error = on_error # type: ignore
+
+    return cmd

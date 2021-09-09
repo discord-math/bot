@@ -31,6 +31,7 @@ async def reply_exception(ctx: discord.ext.commands.Context) -> None:
     del tb
     await ctx.send(text)
 
+@plugins.commands.cleanup
 @plugins.commands.command_ext("load")
 @plugins.privileges.priv_ext("admin")
 async def load_command(ctx: discord.ext.commands.Context, plugin: PluginConverter) -> None:
@@ -42,6 +43,7 @@ async def load_command(ctx: discord.ext.commands.Context, plugin: PluginConverte
     else:
         await ctx.send("\u2705")
 
+@plugins.commands.cleanup
 @plugins.commands.command_ext("reload")
 @plugins.privileges.priv_ext("admin")
 async def reload_command(ctx: discord.ext.commands.Context, plugin: PluginConverter) -> None:
@@ -53,6 +55,7 @@ async def reload_command(ctx: discord.ext.commands.Context, plugin: PluginConver
     else:
         await ctx.send("\u2705")
 
+@plugins.commands.cleanup
 @plugins.commands.command_ext("unsafereload")
 @plugins.privileges.priv_ext("admin")
 async def unsafe_reload_command(ctx: discord.ext.commands.Context, plugin: PluginConverter) -> None:
@@ -64,6 +67,7 @@ async def unsafe_reload_command(ctx: discord.ext.commands.Context, plugin: Plugi
     else:
         await ctx.send("\u2705")
 
+@plugins.commands.cleanup
 @plugins.commands.command_ext("unload")
 @plugins.privileges.priv_ext("admin")
 async def unload_command(ctx: discord.ext.commands.Context, plugin: PluginConverter) -> None:
@@ -75,6 +79,7 @@ async def unload_command(ctx: discord.ext.commands.Context, plugin: PluginConver
     else:
         await ctx.send("\u2705")
 
+@plugins.commands.cleanup
 @plugins.commands.command_ext("unsafeunload")
 @plugins.privileges.priv_ext("admin")
 async def unsafe_unload_command(ctx: discord.ext.commands.Context, plugin: PluginConverter) -> None:
@@ -86,6 +91,7 @@ async def unsafe_unload_command(ctx: discord.ext.commands.Context, plugin: Plugi
     else:
         await ctx.send("\u2705")
 
+@plugins.commands.cleanup
 @plugins.commands.command_ext("reloadmod")
 @plugins.privileges.priv_ext("admin")
 async def reloadmod_command(ctx: discord.ext.commands.Context, module: str) -> None:
@@ -97,6 +103,7 @@ async def reloadmod_command(ctx: discord.ext.commands.Context, module: str) -> N
     else:
         await ctx.send("\u2705")
 
+@plugins.commands.cleanup
 @plugins.commands.command_ext("autoload", cls=discord.ext.commands.Group, invoke_without_command=True)
 @plugins.privileges.priv_ext("admin")
 async def autoload_command(ctx: discord.ext.commands.Context) -> None:
@@ -117,6 +124,7 @@ async def autoload_remove(ctx: discord.ext.commands.Context, plugin: PluginConve
     await plugins.autoload.set_autoload(plugin, False)
     await ctx.send("\u2705")
 
+@plugins.commands.cleanup
 @plugins.commands.command_ext("plugins")
 @plugins.privileges.priv_ext("mod")
 async def plugins_command(ctx: discord.ext.commands.Context) -> None:

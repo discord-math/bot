@@ -13,6 +13,7 @@ import util.db
 import util.db.kv
 import util.asyncio
 
+@plugins.commands.cleanup
 @plugins.commands.command_ext("config", cls=discord.ext.commands.Group, invoke_without_command=True)
 @plugins.privileges.priv_ext("shell")
 async def config_command(ctx: discord.ext.commands.Context, namespace: Optional[str], key: Optional[str],
@@ -46,6 +47,7 @@ async def config_delete(ctx: discord.ext.commands.Context, namespace: str, key: 
     await conf
     await ctx.send("\u2705")
 
+@plugins.commands.cleanup
 @plugins.commands.command_ext("sql")
 @plugins.privileges.priv_ext("shell")
 async def sql_command(ctx: discord.ext.commands.Context,

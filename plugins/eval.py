@@ -16,6 +16,7 @@ import discord_client
 
 T = TypeVar("T")
 
+@plugins.commands.cleanup
 @plugins.commands.command_ext("exec", aliases=["eval"])
 @plugins.privileges.priv_ext("shell")
 async def exec_command(ctx: discord.ext.commands.Context,

@@ -17,6 +17,7 @@ async def init() -> None:
     global conf
     conf = cast(UpdateConf, await util.db.kv.load(__name__))
 
+@plugins.commands.cleanup
 @plugins.commands.command_ext("update")
 @plugins.privileges.priv_ext("admin")
 async def update_command(ctx: discord.ext.commands.Context, bot_directory: Optional[str]) -> None:

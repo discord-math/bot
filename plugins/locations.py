@@ -56,6 +56,7 @@ def location_ext(name: str) -> Callable[[Callable[..., Coroutine[Any, Any, None]
 class LocContext(discord.ext.commands.Context):
     loc: str
 
+@plugins.commands.cleanup
 @plugins.commands.command_ext("location", cls=discord.ext.commands.Group)
 @plugins.privileges.priv_ext("shell")
 async def location_command(ctx: discord.ext.commands.Context) -> None:

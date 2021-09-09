@@ -64,6 +64,7 @@ def priv_ext(name: str) -> Callable[[Callable[..., Coroutine[Any, Any, None]]], 
 class PrivContext(discord.ext.commands.Context):
     priv: str
 
+@plugins.commands.cleanup
 @plugins.commands.command_ext("priv", cls=discord.ext.commands.Group)
 @priv_ext("shell")
 async def priv_command(ctx: discord.ext.commands.Context) -> None:
