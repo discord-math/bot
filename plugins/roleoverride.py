@@ -1,28 +1,28 @@
-from typing import Protocol, cast
+from typing import Optional, Protocol, cast
 import plugins
 import discord
 import util.db.kv
 import util.discord
 
-class TalksRoleConf(Protocol):
-    def __getitem__(self, id: str) -> util.frozen_list.FrozenList[str]: ...
-    def __contains__(self, id: str) -> bool: ...
+class RoleOverrideConf(Protocol):
+    def __getitem__(self, id: int) -> Optional[util.frozen_list.FrozenList[int]]: ...
+    def __contains__(self, id: int) -> bool: ...
 
-conf: TalksRoleConf
+conf: RoleOverrideConf
 
 @plugins.init
 async def init() -> None:
     global conf
-    conf = cast(TalksRoleConf, await util.db.kv.load(__name__))
+    conf = cast(RoleOverrideConf, await util.db.kv.load(__name__))
 
 @util.discord.event("member_update")
 async def on_member_update(before: discord.Member, after: discord.Member) -> None:
     removed = set()
+    print(after.roles)
     for role in after.roles:
-        if str(role.id) in conf:
-            masked = conf[str(role.id)]
+        if (masked := conf[role.id]) is not None:
             for r in after.roles:
-                if str(r.id) in masked:
+                if r.id in masked:
                     removed.add(r)
     if len(removed):
         await after.remove_roles(*removed)
