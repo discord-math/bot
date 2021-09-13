@@ -518,3 +518,48 @@ class ChannelConverter(discord.abc.GuildChannel):
     @classmethod
     async def convert(cls, ctx: discord.ext.commands.Context, arg: str) -> discord.abc.GuildChannel:
         return await PCConv.convert(ctx, arg, discord.abc.GuildChannel)
+
+class PartialEmojiConverter(discord.PartialEmoji):
+    emoji_re: re.Pattern[str] = re.compile(r"<(?P<animated>a?):(?P<name>\w+):(?P<id>\d+)>")
+    emoji_name_re: re.Pattern[str] = re.compile(r"[^\x00-\x7F]+")
+
+    @classmethod
+    async def convert(cls, ctx: discord.ext.commands.Context, arg: str) -> discord.PartialEmoji:
+        bot_connection = ctx.bot._connection # type: ignore
+        if match := cls.emoji_re.fullmatch(arg):
+            return discord.PartialEmoji.with_state(bot_connection, animated = match["animated"] == "a",
+                name = match["name"], id = int(match["id"]))
+        if match := cls.emoji_name_re.fullmatch(arg):
+            return discord.PartialEmoji.with_state(bot_connection, name = arg)
+
+        matches = priority_find(lambda r: named_priority(r, arg), ctx.bot.emojis)
+        if len(matches) > 1:
+            raise discord.ext.commands.BadArgument(format("Multiple results for emoji {!i}", arg))
+        elif len(matches) == 1:
+            return discord.PartialEmoji.with_state(bot_connection, animated = matches[0].animated,
+                name = matches[0].name, id = matches[0].id)
+        else:
+            raise discord.ext.commands.BadArgument(format("No results for emoji {!i}", arg))
+
+class EmojiConverter(discord.Emoji):
+    emoji_re: re.Pattern[str] = re.compile(r"<(?P<animated>a?):(?P<name>\w+):(?P<id>\d+)>")
+
+    @classmethod
+    async def convert(cls, ctx: discord.ext.commands.Context, arg: str) -> discord.Emoji:
+        if match := cls.emoji_re.fullmatch(arg):
+            emoji_id = int(match["id"])
+            if emoji := discord.utils.find(lambda r: r.id == emoji_id, ctx.guild.emojis if ctx.guild else ()):
+                return emoji
+            raise discord.ext.commands.BadArgument(format("No results for emoji id {}", match["id"]))
+        matches = priority_find(lambda r: named_priority(r, arg), ctx.bot.emojis)
+        if len(matches) > 1:
+            raise discord.ext.commands.BadArgument(format("Multiple results for emoji {!i}", arg))
+        elif len(matches) == 1:
+            return matches[0]
+        else:
+            raise discord.ext.commands.BadArgument(format("No results for emoji {!i}", arg))
+
+class PartialMessageConverter(discord.PartialMessage):
+    @classmethod
+    async def convert(cls, ctx: discord.ext.commands.Context, arg: str) -> discord.PartialMessage:
+        return await discord.ext.commands.PartialMessageConverter().convert(ctx, arg)
