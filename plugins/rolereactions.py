@@ -1,16 +1,19 @@
 import re
 import discord
 import discord.utils
-from typing import Tuple, Optional, Iterator, Union, TypedDict, Protocol, cast
 import discord_client
+from typing import Tuple, Optional, Iterator, Union, TypedDict, Protocol, cast
 import util.db.kv
 import util.discord
 import util.frozen_dict
 import plugins.commands
 import plugins.privileges
+import discord.ext.commands
+from util.discord import PartialEmojiConverter, PartialRoleConverter, PartialMessageConverter
+import plugins.cogs
 
 class MessageReactions(TypedDict):
-    guild: str
+    jump_url: str
     channel: str
     rolereacts: util.frozen_dict.FrozenDict[str, str]
 
@@ -26,29 +29,6 @@ async def init() -> None:
     global conf
     conf = cast(RoleReactionsConf, await util.db.kv.load(__name__))
 
-msg_id_re = re.compile(r"https?://(?:\w*\.)?(?:discord.com|discordapp.com)/channels/(\d+)/(\d+)/(\d+)")
-
-async def find_message(channel_id: Union[str, int], msg_id: Union[str, int]) -> Optional[discord.Message]:
-    channel = discord_client.client.get_channel(int(channel_id))
-    if channel is None: return None
-    if not isinstance(channel, discord.TextChannel): return None
-    try:
-        return await channel.fetch_message(int(msg_id))
-    except (discord.NotFound, discord.Forbidden):
-        return None
-
-def find_role_id(guild: Optional[discord.Guild], role_text: str) -> int:
-    role = util.discord.smart_find(role_text, guild.roles if guild else ())
-    if role is None:
-        raise util.discord.UserError("Multiple or no results for role {!i}", role_text)
-    return role.id
-
-def find_emoji_id(emoji_text: str) -> int:
-    emoji = util.discord.smart_find(emoji_text, discord_client.client.emojis)
-    if emoji is None:
-        raise util.discord.UserError("Multiple or no results for emoji {!i}", emoji_text)
-    return emoji.id
-
 def format_role(guild: Optional[discord.Guild], role_id: str) -> str:
     role = discord.utils.find(lambda r: str(r.id) == role_id, guild.roles if guild else ())
     if role is None:
@@ -56,66 +36,30 @@ def format_role(guild: Optional[discord.Guild], role_id: str) -> str:
     else:
         return util.discord.format("{!M}({!i} {!i})", role, role.name, role.id)
 
-def format_emoji(emoji_str: str) -> str:
+def format_emoji(ctx: discord.ext.commands.Context, emoji_str: str) -> str:
     if emoji_str.isdigit():
-        emoji = discord_client.client.get_emoji(int(emoji_str))
+        emoji = ctx.bot.get_emoji(int(emoji_str))
         if emoji is not None and emoji.is_usable():
             return str(emoji) + util.discord.format("({!i})", emoji)
     return util.discord.format("{!i}", emoji_str)
 
-def format_msg(guild_id: str, channel_id: str, msg_id: str) -> str:
-    return "https://discord.com/channels/{}/{}/{}".format(guild_id, channel_id, msg_id)
+def get_reference(ctx: discord.ext.commands.Context,
+    optional_msg: Optional[discord.PartialMessage]) -> discord.PartialMessage:
+    if optional_msg is not None: return optional_msg
+    if ctx.message.reference is not None:
+                if (not isinstance(ctx.channel, discord.abc.GuildChannel)
+                    or ctx.channel.id != ctx.message.reference.channel_id or ctx.message.reference.message_id is None):
+                    raise discord.ext.commands.BadArgument("An invalid message reply was provided")
+                return ctx.channel.get_partial_message(ctx.message.reference.message_id)
+    raise discord.ext.commands.BadArgument("A message reply or argument is required")
 
-# retrieve the original message link used
-def retrieve_msg_link(msg_id: str) -> str:
-    obj = conf[msg_id]
-    assert obj is not None
-    return format_msg(obj['guild'], obj['channel'], msg_id)
+def make_db_emoji(emoji: discord.PartialEmoji) -> str:
+    assert emoji.name is not None
+    if emoji.id is not None:
+        return str(emoji.id)
+    return emoji.name
 
-def get_emoji(args: plugins.commands.ArgParser) -> Optional[str]:
-    emoji_arg = args.next_arg(chunk_emoji=True)
-    if isinstance(emoji_arg, plugins.commands.EmojiArg):
-        return str(emoji_arg.id)
-    elif isinstance(emoji_arg, plugins.commands.InlineCodeArg):
-        return str(find_emoji_id(emoji_arg.text))
-    elif isinstance(emoji_arg, plugins.commands.StringArg):
-        return emoji_arg.text
-    return None
-
-def get_role(guild: Optional[discord.Guild], args: plugins.commands.ArgParser) -> Optional[str]:
-    role_arg = args.next_arg()
-    if isinstance(role_arg, plugins.commands.RoleMentionArg):
-        return str(role_arg.id)
-    elif isinstance(role_arg, plugins.commands.StringArg):
-        return str(find_role_id(guild, role_arg.text))
-    return None
-
-def get_msg_ref(msg: discord.Message, args: plugins.commands.ArgParser) -> Optional[Tuple[str, str, str]]:
-    if msg.reference is not None:
-        if msg.reference.guild_id is None: return None
-        if msg.reference.message_id is None: return None
-        if msg.reference.channel_id != msg.channel.id: return None
-        return (str(msg.reference.guild_id), str(msg.reference.channel_id), str(msg.reference.message_id))
-    else:
-        arg = args.next_arg()
-        if not isinstance(arg, plugins.commands.StringArg): return None
-        if (match := msg_id_re.match(arg.text)) is None: return None
-        return match[1], match[2], match[3]
-
-def make_discord_emoji(emoji_str: str) -> Union[str, discord.Emoji, None]:
-    if emoji_str.isdigit():
-        emoji = discord_client.client.get_emoji(int(emoji_str))
-        if emoji is not None and emoji.is_usable():
-            return emoji
-        return None
-    else:
-        return emoji_str
-
-async def react_initial(channel_id: str, msg_id: str, emoji_str: str) -> None:
-    react_msg = await find_message(channel_id, msg_id)
-    if react_msg is None: return
-    react_emoji = make_discord_emoji(emoji_str)
-    if react_emoji is None: return
+async def react_initial(react_msg: discord.PartialMessage, react_emoji: discord.PartialEmoji) -> None:
     try:
         await react_msg.add_reaction(react_emoji)
     except (discord.Forbidden, discord.NotFound):
@@ -135,117 +79,130 @@ def get_payload_role(guild: discord.Guild, payload: discord.RawReactionActionEve
     if (emoji_id := obj['rolereacts'].get(emoji)) is None: return None
     return discord.utils.find(lambda r: str(r.id) == emoji_id, guild.roles)
 
-@util.discord.event("raw_reaction_add")
-async def rolereact_add(payload: discord.RawReactionActionEvent) -> None:
-    if payload.member is None: return
-    if payload.member.bot: return
-    role = get_payload_role(payload.member.guild, payload)
-    if role is None: return
-    await payload.member.add_roles(role, reason="Role reactions on {}".format(payload.message_id))
-
-@util.discord.event("raw_reaction_remove")
-async def rolereact_remove(payload: discord.RawReactionActionEvent) -> None:
-    if payload.guild_id is None: return
-    guild = discord_client.client.get_guild(payload.guild_id)
-    if guild is None: return
-    member = guild.get_member(payload.user_id)
-    if member is None: return
-    if member.bot: return
-    role = get_payload_role(guild, payload)
-    if role is None: return
-    await member.remove_roles(role, reason="Role reactions on {}".format(
-        payload.message_id))
-
-@plugins.commands.command("rolereact")
-@plugins.privileges.priv("admin")
-async def rolereact_command(msg: discord.Message, args: plugins.commands.ArgParser) -> None:
-    cmd = args.next_arg()
-    if not isinstance(cmd, plugins.commands.StringArg): return
-
-    if cmd.text.lower() == "new":
-        role_msg_info = get_msg_ref(msg, args)
-        if role_msg_info is None: return
-        role_msg_guild, role_msg_chan, role_msg = role_msg_info
-        if conf[role_msg] is not None:
-            await msg.channel.send("Role reactions already exist on {}".format(retrieve_msg_link(role_msg)))
-            return
-        conf[role_msg] = {"guild": role_msg_guild, "channel": role_msg_chan,
-            "rolereacts": util.frozen_dict.FrozenDict()}
-        await msg.channel.send("Created role reactions on {}".format(format_msg(*role_msg_info)))
-
-    elif cmd.text.lower() == "delete":
-        role_msg_info = get_msg_ref(msg, args)
-        if role_msg_info is None: return
-        _, _, role_msg = role_msg_info
-        if conf[role_msg] is None:
-            await msg.channel.send("Role reactions do not exist on {}".format(format_msg(*role_msg_info)))
-            return
-        await msg.channel.send("Removed role reactions on {}".format(retrieve_msg_link(role_msg)))
-        conf[role_msg] = None
-
-    elif cmd.text.lower() == "list":
-        await msg.channel.send("Role reactions exist on: {}".format("\n".join(retrieve_msg_link(id) for id in conf)))
-
-    elif cmd.text.lower() == "show":
-        role_msg_info = get_msg_ref(msg, args)
-        if role_msg_info is None: return
-        _, _, role_msg = role_msg_info
-        obj = conf[role_msg]
-        if obj is None:
-            await msg.channel.send("Role reactions do not exist on {}".format(format_msg(*role_msg_info)))
-            return
-        await msg.channel.send("Role reactions on {} include: {}".format(retrieve_msg_link(role_msg),
-                "; ".join(("{} for {}".format(format_emoji(emoji), format_role(msg.guild, role))
-                    for emoji, role in obj['rolereacts'].items()))),
-            allowed_mentions=discord.AllowedMentions.none())
-
-    elif cmd.text.lower() == "add":
-        role_msg_info = get_msg_ref(msg, args)
-        if role_msg_info is None: return
-        role_msg_guild, role_msg_chan, role_msg = role_msg_info
-        emoji = get_emoji(args)
-        if emoji is None: return
-        obj = conf[role_msg]
-        if obj is None:
-            await msg.channel.send("Role reactions do not exist on {}".format(format_msg(*role_msg_info)))
-            return
-        if emoji in obj['rolereacts']:
-            await msg.channel.send("Emoji {} already sets role {}".format(
-                    format_emoji(emoji), format_role(msg.guild, obj['rolereacts'][emoji])),
-                allowed_mentions=discord.AllowedMentions.none())
-            return
-        role = get_role(msg.guild, args)
+@plugins.cogs.cog
+class RoleReactions(discord.ext.typed_commands.Cog[discord.ext.commands.Context]):
+    """Listen to reactions on messages that add or remove roles"""
+    @discord.ext.commands.Cog.listener()
+    async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent) -> None:
+        if payload.member is None: return
+        if payload.member.bot: return
+        role = get_payload_role(payload.member.guild, payload)
         if role is None: return
-        obj = obj.copy()
-        obj["rolereacts"] |= {emoji: role}
-        conf[role_msg] = obj
-        await react_initial(obj['channel'], role_msg, emoji)
-        await msg.channel.send(
-            "Reacting with emoji {} on message {} now sets {}".format(
-            format_emoji(emoji), retrieve_msg_link(role_msg),
-            format_role(msg.guild, role)),
-            allowed_mentions=discord.AllowedMentions.none())
+        await payload.member.add_roles(role, reason="Role reactions on {}".format(payload.message_id))
 
-    elif cmd.text.lower() == "remove":
-        role_msg_info = get_msg_ref(msg, args)
-        if role_msg_info is None: return
-        _, _, role_msg = role_msg_info
-        emoji = get_emoji(args)
-        if emoji is None: return
-        obj = conf[role_msg]
-        if obj is None:
-            await msg.channel.send("Role reactions do not exist on {}"
-                .format(format_msg(*role_msg_info)))
-            return
-        if emoji not in obj['rolereacts']:
-            await msg.channel.send("Role reactions for emoji {} do not exist on {}".format(
-                format_emoji(emoji), retrieve_msg_link(role_msg)))
-            return
-        obj = obj.copy()
-        reacts = obj["rolereacts"].copy()
-        del reacts[emoji]
-        obj['rolereacts'] = util.frozen_dict.FrozenDict(reacts)
-        conf[role_msg] = obj
-        await msg.channel.send("Reacting with emoji {} on message {} no longer sets roles" .format(
-                format_emoji(emoji), retrieve_msg_link(role_msg)),
+    @discord.ext.commands.Cog.listener()
+    async def on_raw_reaction_remove(self, payload: discord.RawReactionActionEvent) -> None:
+        if payload.guild_id is None: return
+        guild = discord_client.client.get_guild(payload.guild_id)
+        if guild is None: return
+        member = guild.get_member(payload.user_id)
+        if member is None: return
+        if member.bot: return
+        role = get_payload_role(guild, payload)
+        if role is None: return
+        await member.remove_roles(role, reason="Role reactions on {}".format(payload.message_id))
+
+@plugins.commands.command_ext("rolereact", cls=discord.ext.commands.Group)
+@plugins.privileges.priv_ext("admin")
+async def rolereact_command(ctx: discord.ext.commands.Context) -> None:
+    """Manage messages that control roles based on reactions"""
+    pass
+
+@rolereact_command.command("new")
+async def rolereact_new(ctx: discord.ext.commands.Context,
+    optional_listener_msg: Optional[PartialMessageConverter]) -> None:
+    """Create a reaction listener on a message"""
+    listener_msg = get_reference(ctx, optional_listener_msg)
+    listener_msg_index = str(listener_msg.id)
+    obj = conf[listener_msg_index]
+    if obj is not None:
+        await ctx.send("Role reactions already exist on {}".format(obj['jump_url']))
+        return
+    conf[listener_msg_index] = {"jump_url": listener_msg.jump_url, "channel": str(listener_msg.channel.id),
+        "rolereacts": util.frozen_dict.FrozenDict()}
+    await ctx.send("Created role reactions on {}".format(listener_msg.jump_url))
+
+@rolereact_command.command("delete")
+async def rolereact_delete(ctx: discord.ext.commands.Context,
+    optional_listener_msg: Optional[PartialMessageConverter]) -> None:
+    """Delete a reaction listener on a message"""
+    listener_msg = get_reference(ctx, optional_listener_msg)
+    listener_msg_index = str(listener_msg.id)
+    obj = conf[listener_msg_index]
+    if obj is None:
+        await ctx.send("Role reactions do not exist on {}".format(listener_msg.jump_url))
+        return
+    await ctx.send("Removed role reactions on {}".format(obj['jump_url']))
+    conf[listener_msg_index] = None
+
+@rolereact_command.command("list")
+async def rolereact_list(ctx: discord.ext.commands.Context) -> None:
+    """List all reaction listeners"""
+    await ctx.send("Role reactions exist on: {}".format("\n".join(obj['jump_url'] for id in conf if (obj := conf[id]))))
+
+@rolereact_command.command("show")
+async def rolereact_show(ctx: discord.ext.commands.Context,
+    optional_listener_msg: Optional[PartialMessageConverter]) -> None:
+    """Show the emojis associated with roles on a message"""
+    listener_msg = get_reference(ctx, optional_listener_msg)
+    listener_msg_index = str(listener_msg.id)
+    obj = conf[listener_msg_index]
+    if obj is None:
+        await ctx.send("Role reactions do not exist on {}".format(listener_msg.jump_url))
+        return
+    await ctx.send("Role reactions on {} include: {}".format(obj['jump_url'],
+            "; ".join(("{} for {}".format(format_emoji(ctx, emoji), format_role(ctx.guild, role))
+                for emoji, role in obj['rolereacts'].items()))),
+        allowed_mentions=discord.AllowedMentions.none())
+
+@rolereact_command.command("add")
+async def rolereact_add(ctx: discord.ext.commands.Context,
+    optional_listener_msg: Optional[PartialMessageConverter],
+    react_emoji: PartialEmojiConverter, role: PartialRoleConverter) -> None:
+    """Set the role an emoji sets on a reaction message"""
+    listener_msg = get_reference(ctx, optional_listener_msg)
+    listener_msg_index = str(listener_msg.id)
+    emoji_db = make_db_emoji(react_emoji)
+    obj = conf[listener_msg_index]
+    if obj is None:
+        await ctx.send("Role reactions do not exist on {}".format(listener_msg.jump_url))
+        return
+    if emoji_db in obj['rolereacts']:
+        await ctx.send("Emoji {} already sets role {}".format(
+                format_emoji(ctx, emoji_db), format_role(ctx.guild, obj['rolereacts'][emoji_db])),
             allowed_mentions=discord.AllowedMentions.none())
+        return
+    obj = obj.copy()
+    obj["rolereacts"] |= {emoji_db: str(role.id)}
+    conf[listener_msg_index] = obj
+    await react_initial(listener_msg, react_emoji)
+    await ctx.send(
+        "Reacting with emoji {} on message {} now sets {}".format(
+        format_emoji(ctx, emoji_db), obj['jump_url'],
+        format_role(ctx.guild, str(role.id))),
+        allowed_mentions=discord.AllowedMentions.none())
+
+@rolereact_command.command("remove")
+async def rolereact_remove(ctx: discord.ext.commands.Context,
+    optional_listener_msg: Optional[PartialMessageConverter],
+    react_emoji: PartialEmojiConverter) -> None:
+    """Stops an emoji from controlling roles on a reaction message"""
+    listener_msg = get_reference(ctx, optional_listener_msg)
+    listener_msg_index = str(listener_msg.id)
+    emoji_db = make_db_emoji(react_emoji)
+    obj = conf[listener_msg_index]
+    if obj is None:
+        await ctx.send("Role reactions do not exist on {}".format(listener_msg.jump_url))
+        return
+    if emoji_db not in obj['rolereacts']:
+        await ctx.send("Role reactions for emoji {} do not exist on {}".format(
+            format_emoji(ctx, emoji_db), obj['jump_url']))
+        return
+    obj = obj.copy()
+    reacts = obj["rolereacts"].copy()
+    del reacts[emoji_db]
+    obj['rolereacts'] = util.frozen_dict.FrozenDict(reacts)
+    conf[listener_msg_index] = obj
+    await ctx.send("Reacting with emoji {} on message {} no longer sets roles" .format(
+            format_emoji(ctx, emoji_db), obj['jump_url']),
+        allowed_mentions=discord.AllowedMentions.none())
