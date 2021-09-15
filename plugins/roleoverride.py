@@ -19,7 +19,6 @@ async def init() -> None:
 @util.discord.event("member_update")
 async def on_member_update(before: discord.Member, after: discord.Member) -> None:
     removed = set()
-    print(after.roles)
     for role in after.roles:
         if (masked := conf[role.id]) is not None:
             for r in after.roles:
