@@ -18,6 +18,7 @@ import util.asyncio
 @plugins.privileges.priv_ext("shell")
 async def config_command(ctx: discord.ext.commands.Context, namespace: Optional[str], key: Optional[str],
     value: Optional[Union[util.discord.CodeBlock, util.discord.Inline, util.discord.Quoted]]) -> None:
+    """Edit the key-value configs."""
     if namespace is None:
         await ctx.send(", ".join(util.discord.format("{!i}", nsp) for nsp in await util.db.kv.get_namespaces()))
         return
@@ -41,6 +42,7 @@ async def config_command(ctx: discord.ext.commands.Context, namespace: Optional[
 @config_command.command("--delete")
 @plugins.privileges.priv_ext("shell")
 async def config_delete(ctx: discord.ext.commands.Context, namespace: str, key: str) -> None:
+    """Delete the provided key from the config."""
     conf = await util.db.kv.load(namespace)
     keys = key.split(",")
     conf[keys] = None
@@ -52,6 +54,7 @@ async def config_delete(ctx: discord.ext.commands.Context, namespace: str, key: 
 @plugins.privileges.priv_ext("shell")
 async def sql_command(ctx: discord.ext.commands.Context,
     args: discord.ext.commands.Greedy[Union[util.discord.CodeBlock, util.discord.Inline, str]]) -> None:
+    """Execute arbitrary SQL statements in the database."""
     data_outputs: List[List[str]] = []
     outputs: List[Union[str, List[str]]] = []
     async with util.db.connection() as conn:

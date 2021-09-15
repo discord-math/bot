@@ -60,7 +60,7 @@ class LocContext(discord.ext.commands.Context):
 @plugins.commands.command_ext("location", cls=discord.ext.commands.Group)
 @plugins.privileges.priv_ext("shell")
 async def location_command(ctx: discord.ext.commands.Context) -> None:
-    """Manage locations where a command can be invoked"""
+    """Manage locations where a command can be invoked."""
     pass
 
 def location_exists(loc: str) -> bool:
@@ -72,7 +72,7 @@ def validate_location(loc: str) -> None:
 
 @location_command.command("new")
 async def location_new(ctx: discord.ext.commands.Context, loc: str) -> None:
-    """Create a new location"""
+    """Create a new location."""
     if location_exists(loc):
         raise util.discord.UserError(util.discord.format("Location {!i} already exists", loc))
 
@@ -84,7 +84,7 @@ async def location_new(ctx: discord.ext.commands.Context, loc: str) -> None:
 
 @location_command.command("delete")
 async def location_delete(ctx: discord.ext.commands.Context, loc: str) -> None:
-    """Delete a location"""
+    """Delete a location."""
     validate_location(loc)
 
     conf[loc, "channels"] = None
@@ -95,7 +95,7 @@ async def location_delete(ctx: discord.ext.commands.Context, loc: str) -> None:
 
 @location_command.command("show")
 async def location_show(ctx: discord.ext.commands.Context, loc: str) -> None:
-    """Show the channels and categories in a location"""
+    """Show the channels and categories in a location."""
     validate_location(loc)
     chans = conf[loc, "channels"]
     cats = conf[loc, "categories"]
@@ -118,13 +118,13 @@ async def location_show(ctx: discord.ext.commands.Context, loc: str) -> None:
 
 @location_command.group("add")
 async def location_add(ctx: LocContext, loc: str) -> None:
-    """Add a channel or category to a location"""
+    """Add a channel or category to a location."""
     validate_location(loc)
     ctx.loc = loc
 
 @location_add.command("channel")
 async def location_add_channel(ctx: LocContext, chan: util.discord.PartialTextChannelConverter) -> None:
-    """Add a channel to a location"""
+    """Add a channel to a location."""
     loc = ctx.loc
     chans = conf[loc, "channels"] or FrozenList()
     if chan.id in chans:
@@ -137,7 +137,7 @@ async def location_add_channel(ctx: LocContext, chan: util.discord.PartialTextCh
 
 @location_add.command("category")
 async def location_add_category(ctx: LocContext, cat: util.discord.PartialCategoryChannelConverter) -> None:
-    """Add a category to a location"""
+    """Add a category to a location."""
     loc = ctx.loc
     cats = conf[loc, "categories"] or FrozenList()
     if cat.id in cats:
@@ -150,13 +150,13 @@ async def location_add_category(ctx: LocContext, cat: util.discord.PartialCatego
 
 @location_command.group("remove")
 async def location_remove(ctx: LocContext, loc: str) -> None:
-    """Remove a channel or category from a location"""
+    """Remove a channel or category from a location."""
     validate_location(loc)
     ctx.loc = loc
 
 @location_remove.command("channel")
 async def location_remove_channel(ctx: LocContext, chan: util.discord.PartialTextChannelConverter) -> None:
-    """Remove a channel from a location"""
+    """Remove a channel from a location."""
     loc = ctx.loc
     chans = conf[loc, "channels"] or FrozenList()
     if chan.id not in chans:
@@ -170,7 +170,7 @@ async def location_remove_channel(ctx: LocContext, chan: util.discord.PartialTex
 
 @location_remove.command("category")
 async def location_remove_category(ctx: LocContext, cat: util.discord.PartialCategoryChannelConverter) -> None:
-    """Remove a category from a location"""
+    """Remove a category from a location."""
     loc = ctx.loc
     cats = conf[loc, "categories"] or FrozenList()
     if cat.id not in cats:

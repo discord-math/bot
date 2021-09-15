@@ -21,7 +21,7 @@ async def init() -> None:
 @plugins.commands.command_ext("update")
 @plugins.privileges.priv_ext("admin")
 async def update_command(ctx: discord.ext.commands.Context, bot_directory: Optional[str]) -> None:
-    """Pull changes from git remote"""
+    """Pull changes from git remote."""
     cwd = conf[bot_directory] if bot_directory is not None else None
     git_pull = await asyncio.create_subprocess_exec("git", "pull", "--ff-only", cwd=cwd,
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)

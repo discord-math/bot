@@ -1262,6 +1262,7 @@ class Tickets(discord.ext.typed_commands.Cog[discord.ext.commands.Context]):
     @discord.ext.commands.group("ticket", aliases=["tickets"])
     @plugins.privileges.priv_ext("mod")
     async def ticket_command(self, ctx: discord.ext.commands.Context) -> None:
+        """Manage tickets."""
         pass
 
     @ticket_command.command("top")

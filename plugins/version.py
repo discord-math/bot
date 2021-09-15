@@ -9,7 +9,7 @@ import discord.ext.commands
 @plugins.commands.command_ext("version")
 @plugins.privileges.priv_ext("mod")
 async def version_command(ctx: discord.ext.commands.Context) -> None:
-    """Display running bot version including any local changes"""
+    """Display running bot version including any local changes."""
     git_log = await asyncio.subprocess.create_subprocess_exec(
         "git", "log", "--max-count=1", "--format=format:%H%d", "HEAD",
         stdout=asyncio.subprocess.PIPE)

@@ -68,7 +68,7 @@ class PrivContext(discord.ext.commands.Context):
 @plugins.commands.command_ext("priv", cls=discord.ext.commands.Group)
 @priv_ext("shell")
 async def priv_command(ctx: discord.ext.commands.Context) -> None:
-    """Manage privilege sets"""
+    """Manage privilege sets."""
     pass
 
 def priv_exists(priv: str) -> bool:
@@ -80,7 +80,7 @@ def validate_priv(priv: str) -> None:
 
 @priv_command.command("new")
 async def priv_new(ctx: discord.ext.commands.Context, priv: str) -> None:
-    """Create a new priv"""
+    """Create a new priv."""
     if priv_exists(priv):
         raise util.discord.UserError(util.discord.format("Priv {!i} already exists", priv))
 
@@ -92,7 +92,7 @@ async def priv_new(ctx: discord.ext.commands.Context, priv: str) -> None:
 
 @priv_command.command("delete")
 async def priv_delete(ctx: discord.ext.commands.Context, priv: str) -> None:
-    """Delete a priv"""
+    """Delete a priv."""
     validate_priv(priv)
 
     conf[priv, "users"] = None
@@ -103,7 +103,7 @@ async def priv_delete(ctx: discord.ext.commands.Context, priv: str) -> None:
 
 @priv_command.command("show")
 async def priv_show(ctx: discord.ext.commands.Context, priv: str) -> None:
-    """Show the users and roles in a priv"""
+    """Show the users and roles in a priv."""
     validate_priv(priv)
     users = conf[priv, "users"]
     roles = conf[priv, "roles"]
@@ -127,13 +127,13 @@ async def priv_show(ctx: discord.ext.commands.Context, priv: str) -> None:
 
 @priv_command.group("add")
 async def priv_add(ctx: PrivContext, priv: str) -> None:
-    """Add a user or role to a priv"""
+    """Add a user or role to a priv."""
     validate_priv(priv)
     ctx.priv = priv
 
 @priv_add.command("user")
 async def priv_add_user(ctx: PrivContext, user: util.discord.PartialUserConverter) -> None:
-    """Add a user to a priv"""
+    """Add a user to a priv."""
     priv = ctx.priv
     users = conf[priv, "users"] or FrozenList()
     if user.id in users:
@@ -147,7 +147,7 @@ async def priv_add_user(ctx: PrivContext, user: util.discord.PartialUserConverte
 
 @priv_add.command("role")
 async def priv_add_role(ctx: PrivContext, role: util.discord.PartialRoleConverter) -> None:
-    """Add a role to a priv"""
+    """Add a role to a priv."""
     priv = ctx.priv
     roles = conf[priv, "roles"] or FrozenList()
     if role.id in roles:
@@ -161,13 +161,13 @@ async def priv_add_role(ctx: PrivContext, role: util.discord.PartialRoleConverte
 
 @priv_command.group("remove")
 async def priv_remove(ctx: PrivContext, priv: str) -> None:
-    """Remove a user or role from a priv"""
+    """Remove a user or role from a priv."""
     validate_priv(priv)
     ctx.priv = priv
 
 @priv_remove.command("user")
 async def priv_remove_user(ctx: PrivContext, user: util.discord.PartialUserConverter) -> None:
-    """Remove a user from a priv"""
+    """Remove a user from a priv."""
     priv = ctx.priv
     users = conf[priv, "users"] or FrozenList()
     if user.id not in users:
@@ -182,7 +182,7 @@ async def priv_remove_user(ctx: PrivContext, user: util.discord.PartialUserConve
 
 @priv_remove.command("role")
 async def priv_remove_role(ctx: PrivContext, role: util.discord.PartialRoleConverter) -> None:
-    """Remove a role from a priv"""
+    """Remove a role from a priv."""
     priv = ctx.priv
     roles = conf[priv, "roles"] or FrozenList()
     if role.id not in roles:
