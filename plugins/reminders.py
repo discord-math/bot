@@ -12,7 +12,10 @@ import discord_client
 import logging
 import plugins.commands
 import plugins.privileges
+import plugins
 import util.db.kv
+import util.asyncio
+import util.discord
 from util.frozen_list import FrozenList
 
 class Reminder(TypedDict):

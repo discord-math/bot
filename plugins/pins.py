@@ -1,6 +1,7 @@
 import asyncio
 import re
 import discord
+import discord.ext.commands
 from typing import Dict, Pattern, Optional
 import plugins.commands
 import plugins.privileges

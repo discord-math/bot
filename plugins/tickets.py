@@ -15,17 +15,20 @@ from typing import (List, Dict, Set, Tuple, Optional, Iterator, AsyncIterator, S
 import discord
 import discord.abc
 import discord.ext.commands
+import discord.ext.typed_commands
 
 import discord_client
 import util.db
+import util.db.kv
 import util.discord
 import util.asyncio
 import util.frozen_list
 
+import plugins
+import plugins.commands
 import plugins.reactions
 import plugins.privileges
 import plugins.cogs
-import plugins
 
 logger: logging.Logger = logging.getLogger(__name__)
 

@@ -7,6 +7,7 @@ import util.db.kv
 from util.frozen_list import FrozenList
 import discord_client
 import util.discord
+import plugins
 import plugins.commands
 import plugins.privileges
 

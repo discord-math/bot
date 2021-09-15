@@ -1,11 +1,13 @@
 import logging
 from typing import List, Optional, Union, Tuple, Iterator, Coroutine, Literal, Callable, Awaitable, Protocol, Any, cast
 import discord
+import discord.ext.commands
 import discord.utils
 import util.db.kv
 from util.frozen_list import FrozenList
 import discord_client
 import util.discord
+import plugins
 import plugins.commands
 
 class PrivilegesConf(Protocol, Awaitable[None]):

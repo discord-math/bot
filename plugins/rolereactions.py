@@ -1,11 +1,14 @@
 import re
 import discord
+import discord.ext.commands
+import discord.ext.typed_commands
 import discord.utils
 from typing import Tuple, Optional, Iterator, Union, TypedDict, Awaitable, Protocol, cast
 import discord_client
 import util.db.kv
 import util.discord
 import util.frozen_dict
+import plugins
 import plugins.commands
 import plugins.cogs
 import plugins.privileges

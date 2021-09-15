@@ -1,5 +1,7 @@
+import asyncio
 import asyncio.subprocess
 import discord
+import discord.ext.commands
 from typing import Optional, Protocol, cast
 import plugins
 import plugins.commands

@@ -3,6 +3,7 @@ import plugins
 import discord
 import util.db.kv
 import util.discord
+import util.frozen_list
 
 class RoleOverrideConf(Protocol):
     def __getitem__(self, id: int) -> Optional[util.frozen_list.FrozenList[int]]: ...

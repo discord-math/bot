@@ -8,6 +8,7 @@ import traceback
 import os
 import itertools
 import discord
+import discord.ext.commands
 from typing import Dict, List, Iterator, Union, Any, Callable, Iterable, TypeVar
 import plugins.commands
 import plugins.privileges

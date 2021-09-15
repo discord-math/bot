@@ -7,6 +7,7 @@ to be executed when the plugin is to be unloaded.
 """
 
 import logging
+import importlib
 import importlib.machinery
 import importlib.util
 import pkgutil
