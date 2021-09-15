@@ -136,25 +136,29 @@ class RoleReactions(discord.ext.typed_commands.Cog[discord.ext.commands.Context]
         pass
 
     @rolereact_command.command("new")
-    async def rolereact_new(self, ctx: discord.ext.commands.Context, message: util.discord.ReplyConverter) -> None:
+    async def rolereact_new(self, ctx: discord.ext.commands.Context, message: Optional[util.discord.ReplyConverter]
+        ) -> None:
         """Make the given message a role react message."""
-        if conf[message.id] is not None:
-            raise util.discord.UserError("Role reactions already exist on {}".format(format_partial_msg(message)))
-        if message.guild is None:
+        msg = util.discord.partial_from_reply(message, ctx)
+        if conf[msg.id] is not None:
+            raise util.discord.UserError("Role reactions already exist on {}".format(format_partial_msg(msg)))
+        if msg.guild is None:
             raise util.discord.InvocationError("The message must be in a guild")
-        conf[message.id] = {"guild": message.guild.id, "channel": message.channel.id,
+        conf[msg.id] = {"guild": msg.guild.id, "channel": msg.channel.id,
             "rolereacts": util.frozen_dict.FrozenDict()}
         await conf
-        await ctx.send("Created role reactions on {}".format(format_partial_msg(message)))
+        await ctx.send("Created role reactions on {}".format(format_partial_msg(msg)))
 
     @rolereact_command.command("delete")
-    async def rolereact_delete(self, ctx: discord.ext.commands.Context, message: util.discord.ReplyConverter) -> None:
+    async def rolereact_delete(self, ctx: discord.ext.commands.Context, message: Optional[util.discord.ReplyConverter]
+        ) -> None:
         """Make the given message not a role react message."""
-        if conf[message.id] is None:
-            raise util.discord.UserError("Role reactions do not exist on {}".format(format_partial_msg(message)))
-        conf[message.id] = None
+        msg = util.discord.partial_from_reply(message, ctx)
+        if conf[msg.id] is None:
+            raise util.discord.UserError("Role reactions do not exist on {}".format(format_partial_msg(msg)))
+        conf[msg.id] = None
         await conf
-        await ctx.send("Removed role reactions on {}".format(format_partial_msg(message)))
+        await ctx.send("Removed role reactions on {}".format(format_partial_msg(msg)))
 
     @rolereact_command.command("list")
     async def rolereact_list(self, ctx: discord.ext.commands.Context) -> None:
@@ -162,12 +166,14 @@ class RoleReactions(discord.ext.typed_commands.Cog[discord.ext.commands.Context]
         await ctx.send("Role reactions exist on:\n{}".format("\n".join(retrieve_msg_link(int(id)) for id, in conf)))
 
     @rolereact_command.command("show")
-    async def rolereact_show(self, ctx: discord.ext.commands.Context, message: util.discord.ReplyConverter) -> None:
+    async def rolereact_show(self, ctx: discord.ext.commands.Context, message: Optional[util.discord.ReplyConverter]
+        ) -> None:
         """List roles on a role react message."""
-        if (obj := conf[message.id]) is None:
-            raise util.discord.UserError("Role reactions do not exist on {}".format(format_partial_msg(message)))
-        await ctx.send("Role reactions on {} include: {}".format(format_partial_msg(message),
-                "; ".join(("{} for {}".format(format_emoji(emoji), format_role(message.guild, role))
+        msg = util.discord.partial_from_reply(message, ctx)
+        if (obj := conf[msg.id]) is None:
+            raise util.discord.UserError("Role reactions do not exist on {}".format(format_partial_msg(msg)))
+        await ctx.send("Role reactions on {} include: {}".format(format_partial_msg(msg),
+                "; ".join(("{} for {}".format(format_emoji(emoji), format_role(msg.guild, role))
                     for emoji, role in obj['rolereacts'].items()))),
             allowed_mentions=discord.AllowedMentions.none())
 

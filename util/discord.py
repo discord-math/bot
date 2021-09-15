@@ -523,17 +523,30 @@ def partial_message(channel: Union[discord.abc.GuildChannel, discord.DMChannel, 
     ) -> discord.PartialMessage:
     return discord.PartialMessage(channel=channel, id=id) # type: ignore
 
+def partial_from_reply(pmsg: Optional[discord.PartialMessage], ctx: discord.ext.commands.Context
+    ) -> discord.PartialMessage:
+    if pmsg is not None:
+        return pmsg
+    if (ref := ctx.message.reference) is not None:
+        if isinstance(msg := ref.resolved, discord.Message):
+            return partial_message(msg.channel, msg.id)
+        if (channel := discord_client.client.get_channel(ref.channel_id)) is None:
+            raise InvocationError(format("Could not find channel by ID {}", ref.channel_id))
+        if ref.message_id is None:
+            raise InvocationError("Referenced message has no ID")
+        return partial_message(channel, ref.message_id)
+    raise InvocationError("Expected either a message link, channel-message ID, or a reply to a message")
+
 class ReplyConverter(discord.PartialMessage):
+    """
+    Parse a PartialMessage either from either the replied-to message, or from the command (using an URL or a
+    ChannelID-MessageID). If the command ends before this argument is parsed, the converter won't even be called, so if
+    this is the last non-optional parameter, wrap it in Optional, and pass the result via partial_from_reply.
+    """
     @classmethod
     async def convert(cls, ctx: discord.ext.commands.Context, arg: str) -> discord.PartialMessage:
         pos = undo_get_quoted_word(ctx.view, arg) # type: ignore
         if (ref := ctx.message.reference) is not None:
             ctx.view.index = pos # type: ignore
-            if isinstance(msg := ref.resolved, discord.Message):
-                return partial_message(msg.channel, msg.id)
-            if (channel := discord_client.client.get_channel(ref.channel_id)) is None:
-                raise discord.ext.commands.BadArgument(format("Could not find channel by ID {}", ref.channel_id))
-            if ref.message_id is None:
-                raise discord.ext.commands.BadArgument(format("Referenced message has no ID"))
-            return partial_message(channel, ref.message_id)
+            return partial_from_reply(None, ctx)
         return await discord.ext.commands.PartialMessageConverter().convert(ctx, arg)
