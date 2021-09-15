@@ -311,7 +311,7 @@ class CleanupReference:
         async def cleanup_task() -> None:
             await ctx.bot.wait_for("raw_message_delete",
                 check=lambda m: m.channel_id == chan_id and m.message_id == msg_id)
-        self.task = asyncio.create_task(cleanup_task())
+        self.task = asyncio.create_task(cleanup_task(), name="Cleanup task for {}-{}".format(chan_id, msg_id))
 
     def __del__(self) -> None:
         if self.task is not None:
@@ -355,10 +355,12 @@ async def finalize_cleanup(ctx: discord.ext.commands.Context) -> None:
     if (ref := getattr(ctx, "cleanup", None)) is not None:
         await ref.finalize()
 
+"""Mark a message as "output" of a cleanup command."""
 def add_cleanup(ctx: discord.ext.commands.Context, msg: discord.Message) -> None:
     if (ref := getattr(ctx, "cleanup", None)) is not None:
         ref.add(msg)
 
+"""Make the command watch out for the deletion of the invoking message, and in that case, delete all output."""
 def cleanup(cmd: T) -> T:
     old_invoke = cmd.invoke
     async def invoke(ctx: discord.ext.commands.Context) -> None:

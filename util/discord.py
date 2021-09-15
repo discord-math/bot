@@ -192,9 +192,11 @@ formatter: string.Formatter = Formatter()
 format = formatter.format
 
 class UserError(discord.ext.commands.CommandError):
+    """General exceptions in commands."""
     __slots__ = ()
 
 class InvocationError(discord.ext.commands.UserInputError):
+    """Exceptions in commands that are to do with the user input. Triggers displaying the command's usage."""
     __slots__ = ()
 
 class NamedType(Protocol):
@@ -250,6 +252,10 @@ def smart_find(name_or_id: str, iterable: Iterable[M]) -> Optional[M]:
 T = TypeVar("T")
 
 def priority_find(predicate: Callable[[T], Union[float, int, None]], iterable: Iterable[T]) -> List[T]:
+    """
+    Finds those results in the input for which the predicate returns the highest rank, ignoring those for which the rank
+    is None, and if any item has rank math.inf, the first such item is returned.
+    """
     results = []
     cur_rank = None
     for x in iterable:
@@ -268,6 +274,7 @@ def priority_find(predicate: Callable[[T], Union[float, int, None]], iterable: I
     return results
 
 class TempMessage(AsyncContextManager[discord.Message]):
+    """An async context manager that sends a message upon entering, and deletes it upon exiting."""
     __slots__ = "sendable", "args", "kwargs", "message"
     sendable: discord.abc.Messageable
     args: Any
