@@ -1,16 +1,13 @@
 import asyncio
 import re
 import discord
-from typing import Dict, Pattern
+from typing import Dict, Pattern, Optional
 import plugins.commands
 import plugins.privileges
 import plugins.locations
 import plugins.reactions
 import discord_client
 import util.discord
-
-msg_link_re: Pattern[str] = re.compile(r"https?://(?:\w*\.)?(?:discord.com|discordapp.com)/channels/(\d+)/(\d+)/(\d+)")
-int_re: Pattern[str] = re.compile(r"\d+")
 
 class AbortDueToUnpin(Exception):
     pass
@@ -20,155 +17,96 @@ class AbortDueToOtherPin(Exception):
 
 unpin_requests: Dict[int, plugins.reactions.ReactionMonitor[discord.RawReactionActionEvent]] = {}
 
-@plugins.commands.command("pin")
-@plugins.privileges.priv("pin")
-@plugins.locations.location("pin")
-async def pin_command(msg: discord.Message, args: plugins.commands.ArgParser) -> None:
-    if not isinstance(msg.channel, discord.abc.GuildChannel) or msg.guild is None:
-        return
-    guild = msg.guild
-    if msg.reference is not None:
-        if msg.reference.guild_id != guild.id: return
-        if msg.reference.channel_id != msg.channel.id: return
-        if msg.reference.message_id is None: return
-        to_pin = msg.channel.get_partial_message(msg.reference.message_id)
-    else:
-        arg = args.next_arg()
-        if not isinstance(arg, plugins.commands.StringArg): return
-        if match := msg_link_re.match(arg.text):
-            guild_id = int(match[1])
-            chan_id = int(match[2])
-            msg_id = int(match[3])
-            if guild_id != guild.id or chan_id != msg.channel.id: return
-            to_pin = discord.PartialMessage(channel=msg.channel, id=msg_id) # type: ignore
-        elif match := int_re.match(arg.text):
-            msg_id = int(match[0])
-            to_pin = discord.PartialMessage(channel=msg.channel, id=msg_id) # type: ignore
-        else:
-            return
+@plugins.commands.cleanup
+@plugins.commands.command_ext("pin")
+@plugins.privileges.priv_ext("pin")
+@plugins.locations.location_ext("pin")
+async def pin_command(ctx: discord.ext.commands.Context, message: Optional[util.discord.ReplyConverter]) -> None:
+    """Pin a message."""
+    to_pin = util.discord.partial_from_reply(message, ctx)
+    if not isinstance(ctx.channel, discord.abc.GuildChannel) or ctx.guild is None:
+        raise util.discord.UserError("Can only be used in a guild")
+    guild = ctx.guild
 
     try:
         pin_msg_task = asyncio.create_task(
-                discord_client.client.wait_for("message",
-                    check=lambda m: m.guild is not None and m.guild.id == guild.id
-                    and m.channel.id == msg.channel.id
-                    and m.type == discord.MessageType.pins_add
-                    and m.reference is not None and m.reference.message_id == to_pin.id,
-                    timeout=60))
-        cmd_delete_task = asyncio.create_task(
-                discord_client.client.wait_for("raw_message_delete",
-                    check=lambda m: m.guild_id == guild.id
-                    and m.channel_id == msg.channel.id
-                    and m.message_id == msg.id,
-                    timeout=300))
+            discord_client.client.wait_for("message",
+                check=lambda m: m.guild is not None and m.guild.id == guild.id
+                and m.channel.id == ctx.channel.id
+                and m.type == discord.MessageType.pins_add
+                and m.reference is not None and m.reference.message_id == to_pin.id))
 
         while True:
             try:
-                await to_pin.pin(reason=util.discord.format("Requested by {!m}", msg.author))
+                await to_pin.pin(reason=util.discord.format("Requested by {!m}", ctx.author))
                 break
             except (discord.Forbidden, discord.NotFound):
+                pin_msg_task.cancel()
                 break
             except discord.HTTPException as exc:
-                if exc.text == "Cannot execute action on a system message":
-                    break
-                elif exc.text == "Unknown Message":
+                if exc.text == "Cannot execute action on a system message" or exc.text == "Unknown Message":
+                    pin_msg_task.cancel()
                     break
                 elif not exc.text.startswith("Maximum number of pins reached"):
                     raise
-                pins = await msg.channel.pins()
+                pins = await ctx.channel.pins()
 
                 oldest_pin = pins[-1]
 
-                async with util.discord.TempMessage(msg.channel,
+                async with util.discord.TempMessage(ctx,
                     "No space in pins. Unpin or press \u267B to remove oldest") as confirm_msg:
                     await confirm_msg.add_reaction("\u267B")
                     await confirm_msg.add_reaction("\u274C")
 
-                    with plugins.reactions.ReactionMonitor(guild_id=guild.id, channel_id=msg.channel.id,
-                        message_id=confirm_msg.id, author_id=msg.author.id, event="add",
+                    with plugins.reactions.ReactionMonitor(guild_id=guild.id, channel_id=ctx.channel.id,
+                        message_id=confirm_msg.id, author_id=ctx.author.id, event="add",
                         filter=lambda _, p: p.emoji.name in ["\u267B","\u274C"], timeout_each=60) as mon:
                         try:
-                            if msg.author.id in unpin_requests:
-                                unpin_requests[msg.author.id].cancel(AbortDueToOtherPin())
-                            unpin_requests[msg.author.id] = mon
+                            if ctx.author.id in unpin_requests:
+                                unpin_requests[ctx.author.id].cancel(AbortDueToOtherPin())
+                            unpin_requests[ctx.author.id] = mon
                             _, p = await mon
                             if p.emoji.name == "\u267B":
-                                await oldest_pin.unpin(reason=util.discord.format("Requested by {!m}", msg.author))
+                                await oldest_pin.unpin(reason=util.discord.format("Requested by {!m}", ctx.author))
                             else:
                                 break
                         except AbortDueToUnpin:
-                            pass
+                            del unpin_requests[ctx.author.id]
                         except (asyncio.TimeoutError, AbortDueToOtherPin):
+                            pin_msg_task.cancel()
                             break
-                        finally:
-                            del unpin_requests[msg.author.id]
+                        else:
+                            del unpin_requests[ctx.author.id]
     finally:
-        async def cleanup() -> None:
-            try:
-                pin_msg = await pin_msg_task
-                await cmd_delete_task
-                await pin_msg.delete()
-            except (asyncio.TimeoutError, discord.Forbidden, discord.NotFound):
-                pin_msg_task.cancel()
-                cmd_delete_task.cancel()
-        asyncio.create_task(cleanup())
+        try:
+            pin_msg = await asyncio.wait_for(pin_msg_task, timeout=60)
+            plugins.commands.add_cleanup(ctx, pin_msg)
+        except asyncio.TimeoutError:
+            pin_msg_task.cancel()
 
-@plugins.commands.command("unpin")
-@plugins.privileges.priv("pin")
-@plugins.locations.location("pin")
-async def unpin_command(msg: discord.Message, args: plugins.commands.ArgParser) -> None:
-    if not isinstance(msg.channel, discord.abc.GuildChannel) or msg.guild is None:
-        return
-    guild = msg.guild
-    if msg.reference is not None:
-        if msg.reference.guild_id != guild.id: return
-        if msg.reference.channel_id != msg.channel.id: return
-        to_unpin = discord.PartialMessage(channel=msg.channel, id=msg.reference.message_id) # type: ignore
-    else:
-        arg = args.next_arg()
-        if not isinstance(arg, plugins.commands.StringArg): return
-        if match := msg_link_re.match(arg.text):
-            guild_id = int(match[1])
-            chan_id = int(match[2])
-            msg_id = int(match[3])
-            if guild_id != guild.id or chan_id != msg.channel.id: return
-            to_unpin = discord.PartialMessage(channel=msg.channel, id=msg_id) # type: ignore
-        elif match := int_re.match(arg.text):
-            msg_id = int(match[0])
-            to_unpin = discord.PartialMessage(channel=msg.channel, id=msg_id) # type: ignore
-        else:
-            return
+@plugins.commands.cleanup
+@plugins.commands.command_ext("unpin")
+@plugins.privileges.priv_ext("pin")
+@plugins.locations.location_ext("pin")
+async def unpin_command(ctx: discord.ext.commands.Context, message: Optional[util.discord.ReplyConverter]) -> None:
+    """Unpin a message."""
+    to_unpin = util.discord.partial_from_reply(message, ctx)
+    if not isinstance(ctx.channel, discord.abc.GuildChannel) or ctx.guild is None:
+        raise util.discord.UserError("Can only be used in a guild")
+    guild = ctx.guild
 
     try:
-        confirm_msg = None
-        cmd_delete_task = asyncio.create_task(
-                discord_client.client.wait_for("raw_message_delete",
-                    check=lambda m: m.guild_id == guild.id
-                    and m.channel_id == msg.channel.id
-                    and m.message_id == msg.id,
-                    timeout=300))
+        await to_unpin.unpin(reason=util.discord.format("Requested by {!m}", ctx.author))
+        if ctx.author.id in unpin_requests:
+            unpin_requests[ctx.author.id].cancel(AbortDueToUnpin())
 
-        try:
-            await to_unpin.unpin(reason=util.discord.format("Requested by {!m}", msg.author))
-            if msg.author.id in unpin_requests:
-                unpin_requests[msg.author.id].cancel(AbortDueToUnpin())
-
-            confirm_msg = await msg.channel.send("\u2705")
-        except (discord.Forbidden, discord.NotFound):
+        await ctx.send("\u2705")
+    except (discord.Forbidden, discord.NotFound):
+        pass
+    except discord.HTTPException as exc:
+        if exc.text == "Cannot execute action on a system message":
             pass
-        except discord.HTTPException as exc:
-            if exc.text == "Cannot execute action on a system message":
-                pass
-            elif exc.text == "Unknown Message":
-                pass
-            else:
-                raise
-    finally:
-        async def cleanup() -> None:
-            try:
-                await cmd_delete_task
-                if confirm_msg:
-                    await confirm_msg.delete()
-            except (asyncio.TimeoutError, discord.Forbidden, discord.NotFound):
-                pass
-        asyncio.create_task(cleanup())
+        elif exc.text == "Unknown Message":
+            pass
+        else:
+            raise
