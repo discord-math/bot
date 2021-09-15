@@ -132,6 +132,7 @@ class RoleReactions(discord.ext.typed_commands.Cog[discord.ext.commands.Context]
         await member.remove_roles(role, reason="Role reactions on {}".format(
             payload.message_id))
 
+    @plugins.commands.cleanup
     @discord.ext.commands.group("rolereact")
     @plugins.privileges.priv_ext("admin")
     async def rolereact_command(self, ctx: discord.ext.commands.Context) -> None:

@@ -376,4 +376,9 @@ def cleanup(cmd: T) -> T:
             await old_on_error(exc)
     cmd.on_error = on_error # type: ignore
 
+    old_ensure_assignment_on_copy = cmd._ensure_assignment_on_copy # type: ignore
+    def ensure_assignment_on_copy(other: T) -> T:
+        return cleanup(old_ensure_assignment_on_copy(other)) # type: ignore
+    cmd._ensure_assignment_on_copy = ensure_assignment_on_copy # type: ignore
+
     return cmd

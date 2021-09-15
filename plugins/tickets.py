@@ -1215,6 +1215,7 @@ async def pager(dest: discord.abc.Messageable, pages: List[Page]) -> None:
 @plugins.cogs.cog
 class Tickets(discord.ext.typed_commands.Cog[discord.ext.commands.Context]):
     """Manage infraction history"""
+    @plugins.commands.cleanup
     @discord.ext.commands.command("note")
     @plugins.privileges.priv_ext("mod")
     async def note_command(self, ctx: discord.ext.commands.Context, target: util.discord.PartialUserConverter, *,
@@ -1268,6 +1269,7 @@ class Tickets(discord.ext.typed_commands.Cog[discord.ext.commands.Context]):
         """Manage tickets."""
         pass
 
+    @plugins.commands.cleanup
     @ticket_command.command("top")
     async def ticket_top(self, ctx: discord.ext.commands.Context) -> None:
         """Re-deliver the ticket at the top of your queue to your DMs."""
@@ -1284,6 +1286,7 @@ class Tickets(discord.ext.typed_commands.Cog[discord.ext.commands.Context]):
 
             await session.commit()
 
+    @plugins.commands.cleanup
     @ticket_command.command("queue")
     async def ticket_queue(self, ctx: discord.ext.commands.Context, mod: Optional[util.discord.PartialUserConverter]
         ) -> None:
@@ -1298,7 +1301,7 @@ class Tickets(discord.ext.typed_commands.Cog[discord.ext.commands.Context]):
                 dm=ctx.channel.type == discord.ChannelType.private)
 
         if embeds:
-            await pager(ctx.channel, [Page(embed=embed) for embed in embeds])
+            await pager(ctx, [Page(embed=embed) for embed in embeds])
         else:
             await ctx.send(util.discord.format("{!m} has an empty queue!", user),
                 allowed_mentions=discord.AllowedMentions.none())
@@ -1406,6 +1409,7 @@ class Tickets(discord.ext.typed_commands.Cog[discord.ext.commands.Context]):
 
             await ctx.send(embed=discord.Embed(description="#{}: Ticket hidden.".format(tkt.id)))
 
+    @plugins.commands.cleanup
     @ticket_command.command("show")
     async def ticket_show(self, ctx: discord.ext.commands.Context, *,
         user_or_id: Union[util.discord.PartialUserConverter, discord.PartialMessage, int]
@@ -1437,10 +1441,11 @@ class Tickets(discord.ext.typed_commands.Cog[discord.ext.commands.Context]):
                     embeds = (embed.add_field(name="Hidden", value=hidden_field) for embed in embeds)
 
                 if embeds:
-                    await pager(ctx.channel, [Page(embed=embed) for embed in embeds])
+                    await pager(ctx, [Page(embed=embed) for embed in embeds])
                 else:
                     await ctx.send("No tickets found for this user.")
 
+    @plugins.commands.cleanup
     @ticket_command.command("showhidden")
     async def ticket_showhidden(self, ctx: discord.ext.commands.Context, *,
         user_or_id: Union[util.discord.PartialUserConverter, discord.PartialMessage, int]
@@ -1459,7 +1464,7 @@ class Tickets(discord.ext.typed_commands.Cog[discord.ext.commands.Context]):
                     dm=ctx.channel.type == discord.ChannelType.private)
 
                 if embeds:
-                    await pager(ctx.channel, [Page(embed=embed) for embed in embeds])
+                    await pager(ctx, [Page(embed=embed) for embed in embeds])
                 else:
                     await ctx.send("No hidden tickets found for this user.")
 
