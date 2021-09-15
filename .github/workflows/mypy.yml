@@ -12,6 +12,6 @@ jobs:
       with:
         python-version: 3.9
     - name: pip
-      run: pip install discord.py discord.py_stubs discord-ext-typed-commands sqlalchemy2-stubs mypy sqlalchemy[mypy]
+      run: pip install discord.py discord.py_stubs discord-ext-typed-commands sqlalchemy2-stubs mypy sqlalchemy[mypy]!=1.4.23
     - name: mypy
       run: mypy .
