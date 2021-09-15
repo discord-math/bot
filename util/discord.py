@@ -518,3 +518,22 @@ class ChannelConverter(discord.abc.GuildChannel):
     @classmethod
     async def convert(cls, ctx: discord.ext.commands.Context, arg: str) -> discord.abc.GuildChannel:
         return await PCConv.convert(ctx, arg, discord.abc.GuildChannel)
+
+def partial_message(channel: Union[discord.abc.GuildChannel, discord.DMChannel, discord.GroupChannel], id: int
+    ) -> discord.PartialMessage:
+    return discord.PartialMessage(channel=channel, id=id) # type: ignore
+
+class ReplyConverter(discord.PartialMessage):
+    @classmethod
+    async def convert(cls, ctx: discord.ext.commands.Context, arg: str) -> discord.PartialMessage:
+        pos = undo_get_quoted_word(ctx.view, arg) # type: ignore
+        if (ref := ctx.message.reference) is not None:
+            ctx.view.index = pos # type: ignore
+            if isinstance(msg := ref.resolved, discord.Message):
+                return partial_message(msg.channel, msg.id)
+            if (channel := discord_client.client.get_channel(ref.channel_id)) is None:
+                raise discord.ext.commands.BadArgument(format("Could not find channel by ID {}", ref.channel_id))
+            if ref.message_id is None:
+                raise discord.ext.commands.BadArgument(format("Referenced message has no ID"))
+            return partial_message(channel, ref.message_id)
+        return await discord.ext.commands.PartialMessageConverter().convert(ctx, arg)

@@ -194,7 +194,7 @@ async def on_command_error(ctx: discord.ext.commands.Context, exc: Exception) ->
         elif isinstance(exc, discord.ext.commands.CheckFailure):
             return
         elif isinstance(exc, discord.ext.commands.UserInputError):
-            message = "Error: {}".format(exc.args[0])
+            message = "Error: {}".format(str(exc))
             if ctx.command is not None:
                 if getattr(ctx.command, "suppress_usage", False):
                     return
@@ -211,7 +211,7 @@ async def on_command_error(ctx: discord.ext.commands.Context, exc: Exception) ->
                 ctx.author.id, ctx.channel.id), exc_info=exc.__cause__)
             return
         elif isinstance(exc, discord.ext.commands.CommandError):
-            await ctx.send("Error: {}".format(exc.args[0]), allowed_mentions=discord.AllowedMentions.none())
+            await ctx.send("Error: {}".format(str(exc)), allowed_mentions=discord.AllowedMentions.none())
             return
         else:
             logger.error(util.discord.format("Unknown exception in command {} {!r} {!r} from {!m} in {!c}",
