@@ -33,22 +33,7 @@ def in_location(loc: str, channel: discord.abc.GuildChannel) -> bool:
         return True
     return False
 
-def location(name: str) -> Callable[[Callable[[discord.Message, plugins.commands.ArgParser], Awaitable[None]]],
-    Callable[[discord.Message, plugins.commands.ArgParser], Awaitable[None]]]:
-    """
-    Require that a command is only available in a given location. The decorator should be specified after
-    plugins.commands.command.
-    """
-    def decorator(fun: Callable[[discord.Message, plugins.commands.ArgParser], Awaitable[None]]) -> Callable[
-        [discord.Message, plugins.commands.ArgParser], Awaitable[None]]:
-        async def check(msg: discord.Message, arg: plugins.commands.ArgParser) -> None:
-            if isinstance(msg.channel, discord.abc.GuildChannel) and in_location(name, msg.channel):
-                await fun(msg, arg)
-        check.__name__ = fun.__name__
-        return check
-    return decorator
-
-def location_ext(name: str) -> Callable[[Callable[..., Coroutine[Any, Any, None]]], Callable[
+def location(name: str) -> Callable[[Callable[..., Coroutine[Any, Any, None]]], Callable[
     ..., Coroutine[Any, Any, None]]]:
     def command_location_check(ctx: discord.ext.commands.Context) -> bool:
         return isinstance(ctx.channel, discord.abc.GuildChannel) and in_location(name, ctx.channel)
@@ -58,8 +43,8 @@ class LocContext(discord.ext.commands.Context):
     loc: str
 
 @plugins.commands.cleanup
-@plugins.commands.command_ext("location", cls=discord.ext.commands.Group)
-@plugins.privileges.priv_ext("shell")
+@plugins.commands.command("location", cls=discord.ext.commands.Group)
+@plugins.privileges.priv("shell")
 async def location_command(ctx: discord.ext.commands.Context) -> None:
     """Manage locations where a command can be invoked."""
     pass

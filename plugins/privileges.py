@@ -36,25 +36,7 @@ def has_privilege(priv: str, user_or_member: Union[discord.User, discord.Member]
     # either way there's no roles to check
     return False
 
-def priv(name: str) -> Callable[[Callable[[discord.Message, plugins.commands.ArgParser], Awaitable[None]]],
-    Callable[[discord.Message, plugins.commands.ArgParser], Awaitable[None]]]:
-    """
-    Require that a command is only available to a given privilege. The decorator should be specified after
-    plugins.commands.command.
-    """
-    def decorator(fun: Callable[[discord.Message, plugins.commands.ArgParser], Awaitable[None]]) -> Callable[
-        [discord.Message, plugins.commands.ArgParser], Awaitable[None]]:
-        async def check(msg: discord.Message, arg: plugins.commands.ArgParser) -> None:
-            if has_privilege(name, msg.author):
-                await fun(msg, arg)
-            else:
-                logger.warn("Denied {} to {!r}".format(fun.__name__, msg.author))
-        check.__name__ = fun.__name__
-        return check
-    return decorator
-
-def priv_ext(name: str) -> Callable[[Callable[..., Coroutine[Any, Any, None]]], Callable[
-    ..., Coroutine[Any, Any, None]]]:
+def priv(name: str) -> Callable[[Callable[..., Coroutine[Any, Any, None]]], Callable[ ..., Coroutine[Any, Any, None]]]:
     def command_priv_check(ctx: discord.ext.commands.Context) -> bool:
         if has_privilege(name, ctx.author):
             return True
@@ -67,8 +49,8 @@ class PrivContext(discord.ext.commands.Context):
     priv: str
 
 @plugins.commands.cleanup
-@plugins.commands.command_ext("priv", cls=discord.ext.commands.Group)
-@priv_ext("shell")
+@plugins.commands.command("priv", cls=discord.ext.commands.Group)
+@priv("shell")
 async def priv_command(ctx: discord.ext.commands.Context) -> None:
     """Manage privilege sets."""
     pass

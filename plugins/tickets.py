@@ -1217,7 +1217,7 @@ class Tickets(discord.ext.typed_commands.Cog[discord.ext.commands.Context]):
     """Manage infraction history"""
     @plugins.commands.cleanup
     @discord.ext.commands.command("note")
-    @plugins.privileges.priv_ext("mod")
+    @plugins.privileges.priv("mod")
     async def note_command(self, ctx: discord.ext.commands.Context, target: util.discord.PartialUserConverter, *,
         note: Optional[str]) -> None:
         """Create a note on the target user."""
@@ -1264,7 +1264,7 @@ class Tickets(discord.ext.typed_commands.Cog[discord.ext.commands.Context]):
                 description="[#{}]({}): Note created!".format(ticket.id, ticket.jump_link)))
 
     @discord.ext.commands.group("ticket", aliases=["tickets"])
-    @plugins.privileges.priv_ext("mod")
+    @plugins.privileges.priv("mod")
     async def ticket_command(self, ctx: discord.ext.commands.Context) -> None:
         """Manage tickets."""
         pass

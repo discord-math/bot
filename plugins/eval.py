@@ -18,8 +18,8 @@ import discord_client
 T = TypeVar("T")
 
 @plugins.commands.cleanup
-@plugins.commands.command_ext("exec", aliases=["eval"])
-@plugins.privileges.priv_ext("shell")
+@plugins.commands.command("exec", aliases=["eval"])
+@plugins.privileges.priv("shell")
 async def exec_command(ctx: discord.ext.commands.Context,
     args: discord.ext.commands.Greedy[Union[util.discord.CodeBlock, util.discord.Inline, str]]) -> None:
     """

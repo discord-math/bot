@@ -159,8 +159,8 @@ async def init() -> None:
         expiry_task.cancel()
 
 @plugins.commands.cleanup
-@plugins.commands.command_ext("remindme", aliases=["remind"])
-@plugins.privileges.priv_ext("remind")
+@plugins.commands.command("remindme", aliases=["remind"])
+@plugins.privileges.priv("remind")
 async def remindme_command(ctx: discord.ext.commands.Context, interval: DurationConverter, *, text: Optional[str]
     ) -> None:
     """Set a reminder with a given message."""
@@ -181,9 +181,9 @@ async def remindme_command(ctx: discord.ext.commands.Context, interval: Duration
         allowed_mentions=discord.AllowedMentions.none())
 
 @plugins.commands.cleanup
-@plugins.commands.command_ext("reminder", aliases=["reminders"], cls=discord.ext.commands.Group,
+@plugins.commands.command("reminder", aliases=["reminders"], cls=discord.ext.commands.Group,
     invoke_without_command=True)
-@plugins.privileges.priv_ext("remind")
+@plugins.privileges.priv("remind")
 async def reminder_command(ctx: discord.ext.commands.Context) -> None:
     """Display your reminders."""
     reminders = conf[ctx.author.id] or FrozenList()
@@ -200,7 +200,7 @@ async def reminder_command(ctx: discord.ext.commands.Context) -> None:
         await ctx.send(reminder_list_md, allowed_mentions=discord.AllowedMentions.none())
 
 @reminder_command.command("remove")
-@plugins.privileges.priv_ext("remind")
+@plugins.privileges.priv("remind")
 async def reminder_remove(ctx: discord.ext.commands.Context, index: int) -> None:
     """Delete a reminder."""
     reminders_optional = conf[ctx.author.id]

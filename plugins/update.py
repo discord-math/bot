@@ -20,8 +20,8 @@ async def init() -> None:
     conf = cast(UpdateConf, await util.db.kv.load(__name__))
 
 @plugins.commands.cleanup
-@plugins.commands.command_ext("update")
-@plugins.privileges.priv_ext("admin")
+@plugins.commands.command("update")
+@plugins.privileges.priv("admin")
 async def update_command(ctx: discord.ext.commands.Context, bot_directory: Optional[str]) -> None:
     """Pull changes from git remote."""
     cwd = conf[bot_directory] if bot_directory is not None else None

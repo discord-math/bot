@@ -11,8 +11,8 @@ import plugins.privileges
 import util.discord
 import util.restart
 
-@plugins.commands.command_ext("restart")
-@plugins.privileges.priv_ext("admin")
+@plugins.commands.command("restart")
+@plugins.privileges.priv("admin")
 async def restart_command(ctx: discord.ext.commands.Context) -> None:
     """Restart the bot process."""
     await ctx.send("Restarting...")
@@ -32,8 +32,8 @@ async def reply_exception(ctx: discord.ext.commands.Context) -> None:
     await ctx.send(text)
 
 @plugins.commands.cleanup
-@plugins.commands.command_ext("load")
-@plugins.privileges.priv_ext("admin")
+@plugins.commands.command("load")
+@plugins.privileges.priv("admin")
 async def load_command(ctx: discord.ext.commands.Context, plugin: PluginConverter) -> None:
     """Load a plugin."""
     try:
@@ -44,8 +44,8 @@ async def load_command(ctx: discord.ext.commands.Context, plugin: PluginConverte
         await ctx.send("\u2705")
 
 @plugins.commands.cleanup
-@plugins.commands.command_ext("reload")
-@plugins.privileges.priv_ext("admin")
+@plugins.commands.command("reload")
+@plugins.privileges.priv("admin")
 async def reload_command(ctx: discord.ext.commands.Context, plugin: PluginConverter) -> None:
     """Reload a plugin."""
     try:
@@ -56,8 +56,8 @@ async def reload_command(ctx: discord.ext.commands.Context, plugin: PluginConver
         await ctx.send("\u2705")
 
 @plugins.commands.cleanup
-@plugins.commands.command_ext("unsafereload")
-@plugins.privileges.priv_ext("admin")
+@plugins.commands.command("unsafereload")
+@plugins.privileges.priv("admin")
 async def unsafe_reload_command(ctx: discord.ext.commands.Context, plugin: PluginConverter) -> None:
     """Reload a plugin without its dependents."""
     try:
@@ -68,8 +68,8 @@ async def unsafe_reload_command(ctx: discord.ext.commands.Context, plugin: Plugi
         await ctx.send("\u2705")
 
 @plugins.commands.cleanup
-@plugins.commands.command_ext("unload")
-@plugins.privileges.priv_ext("admin")
+@plugins.commands.command("unload")
+@plugins.privileges.priv("admin")
 async def unload_command(ctx: discord.ext.commands.Context, plugin: PluginConverter) -> None:
     """Unload a plugin."""
     try:
@@ -80,8 +80,8 @@ async def unload_command(ctx: discord.ext.commands.Context, plugin: PluginConver
         await ctx.send("\u2705")
 
 @plugins.commands.cleanup
-@plugins.commands.command_ext("unsafeunload")
-@plugins.privileges.priv_ext("admin")
+@plugins.commands.command("unsafeunload")
+@plugins.privileges.priv("admin")
 async def unsafe_unload_command(ctx: discord.ext.commands.Context, plugin: PluginConverter) -> None:
     """Unload a plugin without its dependents."""
     try:
@@ -92,8 +92,8 @@ async def unsafe_unload_command(ctx: discord.ext.commands.Context, plugin: Plugi
         await ctx.send("\u2705")
 
 @plugins.commands.cleanup
-@plugins.commands.command_ext("reloadmod")
-@plugins.privileges.priv_ext("admin")
+@plugins.commands.command("reloadmod")
+@plugins.privileges.priv("admin")
 async def reloadmod_command(ctx: discord.ext.commands.Context, module: str) -> None:
     """Reload a module."""
     try:
@@ -104,29 +104,29 @@ async def reloadmod_command(ctx: discord.ext.commands.Context, module: str) -> N
         await ctx.send("\u2705")
 
 @plugins.commands.cleanup
-@plugins.commands.command_ext("autoload", cls=discord.ext.commands.Group, invoke_without_command=True)
-@plugins.privileges.priv_ext("admin")
+@plugins.commands.command("autoload", cls=discord.ext.commands.Group, invoke_without_command=True)
+@plugins.privileges.priv("admin")
 async def autoload_command(ctx: discord.ext.commands.Context) -> None:
     """Manage plugins loaded at startup."""
     await ctx.send(", ".join(util.discord.format("{!i}", name) for name in plugins.autoload.get_autoload()))
 
 @autoload_command.command("add")
-@plugins.privileges.priv_ext("admin")
+@plugins.privileges.priv("admin")
 async def autoload_add(ctx: discord.ext.commands.Context, plugin: PluginConverter) -> None:
     """Add a plugin to be loaded at startup."""
     await plugins.autoload.set_autoload(plugin, True)
     await ctx.send("\u2705")
 
 @autoload_command.command("remove")
-@plugins.privileges.priv_ext("admin")
+@plugins.privileges.priv("admin")
 async def autoload_remove(ctx: discord.ext.commands.Context, plugin: PluginConverter) -> None:
     """Remove a plugin from startup loading list."""
     await plugins.autoload.set_autoload(plugin, False)
     await ctx.send("\u2705")
 
 @plugins.commands.cleanup
-@plugins.commands.command_ext("plugins")
-@plugins.privileges.priv_ext("mod")
+@plugins.commands.command("plugins")
+@plugins.privileges.priv("mod")
 async def plugins_command(ctx: discord.ext.commands.Context) -> None:
     """List loaded plugins."""
     await ctx.send(", ".join(util.discord.format("{!i}", name)

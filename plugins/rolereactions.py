@@ -134,7 +134,7 @@ class RoleReactions(discord.ext.typed_commands.Cog[discord.ext.commands.Context]
 
     @plugins.commands.cleanup
     @discord.ext.commands.group("rolereact")
-    @plugins.privileges.priv_ext("admin")
+    @plugins.privileges.priv("admin")
     async def rolereact_command(self, ctx: discord.ext.commands.Context) -> None:
         """Manage role reactions."""
         pass

@@ -6,8 +6,8 @@ import util.discord
 import discord.ext.commands
 
 @plugins.commands.cleanup
-@plugins.commands.command_ext("version")
-@plugins.privileges.priv_ext("mod")
+@plugins.commands.command("version")
+@plugins.privileges.priv("mod")
 async def version_command(ctx: discord.ext.commands.Context) -> None:
     """Display running bot version including any local changes."""
     git_log = await asyncio.subprocess.create_subprocess_exec(

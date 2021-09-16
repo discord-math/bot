@@ -19,9 +19,9 @@ class AbortDueToOtherPin(Exception):
 unpin_requests: Dict[int, plugins.reactions.ReactionMonitor[discord.RawReactionActionEvent]] = {}
 
 @plugins.commands.cleanup
-@plugins.commands.command_ext("pin")
-@plugins.privileges.priv_ext("pin")
-@plugins.locations.location_ext("pin")
+@plugins.commands.command("pin")
+@plugins.privileges.priv("pin")
+@plugins.locations.location("pin")
 async def pin_command(ctx: discord.ext.commands.Context, message: Optional[util.discord.ReplyConverter]) -> None:
     """Pin a message."""
     to_pin = util.discord.partial_from_reply(message, ctx)
@@ -86,9 +86,9 @@ async def pin_command(ctx: discord.ext.commands.Context, message: Optional[util.
             pin_msg_task.cancel()
 
 @plugins.commands.cleanup
-@plugins.commands.command_ext("unpin")
-@plugins.privileges.priv_ext("pin")
-@plugins.locations.location_ext("pin")
+@plugins.commands.command("unpin")
+@plugins.privileges.priv("pin")
+@plugins.locations.location("pin")
 async def unpin_command(ctx: discord.ext.commands.Context, message: Optional[util.discord.ReplyConverter]) -> None:
     """Unpin a message."""
     to_unpin = util.discord.partial_from_reply(message, ctx)
