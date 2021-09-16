@@ -36,14 +36,22 @@ def has_privilege(priv: str, user_or_member: Union[discord.User, discord.Member]
     # either way there's no roles to check
     return False
 
-def priv(name: str) -> Callable[[Callable[..., Coroutine[Any, Any, None]]], Callable[ ..., Coroutine[Any, Any, None]]]:
-    def command_priv_check(ctx: discord.ext.commands.Context) -> bool:
-        if has_privilege(name, ctx.author):
+class PrivCheck:
+    __slots__ = "priv"
+    priv: str
+
+    def __init__(self, priv: str):
+        self.priv = priv
+
+    def __call__(self, ctx: discord.ext.commands.Context) -> bool:
+        if has_privilege(self.priv, ctx.author):
             return True
         else:
             logger.warn("Denied {} to {!r}".format(ctx.invoked_with, ctx.author))
             return False
-    return discord.ext.commands.check(command_priv_check)
+
+def priv(name: str) -> Callable[[Callable[..., Coroutine[Any, Any, None]]], Callable[ ..., Coroutine[Any, Any, None]]]:
+    return discord.ext.commands.check(PrivCheck(name))
 
 class PrivContext(discord.ext.commands.Context):
     priv: str

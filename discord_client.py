@@ -29,6 +29,10 @@ except NameError:
         pass
     del on_message
 
+    @client.event
+    async def on_error(event: str, *args: Any, **kwargs: Any) -> None:
+        logger.error("Uncaught exception in {}".format(event), exc_info=True)
+
 async def main_task() -> None:
     try:
         await client.start(static_config.Discord["token"], reconnect=True)
