@@ -1,7 +1,10 @@
 import re
 import discord
+import discord.ext.commands
+import discord.ext.typed_commands
 from typing import Optional, Protocol, cast
 import plugins
+import plugins.cogs
 import util.discord
 import util.db.kv
 
@@ -38,31 +41,33 @@ async def respond(msg: discord.Message, embed: discord.Embed) -> None:
     except (discord.Forbidden, discord.NotFound):
         pass
 
-@util.discord.event("message")
-async def speyr_message(msg: discord.Message) -> None:
-    try:
-        if not msg.guild or msg.guild.id != int(conf.guild or 0):
-            return
-    except ValueError:
-        return
-    embed: Optional[discord.Embed]
-
-    if msg.content == "!r":
+@plugins.cogs.cog
+class Speyr(discord.ext.typed_commands.Cog[discord.ext.commands.Context]):
+    @discord.ext.commands.Cog.listener()
+    async def on_message(self, msg: discord.Message) -> None:
         try:
-            color = int(conf.color or "0", base=0)
+            if not msg.guild or msg.guild.id != int(conf.guild or 0):
+                return
         except ValueError:
-            color = 0
-        embed = discord.Embed(color=color, title="#questions",
-            description=util.discord.format("For a list of rules about asking on this server, please see {!c}.",
-                int(conf.channel or 0)))
-        await respond(msg, embed)
+            return
+        embed: Optional[discord.Embed]
 
-    elif msg.content == "!15m":
-        embed = rule_embed(conf.rule_15m)
-        if embed is not None:
+        if msg.content == "!r":
+            try:
+                color = int(conf.color or "0", base=0)
+            except ValueError:
+                color = 0
+            embed = discord.Embed(color=color, title="#questions",
+                description=util.discord.format("For a list of rules about asking on this server, please see {!c}.",
+                    int(conf.channel or 0)))
             await respond(msg, embed)
 
-    elif match := re.fullmatch(r"!r(\d+)", msg.content):
-        embed = rule_embed(int(match[1]))
-        if embed is not None:
-            await respond(msg, embed)
+        elif msg.content == "!15m":
+            embed = rule_embed(conf.rule_15m)
+            if embed is not None:
+                await respond(msg, embed)
+
+        elif match := re.fullmatch(r"!r(\d+)", msg.content):
+            embed = rule_embed(int(match[1]))
+            if embed is not None:
+                await respond(msg, embed)

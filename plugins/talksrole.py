@@ -1,7 +1,10 @@
 import re
 import discord
+import discord.ext.commands
+import discord.ext.typed_commands
 from typing import Optional, Awaitable, Protocol, cast
 import plugins
+import plugins.cogs
 import util.discord
 import util.db.kv
 
@@ -21,22 +24,24 @@ async def init() -> None:
     conf.role = int(conf.role) if conf.role is not None else None
     await conf
 
-@util.discord.event("message")
-async def notification_message(msg: discord.Message) -> None:
-    if msg.channel is None or msg.channel.id != conf.channel:
-        return
+@plugins.cogs.cog
+class TalksRole(discord.ext.typed_commands.Cog[discord.ext.commands.Context]):
+    @discord.ext.commands.Cog.listener()
+    async def on_message(self, msg: discord.Message) -> None:
+        if msg.channel is None or msg.channel.id != conf.channel:
+            return
 
-    if (role_id := conf.role) is None:
-        return
-    if any(role.id == role_id for role in msg.role_mentions):
-        return
+        if (role_id := conf.role) is None:
+            return
+        if any(role.id == role_id for role in msg.role_mentions):
+            return
 
-    regex = str(conf.regex or "")
-    if not regex:
-        return
+        regex = str(conf.regex or "")
+        if not regex:
+            return
 
-    if not re.search(regex, msg.content, re.IGNORECASE | re.DOTALL):
-        return
+        if not re.search(regex, msg.content, re.IGNORECASE | re.DOTALL):
+            return
 
-    await msg.channel.send(util.discord.format("{!m} {!M}", msg.author, role_id),
-        allowed_mentions=discord.AllowedMentions(roles=[discord.Object(role_id)]))
+        await msg.channel.send(util.discord.format("{!m} {!M}", msg.author, role_id),
+            allowed_mentions=discord.AllowedMentions(roles=[discord.Object(role_id)]))

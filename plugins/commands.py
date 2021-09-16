@@ -14,6 +14,7 @@ import util.discord
 import discord_client
 import util.db.kv
 import plugins
+import plugins.cogs
 
 class CommandsConfig(Protocol):
     prefix: str
@@ -180,66 +181,68 @@ discord_client.client.command_prefix = bot_prefix
 def cleanup_prefix() -> None:
     discord_client.client.command_prefix = ()
 
-@util.discord.event("command")
-async def on_command(ctx: discord.ext.commands.Context) -> None:
-    logger.info(util.discord.format("Command {!r} from {!m} in {!c}",
-        ctx.command.qualified_name, ctx.author.id, ctx.channel.id))
-    return
+@plugins.cogs.cog
+class Commands(discord.ext.typed_commands.Cog[discord.ext.commands.Context]):
+    @discord.ext.commands.Cog.listener()
+    async def on_command(self, ctx: discord.ext.commands.Context) -> None:
+        logger.info(util.discord.format("Command {!r} from {!m} in {!c}",
+            ctx.command.qualified_name, ctx.author.id, ctx.channel.id))
 
-@util.discord.event("command_error")
-async def on_command_error(ctx: discord.ext.commands.Context, exc: Exception) -> None:
-    try:
-        if isinstance(exc, discord.ext.commands.CommandNotFound):
-            return
-        elif isinstance(exc, discord.ext.commands.CheckFailure):
-            return
-        elif isinstance(exc, discord.ext.commands.UserInputError):
-            message = "Error: {}".format(str(exc))
-            if ctx.command is not None:
-                if getattr(ctx.command, "suppress_usage", False):
-                    return
-                if ctx.invoked_with is not None and ctx.invoked_parents is not None:
-                    usage = " ".join(s for s in ctx.invoked_parents + [ctx.invoked_with, ctx.command.signature] if s)
-                else:
-                    usage = " ".join(s for s in [ctx.command.qualified_name, ctx.command.signature] if s)
-                message += util.discord.format("\nUsage: {!i}", usage)
-            await ctx.send(message, allowed_mentions=discord.AllowedMentions.none())
-            return
-        elif isinstance(exc, discord.ext.commands.CommandInvokeError):
-            logger.error(util.discord.format("Error in command {} {!r} {!r} from {!m} in {!c}",
-                ctx.command.qualified_name, tuple(ctx.args), ctx.kwargs,
-                ctx.author.id, ctx.channel.id), exc_info=exc.__cause__)
-            return
-        elif isinstance(exc, discord.ext.commands.CommandError):
-            await ctx.send("Error: {}".format(str(exc)), allowed_mentions=discord.AllowedMentions.none())
-            return
-        else:
-            logger.error(util.discord.format("Unknown exception in command {} {!r} {!r} from {!m} in {!c}",
-                ctx.command.qualified_name, tuple(ctx.args), ctx.kwargs), exc_info=exc)
-            return
-    finally:
-        await finalize_cleanup(ctx)
+    @discord.ext.commands.Cog.listener()
+    async def on_command_error(self, ctx: discord.ext.commands.Context, exc: Exception) -> None:
+        try:
+            if isinstance(exc, discord.ext.commands.CommandNotFound):
+                return
+            elif isinstance(exc, discord.ext.commands.CheckFailure):
+                return
+            elif isinstance(exc, discord.ext.commands.UserInputError):
+                message = "Error: {}".format(str(exc))
+                if ctx.command is not None:
+                    if getattr(ctx.command, "suppress_usage", False):
+                        return
+                    if ctx.invoked_with is not None and ctx.invoked_parents is not None:
+                        usage = " ".join(
+                            s for s in ctx.invoked_parents + [ctx.invoked_with, ctx.command.signature] if s)
+                    else:
+                        usage = " ".join(s for s in [ctx.command.qualified_name, ctx.command.signature] if s)
+                    message += util.discord.format("\nUsage: {!i}", usage)
+                await ctx.send(message, allowed_mentions=discord.AllowedMentions.none())
+                return
+            elif isinstance(exc, discord.ext.commands.CommandInvokeError):
+                logger.error(util.discord.format("Error in command {} {!r} {!r} from {!m} in {!c}",
+                    ctx.command.qualified_name, tuple(ctx.args), ctx.kwargs,
+                    ctx.author.id, ctx.channel.id), exc_info=exc.__cause__)
+                return
+            elif isinstance(exc, discord.ext.commands.CommandError):
+                await ctx.send("Error: {}".format(str(exc)), allowed_mentions=discord.AllowedMentions.none())
+                return
+            else:
+                logger.error(util.discord.format("Unknown exception in command {} {!r} {!r} from {!m} in {!c}",
+                    ctx.command.qualified_name, tuple(ctx.args), ctx.kwargs), exc_info=exc)
+                return
+        finally:
+            await finalize_cleanup(ctx)
 
-@util.discord.event("message")
-async def message_find_command(msg: discord.Message) -> None:
-    if conf.prefix and msg.content.startswith(conf.prefix):
-        cmdline = msg.content[len(conf.prefix):]
-        parser = ArgParser(cmdline)
-        cmd = parser.next_arg()
-        if isinstance(cmd, StringArg):
-            name = cmd.text.lower()
-            if name in commands:
-                try:
-                    logger.info(util.discord.format("Command {!r} from {!m} in {!c}",
-                        cmdline, msg.author.id, msg.channel.id))
-                    await commands[name](msg, parser)
-                except util.discord.UserError as exc:
-                    await msg.channel.send("Error ({}): {}".format(type(exc), exc.args[0]),
-                        allowed_mentions=discord.AllowedMentions.none())
-                except:
-                    logger.error(util.discord.format("Error in command {!r} from {!m} in {!c}",
-                        name, msg.author.id, msg.channel.id), exc_info=True)
-    await discord_client.client.process_commands(msg)
+    @discord.ext.commands.Cog.listener()
+    async def on_message(self, msg: discord.Message) -> None:
+        if conf.prefix and msg.content.startswith(conf.prefix):
+            cmdline = msg.content[len(conf.prefix):]
+            parser = ArgParser(cmdline)
+            cmd = parser.next_arg()
+            if isinstance(cmd, StringArg):
+                name = cmd.text.lower()
+                if name in commands:
+                    try:
+                        logger.info(util.discord.format("Command {!r} from {!m} in {!c}",
+                            cmdline, msg.author.id, msg.channel.id))
+                        await commands[name](msg, parser)
+                    except util.discord.UserError as exc:
+                        await msg.channel.send("Error ({}): {}".format(type(exc), exc.args[0]),
+                            allowed_mentions=discord.AllowedMentions.none())
+                    except:
+                        logger.error(util.discord.format("Error in command {!r} from {!m} in {!c}",
+                            name, msg.author.id, msg.channel.id), exc_info=True)
+        await discord_client.client.process_commands(msg)
 
 def unsafe_hook_command(name: str, fun: Callable[[discord.Message, ArgParser], Awaitable[None]]) -> None:
     if not asyncio.iscoroutinefunction(fun):

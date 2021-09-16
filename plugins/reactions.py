@@ -2,9 +2,12 @@ from __future__ import annotations
 import asyncio
 import weakref
 import discord
+import discord.ext.commands
+import discord.ext.typed_commands
 from typing import (Tuple, Union, Optional, Literal, AsyncIterator, Callable, Any, Generic, TypeVar, ContextManager,
     overload, cast)
 import plugins
+import plugins.cogs
 import util.asyncio
 import util.discord
 
@@ -152,18 +155,20 @@ def deliver_event(ev: str, payload: ReactionEvent) -> None:
             raise
     cont_deliver()
 
-@util.discord.event("raw_reaction_add")
-async def reaction_add(payload: discord.RawReactionActionEvent) -> None:
-    deliver_event("add", payload)
+@plugins.cogs.cog
+class Reactions(discord.ext.typed_commands.Cog[discord.ext.commands.Context]):
+    @discord.ext.commands.Cog.listener()
+    async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent) -> None:
+        deliver_event("add", payload)
 
-@util.discord.event("raw_reaction_remove")
-async def reaction_remove(payload: discord.RawReactionActionEvent) -> None:
-    deliver_event("remove", payload)
+    @discord.ext.commands.Cog.listener()
+    async def on_raw_reaction_remove(self, payload: discord.RawReactionActionEvent) -> None:
+        deliver_event("remove", payload)
 
-@util.discord.event("raw_reaction_clear")
-async def reaction_clear(payload: discord.RawReactionClearEvent) -> None:
-    deliver_event("clear", payload)
+    @discord.ext.commands.Cog.listener()
+    async def on_raw_reaction_clear(self, payload: discord.RawReactionClearEvent) -> None:
+        deliver_event("clear", payload)
 
-@util.discord.event("raw_reaction_clear_emoji")
-async def reaction_clear_emoji(payload: discord.RawReactionClearEmojiEvent) -> None:
-    deliver_event("clear_emoji", payload)
+    @discord.ext.commands.Cog.listener()
+    async def on_raw_reaction_clear_emoji(self, payload: discord.RawReactionClearEmojiEvent) -> None:
+        deliver_event("clear_emoji", payload)
