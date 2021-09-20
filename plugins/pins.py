@@ -25,7 +25,7 @@ unpin_requests: Dict[int, plugins.reactions.ReactionMonitor[discord.RawReactionA
 async def pin_command(ctx: discord.ext.commands.Context, message: Optional[util.discord.ReplyConverter]) -> None:
     """Pin a message."""
     to_pin = util.discord.partial_from_reply(message, ctx)
-    if not isinstance(ctx.channel, discord.abc.GuildChannel) or ctx.guild is None:
+    if ctx.guild is None:
         raise util.discord.UserError("Can only be used in a guild")
     guild = ctx.guild
 
@@ -92,7 +92,7 @@ async def pin_command(ctx: discord.ext.commands.Context, message: Optional[util.
 async def unpin_command(ctx: discord.ext.commands.Context, message: Optional[util.discord.ReplyConverter]) -> None:
     """Unpin a message."""
     to_unpin = util.discord.partial_from_reply(message, ctx)
-    if not isinstance(ctx.channel, discord.abc.GuildChannel) or ctx.guild is None:
+    if ctx.guild is None:
         raise util.discord.UserError("Can only be used in a guild")
     guild = ctx.guild
 

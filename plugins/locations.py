@@ -24,10 +24,12 @@ async def init() -> None:
     global conf
     conf = cast(LocationsConf, await util.db.kv.load(__name__))
 
-def in_location(loc: str, channel: discord.abc.GuildChannel) -> bool:
+def in_location(loc: str, channel: Union[discord.abc.GuildChannel, discord.Thread]) -> bool:
     chans = conf[loc, "channels"]
     cats = conf[loc, "categories"]
     if chans and channel.id in chans:
+        return True
+    if chans and isinstance(channel, discord.Thread) and channel.parent_id in chans:
         return True
     if cats and channel.category_id is not None and channel.category_id in cats:
         return True
@@ -36,7 +38,7 @@ def in_location(loc: str, channel: discord.abc.GuildChannel) -> bool:
 def location(name: str) -> Callable[[Callable[..., Coroutine[Any, Any, None]]], Callable[
     ..., Coroutine[Any, Any, None]]]:
     def command_location_check(ctx: discord.ext.commands.Context) -> bool:
-        return isinstance(ctx.channel, discord.abc.GuildChannel) and in_location(name, ctx.channel)
+        return isinstance(ctx.channel, (discord.abc.GuildChannel, discord.Thread)) and in_location(name, ctx.channel)
     return discord.ext.commands.check(command_location_check)
 
 class LocContext(discord.ext.commands.Context):
