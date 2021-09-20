@@ -34,19 +34,19 @@ class Quoted:
     async def convert(cls, ctx: discord.ext.commands.Context, arg: str) -> Quoted:
         return cls(arg)
 
-def undo_get_quoted_word(view: discord.ext.commands.view.StringView, arg: str) -> int: # type: ignore
-    escaped_quotes = discord.ext.commands.view._all_quotes # type: ignore
+def undo_get_quoted_word(view: discord.ext.commands.view.StringView, arg: str) -> int:
+    escaped_quotes: Iterable[str] = discord.ext.commands.view._all_quotes
     offset = 0
     last = view.buffer[view.index - 1]
     if last == "\\":
         offset = 1
     elif not arg.endswith(last):
-        for open_quote, close_quote in discord.ext.commands.view._quotes.items(): # type: ignore
+        for open_quote, close_quote in discord.ext.commands.view._quotes.items():
             if close_quote == last:
                 escaped_quotes = (open_quote, close_quote)
                 offset = 2
                 break
-    return cast(int, view.index) - offset - len(arg) - sum(ch in escaped_quotes for ch in arg)
+    return view.index - offset - len(arg) - sum(ch in escaped_quotes for ch in arg)
 
 class CodeBlock(Quoted):
     __slots__ = "language"
@@ -70,9 +70,8 @@ class CodeBlock(Quoted):
 
     @classmethod
     async def convert(cls, ctx: discord.ext.commands.Context, arg: str) -> CodeBlock:
-        if (match := cls.codeblock_re.match(ctx.view.buffer, pos=undo_get_quoted_word(ctx.view, arg)) # type: ignore
-            ) is not None:
-            ctx.view.index = match.end() # type: ignore
+        if (match := cls.codeblock_re.match(ctx.view.buffer, pos=undo_get_quoted_word(ctx.view, arg))) is not None:
+            ctx.view.index = match.end()
             return cls(match["block"], match["language"] or None)
         raise discord.ext.commands.ArgumentParsingError("Please provide a codeblock")
 
@@ -102,9 +101,8 @@ class Inline(Quoted):
 
     @classmethod
     async def convert(cls, ctx: discord.ext.commands.Context, arg: str) -> Inline:
-        if (match := cls.inline_re.match(ctx.view.buffer, pos=undo_get_quoted_word(ctx.view, arg)) # type: ignore
-            ) is not None:
-            ctx.view.index = match.end() # type: ignore
+        if (match := cls.inline_re.match(ctx.view.buffer, pos=undo_get_quoted_word(ctx.view, arg))) is not None:
+            ctx.view.index = match.end()
             return cls(match[1] or match[2])
         raise discord.ext.commands.ArgumentParsingError("Please provide an inline")
 
@@ -494,8 +492,7 @@ class ChannelConverter(discord.abc.GuildChannel):
     async def convert(cls, ctx: discord.ext.commands.Context, arg: str) -> discord.abc.GuildChannel:
         return await PCConv.convert(ctx, arg, discord.abc.GuildChannel)
 
-def partial_message(channel: Union[discord.abc.GuildChannel, discord.DMChannel, discord.GroupChannel], id: int
-    ) -> discord.PartialMessage:
+def partial_message(channel: Union[discord.abc.Snowflake], id: int) -> discord.PartialMessage:
     return discord.PartialMessage(channel=channel, id=id) # type: ignore
 
 def partial_from_reply(pmsg: Optional[discord.PartialMessage], ctx: discord.ext.commands.Context
@@ -520,8 +517,8 @@ class ReplyConverter(discord.PartialMessage):
     """
     @classmethod
     async def convert(cls, ctx: discord.ext.commands.Context, arg: str) -> discord.PartialMessage:
-        pos = undo_get_quoted_word(ctx.view, arg) # type: ignore
+        pos = undo_get_quoted_word(ctx.view, arg)
         if (ref := ctx.message.reference) is not None:
-            ctx.view.index = pos # type: ignore
+            ctx.view.index = pos
             return partial_from_reply(None, ctx)
         return await discord.ext.commands.PartialMessageConverter().convert(ctx, arg)

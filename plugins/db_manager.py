@@ -128,4 +128,5 @@ async def sql_command(ctx: discord.ext.commands.Context,
                 await tx.rollback()
             else:
                 await tx.commit()
-            await reply.remove_reaction("\u2705" if rollback else "\u21A9", member=discord_client.client.user)
+            if discord_client.client.user is not None:
+                await reply.remove_reaction("\u2705" if rollback else "\u21A9", member=discord_client.client.user)

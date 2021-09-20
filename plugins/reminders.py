@@ -58,15 +58,15 @@ class DurationConverter(int):
     }
     @classmethod
     async def convert(cls, ctx: discord.ext.commands.Context, arg: str) -> int:
-        pos = util.discord.undo_get_quoted_word(ctx.view, arg) # type: ignore
+        pos = util.discord.undo_get_quoted_word(ctx.view, arg)
         seconds = 0
-        while (match := cls.time_re.match(ctx.view.buffer, pos=pos)) is not None: # type: ignore
+        while (match := cls.time_re.match(ctx.view.buffer, pos=pos)) is not None:
             pos = match.end()
             assert match.lastgroup is not None
             seconds += int(match[1]) * cls.time_expansion[match.lastgroup]
-        if pos == util.discord.undo_get_quoted_word(ctx.view, arg): # type: ignore
+        if pos == util.discord.undo_get_quoted_word(ctx.view, arg):
             raise discord.ext.commands.BadArgument("Expected a duration")
-        ctx.view.index = pos # type: ignore
+        ctx.view.index = pos
         return seconds
 
 def format_msg(guild_id: int, channel_id: int, msg_id: int) -> str:

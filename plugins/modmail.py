@@ -6,7 +6,6 @@ import sqlalchemy.ext.asyncio
 import sqlalchemy.dialects.postgresql
 import discord
 import discord.ext.commands
-import discord.ext.typed_commands
 import logging
 import datetime
 from typing import Dict, Tuple, Optional, Awaitable, Any, Protocol, cast
@@ -109,7 +108,7 @@ class ModMailClient(discord.Client):
         logger.error("Exception in modmail client {}".format(event_method), exc_info=True)
 
     async def on_message(self, msg: discord.Message) -> None:
-        if not msg.guild and msg.author.id != self.user.id:
+        if not msg.guild and self.user is not None and msg.author.id != self.user.id:
             try:
                 guild = discord_client.client.get_guild(int(conf.guild))
                 if guild is None: return
@@ -155,7 +154,7 @@ class ModMailClient(discord.Client):
             await msg.add_reaction("\u2709")
 
 @plugins.cogs.cog
-class Modmail(discord.ext.typed_commands.Cog[discord.ext.commands.Context]):
+class Modmail(discord.ext.commands.Cog):
     """Handle modmail messages"""
     @discord.ext.commands.Cog.listener("on_message")
     async def modmail_reply(self, msg: discord.Message) -> None:

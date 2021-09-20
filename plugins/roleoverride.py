@@ -1,7 +1,6 @@
 from typing import Optional, Protocol, cast
 import discord
 import discord.ext.commands
-import discord.ext.typed_commands
 import util.db.kv
 import util.discord
 import util.frozen_list
@@ -20,7 +19,7 @@ async def init() -> None:
     conf = cast(RoleOverrideConf, await util.db.kv.load(__name__))
 
 @plugins.cogs.cog
-class RoleOverride(discord.ext.typed_commands.Cog[discord.ext.commands.Context]):
+class RoleOverride(discord.ext.commands.Cog):
     @discord.ext.commands.Cog.listener()
     async def on_member_update(self, before: discord.Member, after: discord.Member) -> None:
         removed = set()

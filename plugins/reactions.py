@@ -3,7 +3,6 @@ import asyncio
 import weakref
 import discord
 import discord.ext.commands
-import discord.ext.typed_commands
 from typing import (Tuple, Union, Optional, Literal, AsyncIterator, Callable, Any, Generic, TypeVar, ContextManager,
     overload, cast)
 import plugins
@@ -156,7 +155,7 @@ def deliver_event(ev: str, payload: ReactionEvent) -> None:
     cont_deliver()
 
 @plugins.cogs.cog
-class Reactions(discord.ext.typed_commands.Cog[discord.ext.commands.Context]):
+class Reactions(discord.ext.commands.Cog):
     @discord.ext.commands.Cog.listener()
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent) -> None:
         deliver_event("add", payload)

@@ -1,7 +1,6 @@
 import re
 import discord
 import discord.ext.commands
-import discord.ext.typed_commands
 from typing import Optional, Protocol, cast
 import plugins
 import plugins.cogs
@@ -42,7 +41,7 @@ async def respond(msg: discord.Message, embed: discord.Embed) -> None:
         pass
 
 @plugins.cogs.cog
-class Speyr(discord.ext.typed_commands.Cog[discord.ext.commands.Context]):
+class Speyr(discord.ext.commands.Cog):
     @discord.ext.commands.Cog.listener()
     async def on_message(self, msg: discord.Message) -> None:
         try:

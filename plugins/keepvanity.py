@@ -1,7 +1,6 @@
 import asyncio
 import discord
 import discord.ext.commands
-import discord.ext.typed_commands
 from typing import Optional, Awaitable, Protocol, cast
 import discord_client
 import plugins
@@ -34,7 +33,7 @@ async def check_guild_vanity(guild: discord.Guild) -> None:
             await guild.edit(vanity_code=conf.vanity)
 
 @plugins.cogs.cog
-class KeepVanity(discord.ext.typed_commands.Cog[discord.ext.commands.Context]):
+class KeepVanity(discord.ext.commands.Cog):
     """Restores the guild vanity URL as soon as enough boosts are available"""
     @discord.ext.commands.Cog.listener()
     async def on_ready(self) -> None:

@@ -15,7 +15,6 @@ from typing import (List, Dict, Set, Tuple, Optional, Iterator, AsyncIterator, S
 import discord
 import discord.abc
 import discord.ext.commands
-import discord.ext.typed_commands
 
 import discord_client
 import util.db
@@ -592,6 +591,8 @@ class KickTicket(Ticket):
     @staticmethod
     async def create_from_audit(session: sqlalchemy.ext.asyncio.AsyncSession, audit: discord.AuditLogEntry
         ) -> Sequence[Ticket]:
+        assert isinstance(audit.target, (discord.User, discord.Member))
+        assert audit.user is not None
         return (KickTicket(
             mod=await TicketMod.get(session, audit.user.id),
             targetid=audit.target.id,
@@ -623,6 +624,8 @@ class BanTicket(Ticket):
     @staticmethod
     async def create_from_audit(session: sqlalchemy.ext.asyncio.AsyncSession, audit: discord.AuditLogEntry
         ) -> Sequence[Ticket]:
+        assert isinstance(audit.target, (discord.User, discord.Member))
+        assert audit.user is not None
         return (BanTicket(
             mod=await TicketMod.get(session, audit.user.id),
             targetid=audit.target.id,
@@ -634,6 +637,8 @@ class BanTicket(Ticket):
     @staticmethod
     async def revert_from_audit(session: sqlalchemy.ext.asyncio.AsyncSession, audit: discord.AuditLogEntry
         ) -> Sequence[Ticket]:
+        assert isinstance(audit.target, (discord.User, discord.Member))
+        assert audit.user is not None
         stmt = sqlalchemy.select(BanTicket).where(
             BanTicket.status.in_((TicketStatus.IN_EFFECT, TicketStatus.EXPIRE_FAILED)),
             BanTicket.targetid == audit.target.id)
@@ -665,6 +670,8 @@ class VCMuteTicket(Ticket):
     @staticmethod
     async def create_from_audit(session: sqlalchemy.ext.asyncio.AsyncSession, audit: discord.AuditLogEntry
         ) -> Sequence[Ticket]:
+        assert isinstance(audit.target, (discord.User, discord.Member))
+        assert audit.user is not None
         if not getattr(audit.before, "mute", True) and getattr(audit.after, "mute", False):
             return (VCMuteTicket(
                 mod=await TicketMod.get(session, audit.user.id),
@@ -679,6 +686,8 @@ class VCMuteTicket(Ticket):
     @staticmethod
     async def revert_from_audit(session: sqlalchemy.ext.asyncio.AsyncSession, audit: discord.AuditLogEntry
         ) -> Sequence[Ticket]:
+        assert isinstance(audit.target, (discord.User, discord.Member))
+        assert audit.user is not None
         if getattr(audit.before, "mute", False) and not getattr(audit.after, "mute", False):
             stmt = sqlalchemy.select(VCMuteTicket).where(
                 VCMuteTicket.status.in_((TicketStatus.IN_EFFECT, TicketStatus.EXPIRE_FAILED)),
@@ -720,6 +729,8 @@ class VCDeafenTicket(Ticket):
     @staticmethod
     async def create_from_audit(session: sqlalchemy.ext.asyncio.AsyncSession, audit: discord.AuditLogEntry
         ) -> Sequence[Ticket]:
+        assert isinstance(audit.target, (discord.User, discord.Member))
+        assert audit.user is not None
         if not getattr(audit.before, "deaf", True) and getattr(audit.after, "deaf", False):
             return (VCDeafenTicket(
                 mod=await TicketMod.get(session, audit.user.id),
@@ -734,6 +745,8 @@ class VCDeafenTicket(Ticket):
     @staticmethod
     async def revert_from_audit(session: sqlalchemy.ext.asyncio.AsyncSession, audit: discord.AuditLogEntry
         ) -> Sequence[Ticket]:
+        assert isinstance(audit.target, (discord.User, discord.Member))
+        assert audit.user is not None
         if getattr(audit.before, "deaf", False) and not getattr(audit.after, "deaf", False):
             stmt = sqlalchemy.select(VCDeafenTicket).where(
                 VCDeafenTicket.status.in_((TicketStatus.IN_EFFECT, TicketStatus.EXPIRE_FAILED)),
@@ -782,8 +795,10 @@ class AddRoleTicket(Ticket):
     @staticmethod
     async def create_from_audit(session: sqlalchemy.ext.asyncio.AsyncSession, audit: discord.AuditLogEntry
         ) -> Sequence[Ticket]:
+        assert isinstance(audit.target, (discord.User, discord.Member))
+        assert audit.user is not None
         tickets = []
-        for role in audit.changes.after.roles or (): # type: ignore
+        for role in audit.changes.after.roles or ():
             if role.id in conf.tracked_roles:
                 tickets.append(AddRoleTicket(
                     mod=await TicketMod.get(session, audit.user.id),
@@ -798,8 +813,10 @@ class AddRoleTicket(Ticket):
     @staticmethod
     async def revert_from_audit(session: sqlalchemy.ext.asyncio.AsyncSession, audit: discord.AuditLogEntry
         ) -> Sequence[Ticket]:
+        assert isinstance(audit.target, (discord.User, discord.Member))
+        assert audit.user is not None
         tickets: List[Ticket] = []
-        for role in audit.changes.before.roles or (): # type: ignore
+        for role in audit.changes.before.roles or ():
             if role.id in conf.tracked_roles:
                 stmt = sqlalchemy.select(AddRoleTicket).where(
                     AddRoleTicket.status.in_((TicketStatus.IN_EFFECT, TicketStatus.EXPIRE_FAILED)),
@@ -950,7 +967,8 @@ async def poll_audit_log() -> None:
                             for revert_handler in revert_handlers.get(entry.action, ()):
                                 for ticket in await revert_handler(session, entry):
                                     ticket.status = TicketStatus.REVERTED
-                                    ticket.modified_by = entry.user.id
+                                    if entry.user is not None:
+                                        ticket.modified_by = entry.user.id
                                     logger.debug("Reverted Ticket #{} from audit {}".format(ticket.id, entry.id))
                                     await ticket.publish()
                     except asyncio.CancelledError:
@@ -1178,9 +1196,10 @@ async def pager(dest: discord.abc.Messageable, pages: List[Page]) -> None:
     for r in reactions:
         await msg.add_reaction(r)
 
+    bot_id = discord_client.client.user.id if discord_client.client.user is not None else None
     index = 0
     with plugins.reactions.ReactionMonitor(channel_id=msg.channel.id, message_id=msg.id, event="add",
-        filter=lambda _, p: p.user_id != discord_client.client.user.id and p.emoji.name in reactions,
+        filter=lambda _, p: p.user_id != bot_id and p.emoji.name in reactions,
         timeout_each=120) as mon:
         try:
             while True:
@@ -1197,7 +1216,7 @@ async def pager(dest: discord.abc.Messageable, pages: List[Page]) -> None:
                 index %= len(pages)
                 await msg.edit(**pages[index]._asdict())
                 try:
-                    await msg.remove_reaction(payload.emoji, discord.Object(payload.user_id)) # type: ignore
+                    await msg.remove_reaction(payload.emoji, discord.Object(payload.user_id))
                 except discord.HTTPException:
                     pass
             else:
@@ -1213,7 +1232,7 @@ async def pager(dest: discord.abc.Messageable, pages: List[Page]) -> None:
             pass
 
 @plugins.cogs.cog
-class Tickets(discord.ext.typed_commands.Cog[discord.ext.commands.Context]):
+class Tickets(discord.ext.commands.Cog):
     """Manage infraction history"""
     @plugins.commands.cleanup
     @discord.ext.commands.command("note")

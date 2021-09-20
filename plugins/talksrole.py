@@ -1,7 +1,6 @@
 import re
 import discord
 import discord.ext.commands
-import discord.ext.typed_commands
 from typing import Optional, Awaitable, Protocol, cast
 import plugins
 import plugins.cogs
@@ -25,7 +24,7 @@ async def init() -> None:
     await conf
 
 @plugins.cogs.cog
-class TalksRole(discord.ext.typed_commands.Cog[discord.ext.commands.Context]):
+class TalksRole(discord.ext.commands.Cog):
     @discord.ext.commands.Cog.listener()
     async def on_message(self, msg: discord.Message) -> None:
         if msg.channel is None or msg.channel.id != conf.channel:

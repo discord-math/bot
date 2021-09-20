@@ -1,7 +1,6 @@
 import re
 import discord
 import discord.ext.commands
-import discord.ext.typed_commands
 import discord.utils
 from typing import Tuple, Optional, Iterator, Union, TypedDict, Awaitable, Protocol, cast
 import discord_client
@@ -109,7 +108,7 @@ def get_payload_role(guild: discord.Guild, payload: discord.RawReactionActionEve
     return discord.Object(role_id)
 
 @plugins.cogs.cog
-class RoleReactions(discord.ext.typed_commands.Cog[discord.ext.commands.Context]):
+class RoleReactions(discord.ext.commands.Cog):
     """Manage role reactions."""
     @discord.ext.commands.Cog.listener()
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent) -> None:

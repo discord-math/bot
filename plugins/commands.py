@@ -7,7 +7,6 @@ import asyncio
 import logging
 import discord
 import discord.ext.commands
-import discord.ext.typed_commands
 from typing import (Dict, Set, Iterator, Optional, Callable, Awaitable, Coroutine, Any, Type, TypeVar, Protocol, cast,
     overload)
 import util.discord
@@ -35,11 +34,11 @@ def cleanup_prefix() -> None:
     discord_client.client.command_prefix = ()
 
 @plugins.cogs.cog
-class Commands(discord.ext.typed_commands.Cog[discord.ext.commands.Context]):
+class Commands(discord.ext.commands.Cog):
     @discord.ext.commands.Cog.listener()
     async def on_command(self, ctx: discord.ext.commands.Context) -> None:
         logger.info(util.discord.format("Command {!r} from {!m} in {!c}",
-            ctx.command.qualified_name, ctx.author.id, ctx.channel.id))
+            ctx.command and ctx.command.qualified_name, ctx.author.id, ctx.channel.id))
 
     @discord.ext.commands.Cog.listener()
     async def on_command_error(self, ctx: discord.ext.commands.Context, exc: Exception) -> None:
@@ -63,7 +62,7 @@ class Commands(discord.ext.typed_commands.Cog[discord.ext.commands.Context]):
                 return
             elif isinstance(exc, discord.ext.commands.CommandInvokeError):
                 logger.error(util.discord.format("Error in command {} {!r} {!r} from {!m} in {!c}",
-                    ctx.command.qualified_name, tuple(ctx.args), ctx.kwargs,
+                    ctx.command and ctx.command.qualified_name, tuple(ctx.args), ctx.kwargs,
                     ctx.author.id, ctx.channel.id), exc_info=exc.__cause__)
                 return
             elif isinstance(exc, discord.ext.commands.CommandError):
@@ -71,7 +70,7 @@ class Commands(discord.ext.typed_commands.Cog[discord.ext.commands.Context]):
                 return
             else:
                 logger.error(util.discord.format("Unknown exception in command {} {!r} {!r} from {!m} in {!c}",
-                    ctx.command.qualified_name, tuple(ctx.args), ctx.kwargs), exc_info=exc)
+                    ctx.command and ctx.command.qualified_name, tuple(ctx.args), ctx.kwargs), exc_info=exc)
                 return
         finally:
             await finalize_cleanup(ctx)
@@ -80,18 +79,18 @@ class Commands(discord.ext.typed_commands.Cog[discord.ext.commands.Context]):
     async def on_message(self, msg: discord.Message) -> None:
         await discord_client.client.process_commands(msg)
 
-T = TypeVar("T", bound=discord.ext.typed_commands.Command[discord.ext.commands.Context])
+T = TypeVar("T", bound=discord.ext.commands.Command)
 
 @overload
 def command(name: Optional[str] = None, cls: Type[T] = ..., *args: Any, **kwargs: Any) -> Callable[
     [Callable[..., Coroutine[Any, Any, None]]], T]: ...
 @overload
 def command(name: Optional[str] = None, cls: None = None, *args: Any, **kwargs: Any) -> Callable[
-    [Callable[..., Coroutine[Any, Any, None]]], discord.ext.typed_commands.Command[discord.ext.commands.Context]]: ...
+    [Callable[..., Coroutine[Any, Any, None]]], discord.ext.commands.Command]: ...
 def command(name: Optional[str] = None, cls: Any = discord.ext.commands.Command, *args: Any, **kwargs: Any) -> Callable[
     [Callable[..., Coroutine[Any, Any, None]]], Any]:
     def decorator(fun: Callable[..., Coroutine[Any, Any, None]]) -> Callable[..., Coroutine[Any, Any, None]]:
-        cmd: discord.ext.typed_commands.Command[discord.ext.commands.Context]
+        cmd: discord.ext.commands.Command
         if isinstance(fun, discord.ext.commands.Command):
             if args or kwargs:
                 raise TypeError("the provided object is already a Command (args/kwargs have no effect)")
@@ -184,7 +183,7 @@ def cleanup(cmd: T) -> T:
         init_cleanup(ctx)
         if old_on_error is not None:
             await old_on_error(exc)
-    cmd.on_error = on_error # type: ignore
+    cmd.on_error = on_error
 
     old_ensure_assignment_on_copy = cmd._ensure_assignment_on_copy # type: ignore
     def ensure_assignment_on_copy(other: T) -> T:

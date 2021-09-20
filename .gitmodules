@@ -1,0 +1,6 @@
+[submodule "discord.py"]
+	path = discord.py
+	url = https://github.com/discord-math/discord.py.git
+[submodule "stubs"]
+	path = stubs
+	url = https://github.com/discord-math/discord.py-types

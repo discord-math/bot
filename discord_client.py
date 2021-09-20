@@ -4,7 +4,6 @@ This module defines the "client" singleton. It really should be a singleton so i
 
 import discord
 import discord.ext.commands
-import discord.ext.typed_commands
 import asyncio
 import logging
 from typing import Any
@@ -16,7 +15,7 @@ try:
     client
     logger.warn("Refusing to re-create the Discord client", stack_info=True)
 except NameError:
-    client: discord.ext.typed_commands.Bot[discord.ext.commands.Context] = discord.ext.commands.Bot(
+    client: discord.ext.commands.Bot = discord.ext.commands.Bot(
         command_prefix=(),
         loop=asyncio.get_event_loop(),
         max_messages=None,
