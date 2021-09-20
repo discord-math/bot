@@ -113,7 +113,7 @@ class ModMailClient(discord.Client):
                 guild = discord_client.client.get_guild(int(conf.guild))
                 if guild is None: return
                 channel = guild.get_channel(int(conf.channel))
-                if not isinstance(channel, discord.TextChannel): return
+                if not isinstance(channel, (discord.TextChannel, discord.Thread)): return
                 role = guild.get_role(int(conf.role))
                 if role is None: return
             except (ValueError, AttributeError):

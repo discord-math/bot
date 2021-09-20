@@ -84,8 +84,12 @@ def format_text_reminder(reminder: Reminder) -> str:
     return '"""{}""" ({}) for {}'.format(contents, format_msg(guild, channel, msg), time_str)
 
 async def send_reminder(user_id: int, reminder: Reminder) -> None:
-    channel = discord_client.client.get_channel(reminder["channel"])
-    if not isinstance(channel, discord.TextChannel):
+    guild = discord_client.client.get_guild(reminder["guild"])
+    if guild is None:
+        logger.info("Reminder {} for user {} silently removed (guild no longer exists)".format(str(reminder), user_id))
+        return
+    channel = guild.get_channel_or_thread(reminder["channel"])
+    if not isinstance(channel, (discord.TextChannel, discord.Thread)):
         logger.info("Reminder {} for user {} silently removed (channel no longer exists)".format(str(reminder), user_id))
         return
     try:

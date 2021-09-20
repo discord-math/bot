@@ -40,9 +40,8 @@ async def init() -> None:
 msg_id_re = re.compile(r"https?://(?:\w*\.)?(?:discord.com|discordapp.com)/channels/(\d+)/(\d+)/(\d+)")
 
 async def find_message(channel_id: int, msg_id: int) -> Optional[discord.Message]:
-    channel = discord_client.client.get_channel(channel_id)
+    channel = discord_client.client.get_partial_messageable(channel_id)
     if channel is None: return None
-    if not isinstance(channel, discord.TextChannel): return None
     try:
         return await channel.fetch_message(msg_id)
     except (discord.NotFound, discord.Forbidden):

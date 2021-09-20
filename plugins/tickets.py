@@ -394,7 +394,7 @@ class Ticket:
         # Post to or update the ticket list
         if conf.ticket_list:
             channel = discord_client.client.get_channel(conf.ticket_list)
-            if isinstance(channel, discord.TextChannel):
+            if isinstance(channel, (discord.TextChannel, discord.Thread)):
                 message = None
                 if self.list_msgid is not None:
                     try:
