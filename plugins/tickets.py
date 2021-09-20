@@ -1231,6 +1231,8 @@ async def pager(dest: discord.abc.Messageable, pages: List[Page]) -> None:
         except asyncio.CancelledError:
             pass
 
+voice_lock: asyncio.Lock = asyncio.Lock()
+
 @plugins.cogs.cog
 class Tickets(discord.ext.commands.Cog):
     """Manage infraction history"""
@@ -1500,24 +1502,27 @@ class Tickets(discord.ext.commands.Cog):
         if before.deaf != after.deaf or before.mute != after.mute:
             audit_log_updated()
         if after.channel is not None:
-            if member.id in conf.pending_unmutes:
-                try:
-                    await member.edit(mute=False)
-                    conf.pending_unmutes = util.frozen_list.FrozenList(
-                        filter(lambda i: i != member.id, conf.pending_unmutes))
-                    logger.debug("Processed unmute for {}".format(member.id))
-                except discord.HTTPException as exc:
-                    if exc.text != "Target user is not connected to voice.":
-                        raise
-            if member.id in conf.pending_undeafens:
-                try:
-                    await member.edit(deafen=False)
-                    conf.pending_undeafens = util.frozen_list.FrozenList(
-                        filter(lambda i: i != member.id, conf.pending_undeafens))
-                    logger.debug("Processed undeafen for {}".format(member.id))
-                except discord.HTTPException as exc:
-                    if exc.text != "Target user is not connected to voice.":
-                        raise
+            async with voice_lock:
+                if member.id in conf.pending_unmutes:
+                    try:
+                        await member.edit(mute=False)
+                        conf.pending_unmutes = util.frozen_list.FrozenList(
+                            filter(lambda i: i != member.id, conf.pending_unmutes))
+                        logger.debug("Processed unmute for {}".format(member.id))
+                        await conf
+                    except discord.HTTPException as exc:
+                        if exc.text != "Target user is not connected to voice.":
+                            raise
+                if member.id in conf.pending_undeafens:
+                    try:
+                        await member.edit(deafen=False)
+                        conf.pending_undeafens = util.frozen_list.FrozenList(
+                            filter(lambda i: i != member.id, conf.pending_undeafens))
+                        logger.debug("Processed undeafen for {}".format(member.id))
+                        await conf
+                    except discord.HTTPException as exc:
+                        if exc.text != "Target user is not connected to voice.":
+                            raise
 
     @discord.ext.commands.Cog.listener("on_member_update")
     async def process_member_update(self, before: discord.Member, after: discord.Member) -> None:
