@@ -597,7 +597,7 @@ class KickTicket(Ticket):
             mod=await TicketMod.get(session, audit.user.id),
             targetid=audit.target.id,
             auditid=audit.id,
-            created_at=audit.created_at,
+            created_at=audit.created_at.replace(tzinfo=None),
             modified_by=None,
             comment=audit.reason),)
 
@@ -630,7 +630,7 @@ class BanTicket(Ticket):
             mod=await TicketMod.get(session, audit.user.id),
             targetid=audit.target.id,
             auditid=audit.id,
-            created_at=audit.created_at,
+            created_at=audit.created_at.replace(tzinfo=None),
             modified_by=None,
             comment=audit.reason),)
 
@@ -677,7 +677,7 @@ class VCMuteTicket(Ticket):
                 mod=await TicketMod.get(session, audit.user.id),
                 targetid=audit.target.id,
                 auditid=audit.id,
-                created_at=audit.created_at,
+                created_at=audit.created_at.replace(tzinfo=None),
                 modified_by=None,
                 comment=audit.reason),)
         else:
@@ -736,7 +736,7 @@ class VCDeafenTicket(Ticket):
                 mod=await TicketMod.get(session, audit.user.id),
                 targetid=audit.target.id,
                 auditid=audit.id,
-                created_at=audit.created_at,
+                created_at=audit.created_at.replace(tzinfo=None),
                 modified_by=None,
                 comment=audit.reason),)
         else:
@@ -805,7 +805,7 @@ class AddRoleTicket(Ticket):
                     targetid=audit.target.id,
                     auditid=audit.id,
                     roleid=role.id,
-                    created_at=audit.created_at,
+                    created_at=audit.created_at.replace(tzinfo=None),
                     modified_by=None,
                     comment=audit.reason))
         return tickets
