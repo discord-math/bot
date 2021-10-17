@@ -575,6 +575,32 @@ class NoteTicket(Ticket):
         self.status = TicketStatus.HIDDEN
         self.modified_by = None
 
+blame_re: re.Pattern[str] = re.compile(r"^[^:]* by (\d+): (.*)$", re.I)
+
+async def audit_ticket_data(session: sqlalchemy.ext.asyncio.AsyncSession, audit: discord.AuditLogEntry
+    ) -> Dict[str, Any]:
+    assert isinstance(audit.target, (discord.User, discord.Member))
+    assert audit.user is not None
+    mod_id = audit.user.id
+    comment = audit.reason
+    stage = TicketStage.NEW
+    if audit.user.bot:
+        if comment is None:
+            comment = "No reason attached to the audit log"
+            stage = TicketStage.COMMENTED
+        elif (match := blame_re.match(comment)) is not None:
+            mod_id = int(match.group(1))
+            comment = match.group(2)
+        else:
+            stage = TicketStage.COMMENTED
+    return {
+        "mod": await TicketMod.get(session, mod_id),
+        "targetid": audit.target.id,
+        "auditid": audit.id,
+        "created_at": audit.created_at.replace(tzinfo=None),
+        "comment": comment,
+        "stage": stage}
+
 @registry.mapped
 @register_action
 class KickTicket(Ticket):
@@ -591,15 +617,7 @@ class KickTicket(Ticket):
     @staticmethod
     async def create_from_audit(session: sqlalchemy.ext.asyncio.AsyncSession, audit: discord.AuditLogEntry
         ) -> Sequence[Ticket]:
-        assert isinstance(audit.target, (discord.User, discord.Member))
-        assert audit.user is not None
-        return (KickTicket(
-            mod=await TicketMod.get(session, audit.user.id),
-            targetid=audit.target.id,
-            auditid=audit.id,
-            created_at=audit.created_at.replace(tzinfo=None),
-            modified_by=None,
-            comment=audit.reason),)
+        return (KickTicket(**await audit_ticket_data(session, audit)),)
 
     async def hide(self, actorid: int, reason: Optional[str] = None) -> None:
         logger.debug("Hiding Ticket #{}".format(self.id))
@@ -626,13 +644,7 @@ class BanTicket(Ticket):
         ) -> Sequence[Ticket]:
         assert isinstance(audit.target, (discord.User, discord.Member))
         assert audit.user is not None
-        return (BanTicket(
-            mod=await TicketMod.get(session, audit.user.id),
-            targetid=audit.target.id,
-            auditid=audit.id,
-            created_at=audit.created_at.replace(tzinfo=None),
-            modified_by=None,
-            comment=audit.reason),)
+        return (BanTicket(**await audit_ticket_data(session, audit)),)
 
     @staticmethod
     async def revert_from_audit(session: sqlalchemy.ext.asyncio.AsyncSession, audit: discord.AuditLogEntry
@@ -673,13 +685,7 @@ class VCMuteTicket(Ticket):
         assert isinstance(audit.target, (discord.User, discord.Member))
         assert audit.user is not None
         if not getattr(audit.before, "mute", True) and getattr(audit.after, "mute", False):
-            return (VCMuteTicket(
-                mod=await TicketMod.get(session, audit.user.id),
-                targetid=audit.target.id,
-                auditid=audit.id,
-                created_at=audit.created_at.replace(tzinfo=None),
-                modified_by=None,
-                comment=audit.reason),)
+            return (VCMuteTicket(**await audit_ticket_data(session, audit)),)
         else:
             return ()
 
@@ -705,7 +711,7 @@ class VCMuteTicket(Ticket):
             # User is no longer in the guild, nothing to do
             return
         try:
-            await member.edit(mute=False)
+            await member.edit(mute=False, reason=reason)
         except discord.HTTPException as exc:
             if exc.text != "Target user is not connected to voice.":
                 raise
@@ -732,13 +738,7 @@ class VCDeafenTicket(Ticket):
         assert isinstance(audit.target, (discord.User, discord.Member))
         assert audit.user is not None
         if not getattr(audit.before, "deaf", True) and getattr(audit.after, "deaf", False):
-            return (VCDeafenTicket(
-                mod=await TicketMod.get(session, audit.user.id),
-                targetid=audit.target.id,
-                auditid=audit.id,
-                created_at=audit.created_at.replace(tzinfo=None),
-                modified_by=None,
-                comment=audit.reason),)
+            return (VCDeafenTicket(**await audit_ticket_data(session, audit)),)
         else:
             return ()
 
@@ -764,7 +764,7 @@ class VCDeafenTicket(Ticket):
             # User is no longer in the guild, nothing to do
             return
         try:
-            await member.edit(deafen=False)
+            await member.edit(deafen=False, reason=reason)
         except discord.HTTPException as exc:
             if exc.text != "Target user is not connected to voice.":
                 raise
@@ -800,14 +800,7 @@ class AddRoleTicket(Ticket):
         tickets = []
         for role in audit.changes.after.roles or ():
             if role.id in conf.tracked_roles:
-                tickets.append(AddRoleTicket(
-                    mod=await TicketMod.get(session, audit.user.id),
-                    targetid=audit.target.id,
-                    auditid=audit.id,
-                    roleid=role.id,
-                    created_at=audit.created_at.replace(tzinfo=None),
-                    modified_by=None,
-                    comment=audit.reason))
+                tickets.append(AddRoleTicket(roleid=role.id, **await audit_ticket_data(session, audit)))
         return tickets
 
     @staticmethod
@@ -834,7 +827,7 @@ class AddRoleTicket(Ticket):
         except discord.NotFound:
             # User is no longer in the guild, nothing to do
             return
-        await member.remove_roles(role)
+        await member.remove_roles(role, reason=reason)
 
 @plugins.init
 async def init_db() -> None:
@@ -957,20 +950,19 @@ async def poll_audit_log() -> None:
                     try:
                         logger.debug("Processing audit entry {}".format(entry))
                         last = entry.id
-                        if entry.user != discord_client.client.user:
-                            for create_handler in create_handlers.get(entry.action, ()):
-                                for ticket in await create_handler(session, entry):
-                                    session.add(ticket)
-                                    logger.debug("Created {!r} from audit {}".format(ticket.describe(), entry.id))
-                                    await session.commit() # to get ID
-                                    await ticket.publish()
-                            for revert_handler in revert_handlers.get(entry.action, ()):
-                                for ticket in await revert_handler(session, entry):
-                                    ticket.status = TicketStatus.REVERTED
-                                    if entry.user is not None:
-                                        ticket.modified_by = entry.user.id
-                                    logger.debug("Reverted Ticket #{} from audit {}".format(ticket.id, entry.id))
-                                    await ticket.publish()
+                        for create_handler in create_handlers.get(entry.action, ()):
+                            for ticket in await create_handler(session, entry):
+                                session.add(ticket)
+                                logger.debug("Created {!r} from audit {}".format(ticket.describe(), entry.id))
+                                await session.commit() # to get ID
+                                await ticket.publish()
+                        for revert_handler in revert_handlers.get(entry.action, ()):
+                            for ticket in await revert_handler(session, entry):
+                                ticket.status = TicketStatus.REVERTED
+                                if entry.user is not None:
+                                    ticket.modified_by = entry.user.id
+                                logger.debug("Reverted Ticket #{} from audit {}".format(ticket.id, entry.id))
+                                await ticket.publish()
                     except asyncio.CancelledError:
                         raise
                     except:
