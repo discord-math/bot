@@ -15,11 +15,13 @@ try:
     client
     logger.warn("Refusing to re-create the Discord client", stack_info=True)
 except NameError:
+    intents = discord.Intents.all()
+    intents.presences = False
     client: discord.ext.commands.Bot = discord.ext.commands.Bot(
         command_prefix=(),
         loop=asyncio.get_event_loop(),
         max_messages=None,
-        intents=discord.Intents.all(),
+        intents=intents,
         allowed_mentions=discord.AllowedMentions(everyone=False, roles=False))
 
     # Disable command functionality until reenabled again in plugins.commands
