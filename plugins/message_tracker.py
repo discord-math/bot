@@ -635,7 +635,7 @@ async def process_channel_deletion(channel_id: int) -> None:
     async with sessionmaker() as session:
         stmt = (sqlalchemy.update(Channel)
             .where(Channel.id == channel_id)
-            .values(unreachable=True))
+            .values(reachable=False))
         await session.execute(stmt)
         await session.commit()
 
@@ -716,6 +716,11 @@ class MessageTracker(discord.ext.commands.Cog):
     async def on_guild_channel_create(self, channel: discord.abc.GuildChannel) -> None:
         if isinstance(channel, discord.TextChannel):
             executor_queue.put_nowait(process_channel_creation(channel.id, channel.guild.id))
+
+    @discord.ext.commands.Cog.listener()
+    async def on_guild_channel_delete(self, channel: discord.abc.GuildChannel) -> None:
+        if isinstance(channel, discord.TextChannel):
+            executor_queue.put_nowait(process_channel_deletion(channel.id))
 
 async def process_subscription(subscriber: str, event_dict: Dict[str, Callback], cb: Callback,
     last_msgs: Dict[int, int], thread_last_msgs: Dict[int, Dict[int, int]],
