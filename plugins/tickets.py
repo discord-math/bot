@@ -1073,8 +1073,9 @@ async def deliver_tickets() -> None:
                         except:
                             logger.error(util.discord.format("Exception when delivering a ticket to {!m}", mod.modid),
                                 exc_info=True)
-                    if min_delivery is None or mod.scheduled_delivery < min_delivery:
-                        min_delivery = mod.scheduled_delivery
+                    if mod.scheduled_delivery is not None:
+                        if min_delivery is None or mod.scheduled_delivery < min_delivery:
+                            min_delivery = mod.scheduled_delivery
                 # Can't have any publishable changes
                 await session.commit()
 
