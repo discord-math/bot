@@ -21,6 +21,8 @@ try:
     except:
         logger.critical("Exception during main event loop", exc_info=True)
     finally:
+        logger.info("Unloading all plugins")
+        loop.run_until_complete(plugins.unload_all())
         logger.info("Finalizing event loop")
         tasks = asyncio.all_tasks(loop=loop)
         for task in tasks:

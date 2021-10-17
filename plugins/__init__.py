@@ -363,21 +363,21 @@ async def load(name: str) -> types.ModuleType:
             return sys.modules[name]
         return await do_load(name)
 
+async def unload_all() -> None:
+    async with lock:
+        unload_list = list(deps.topo_sort_fwd(sources=set(finalizers)))
+        unload_gen = iter(unload_list)
+        async def cont_unload() -> None:
+            try:
+                for dep in unload_gen:
+                    await do_unload(dep)
+            except:
+                await cont_unload()
+                raise
+        await cont_unload()
+
 @atexit.register
 def atexit_unload() -> None:
-    async def async_atexit_unload() -> None:
-        async with lock:
-            unload_list = list(deps.topo_sort_fwd(sources=set(finalizers)))
-            unload_gen = iter(unload_list)
-            async def cont_unload() -> None:
-                try:
-                    for dep in unload_gen:
-                        await do_unload(dep)
-                except:
-                    await cont_unload()
-                    raise
-            await cont_unload()
-
     loop: Optional[asyncio.AbstractEventLoop]
     try:
         loop = asyncio.get_event_loop()
@@ -385,4 +385,4 @@ def atexit_unload() -> None:
         loop = None
     if loop is None or loop.is_closed():
         loop = asyncio.new_event_loop()
-    loop.run_until_complete(async_atexit_unload())
+    loop.run_until_complete(unload_all())
