@@ -123,18 +123,15 @@ async def initialize_module(name: str) -> None:
     logger.debug("Initializing {}".format(name))
     if name not in initializers:
         return
-    gen = iter(initializers[name])
-    async def cont_initializers() -> None:
-        try:
-            for init in gen:
-                await init()
-        except:
-            logger.error("Error in initializer of {}".format(name), exc_info=True)
-            await cont_initializers()
-            raise
+    try:
+        with push_plugin(name):
+            for init in initializers[name]:
+                    await init()
+    except:
+        logger.error("Error in initializer of {}".format(name), exc_info=True)
+        raise
+    finally:
         del initializers[name]
-    with push_plugin(name):
-        await cont_initializers()
 
 async def finalize_module(name: str) -> None:
     logger.debug("Finalizing {}".format(name))
@@ -354,7 +351,7 @@ async def reload(name: str) -> types.ModuleType:
 async def load(name: str) -> types.ModuleType:
     """
     Load a single plugin. If it's already loaded, nothing is changed. If there was an exception during initialization,
-    the finalizers that managed to registers will be run. Returns the module object if successful.
+    the finalizers that managed to register will be run. Returns the module object if successful.
     """
     async with lock:
         if not is_plugin(name):
