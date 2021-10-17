@@ -3,6 +3,7 @@ import asyncio
 import sys
 import threading
 import types
+import io
 from typing import List, Optional, Protocol, cast
 import discord
 import plugins
@@ -27,12 +28,30 @@ class DiscordHandler(logging.Handler):
         self.lock = threading.Lock() # just in case
         return super().__init__(level)
 
-    async def log_discord(self, chan_id: int, client: discord.Client) -> None:
+    def queue_pop(self) -> Optional[str]:
         with self.lock:
-            queue = self.queue
-            self.queue = []
+            if len(self.queue) == 0:
+                return None
+            return self.queue.pop(0)
+
+    async def log_discord(self, chan_id: int, client: discord.Client) -> None:
         try:
-            await util.discord.ChannelById(client, chan_id).send("\n".join(queue))
+            message = ""
+            while (text := self.queue_pop()) is not None:
+                codeblock = util.discord.format("{!b:py}", text)
+                if len(message) + len(codeblock) > 2000:
+                    if len(message) > 0:
+                        await util.discord.ChannelById(client, chan_id).send(message)
+                    if len(codeblock) > 2000:
+                        await util.discord.ChannelById(client, chan_id).send(
+                            file=discord.File(io.BytesIO(text.encode("utf8")), filename="log.txt"))
+                        message = ""
+                    else:
+                        message = codeblock
+                else:
+                    message += codeblock
+            if len(message) > 0:
+                await util.discord.ChannelById(client, chan_id).send(message)
         except:
             logger.critical("Could not report exception to Discord", exc_info=True, extra={"no_discord": True})
 
