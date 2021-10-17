@@ -14,7 +14,7 @@ import sqlalchemy
 import sqlalchemy.ext.asyncio
 import sqlalchemy.dialects.postgresql
 import sqlalchemy.orm
-from typing import (List, Dict, Tuple, Iterator, Sequence, Optional, Any, Union, Callable, Iterable, Awaitable, Generic, TypeVar, Protocol, overload, cast)
+from typing import List, Dict, Tuple, Sequence, Optional, Any, Union, Callable, Iterable, Awaitable, overload, cast
 import util.db
 import plugins
 import plugins.cogs
@@ -466,7 +466,14 @@ async def executor() -> None:
         try:
             await (await executor_queue.get())
         except asyncio.CancelledError:
-            raise
+            logger.info("Executor cancelled")
+            try:
+                while True:
+                    await executor_queue.get_nowait()
+            except asyncio.queues.QueueEmpty:
+                pass
+            logger.info("Executor finished with remaining items")
+            break
         except:
             logger.error("Exception in executor", exc_info=True)
 
@@ -632,7 +639,7 @@ async def process_channel_deletion(channel_id: int) -> None:
         await session.execute(stmt)
         await session.commit()
 
-# TODO: something that chunks nearby messages
+# TODO: something that chunks nearby messages (at least if they arrive faster than they are processed)
 async def process_message(msg: discord.Message) -> None:
     assert msg.guild is not None
     channel_id = msg.channel.parent_id if isinstance(msg.channel, discord.Thread) else msg.channel.id
