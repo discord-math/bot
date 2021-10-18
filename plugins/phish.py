@@ -7,6 +7,7 @@ import discord
 import discord.ext.commands
 from typing import List, Set, Iterable, Protocol, cast
 import util.db.kv
+import util.discord
 import plugins
 import plugins.message_tracker
 

@@ -14,7 +14,7 @@ import sqlalchemy
 import sqlalchemy.ext.asyncio
 import sqlalchemy.dialects.postgresql
 import sqlalchemy.orm
-from typing import List, Dict, Tuple, Sequence, Optional, Any, Union, Callable, Iterable, Awaitable, overload, cast
+from typing import List, Dict, Tuple, Sequence, Optional, Any, Union, Callable, Iterable, Awaitable, Protocol, overload, cast
 import util.db
 import plugins
 import plugins.cogs
