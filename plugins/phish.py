@@ -13,7 +13,6 @@ import plugins.message_tracker
 class PhishConf(Protocol):
     api: str
     identity: str
-    role: int
 
 conf: PhishConf
 logger = logging.getLogger(__name__)
@@ -77,8 +76,7 @@ async def scan_messages(msgs: Iterable[discord.Message]) -> None:
             try:
                 reason = util.discord.format("Automatic action: found phishing domain: {!i}", match.group())
                 await msg.delete()
-                assert isinstance(msg.author, discord.Member)
-                await msg.author.add_roles(discord.Object(conf.role), reason=reason)
+                await msg.guild.ban(msg.author, reason=reason)
             except (discord.Forbidden, discord.NotFound, AssertionError):
                 logger.error("Could not moderate {}".format(msg.jump_url), exc_info=True)
 
