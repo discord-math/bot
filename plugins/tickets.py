@@ -1261,19 +1261,10 @@ class Tickets(discord.ext.commands.Cog):
 
         if note is not None:
             async with sessionmaker() as session:
-                ticket = NoteTicket(
-                    mod=await TicketMod.get(session, ctx.author.id),
-                    targetid=target.id,
-                    created_at=datetime.datetime.utcnow(),
-                    modified_by=ctx.author.id,
-                    stage=TicketStage.COMMENTED,
-                    status=TicketStatus.IN_EFFECT,
-                    comment=note)
-                session.add(ticket)
+                ticket = await create_note(session, note, modid=ctx.author.id, targetid=target.id)
                 async with Ticket.publish_all(session):
                     await session.commit()
                 await session.commit()
-
             await ctx.send(embed=discord.Embed(
                 description="[#{}]({}): Note created!".format(ticket.id, ticket.jump_link)))
 
@@ -1535,3 +1526,22 @@ class Tickets(discord.ext.commands.Cog):
                     async with Ticket.publish_all(session):
                         await session.commit()
                     await session.commit()
+
+async def find_notes_prefix(session: sqlalchemy.ext.asyncio.AsyncSession, prefix: str, *, modid: int, targetid: int
+    ) -> List[NoteTicket]:
+    stmt = sqlalchemy.select(NoteTicket).where(NoteTicket.modid == modid, NoteTicket.targetid == targetid,
+        NoteTicket.comment.startswith(prefix)).order_by(NoteTicket.id)
+    return list((await session.execute(stmt)).scalars())
+
+async def create_note(session: sqlalchemy.ext.asyncio.AsyncSession, note: str, *, modid: int, targetid: int
+    ) -> NoteTicket:
+    ticket = NoteTicket(
+        mod=await TicketMod.get(session, modid),
+        targetid=targetid,
+        created_at=datetime.datetime.utcnow(),
+        modified_by=modid,
+        stage=TicketStage.COMMENTED,
+        status=TicketStatus.IN_EFFECT,
+        comment=note)
+    session.add(ticket)
+    return ticket

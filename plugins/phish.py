@@ -3,13 +3,9 @@ import aiohttp
 import json
 import re
 import logging
-import discord
-import discord.ext.commands
 from typing import List, Set, Iterable, Protocol, cast
 import util.db.kv
-import util.discord
 import plugins
-import plugins.message_tracker
 
 class PhishConf(Protocol):
     api: str
@@ -36,7 +32,7 @@ domain_regex: re.Pattern[str]
 def update_domain_regex() -> None:
     global domain_regex
     if len(domains) == 0:
-        regex = r"(!?)"
+        regex = r"(?!)"
     else:
         regex = "".join((r"\bhttps?://(?:", "|".join(re.escape(domain) for domain in domains), ")/"))
     domain_regex = re.compile(regex, re.I)
@@ -71,16 +67,6 @@ async def watch_websocket() -> None:
             logger.error("Exception in phish websocket", exc_info=True)
         await asyncio.sleep(60)
 
-async def scan_messages(msgs: Iterable[discord.Message]) -> None:
-    for msg in msgs:
-        if msg.guild is not None and not msg.author.bot and (match := domain_regex.search(msg.content)) is not None:
-            try:
-                reason = util.discord.format("Automatic action: found phishing domain: {!i}", match.group())
-                await msg.delete()
-                await msg.guild.ban(msg.author, reason=reason)
-            except (discord.Forbidden, discord.NotFound, AssertionError):
-                logger.error("Could not moderate {}".format(msg.jump_url), exc_info=True)
-
 @plugins.init
 async def init() -> None:
     global conf, session, domains, ws_task
@@ -89,10 +75,8 @@ async def init() -> None:
     domains = set(await get_all_domains())
     update_domain_regex()
     ws_task = asyncio.create_task(watch_websocket())
-    await plugins.message_tracker.subscribe(__name__, None, scan_messages, missing=True, retroactive=False)
 
 @plugins.finalizer
 async def finalize() -> None:
     ws_task.cancel()
     await session.close()
-    await plugins.message_tracker.unsubscribe(__name__, None)

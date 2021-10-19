@@ -1,0 +1,276 @@
+import logging
+import re
+import discord
+import discord.utils
+from typing import List, Dict, Tuple, Optional, Union, Literal, Iterable, Awaitable, Protocol, overload, cast
+import util.db.kv
+import util.discord
+import util.frozen_list
+import discord_client
+import plugins.commands
+import plugins.tickets
+import plugins.phish
+import plugins.message_tracker
+
+class AutomodConf(Protocol, Awaitable[None]):
+    active: util.frozen_list.FrozenList[int]
+    index: int
+    mute_role: int
+    exempt_roles: util.frozen_list.FrozenList[int]
+
+    @overload
+    def __getitem__(self, k: Tuple[int, Literal["keyword"]]) -> Optional[str]: ...
+    @overload
+    def __getitem__(self, k: Tuple[int, Literal["type"]]) -> Optional[Literal["substring", "word", "regex"]]: ...
+    @overload
+    def __getitem__(self, k: Tuple[int, Literal["action"]]
+        ) -> Optional[Literal["delete", "note", "mute", "kick", "ban"]]: ...
+    @overload
+    def __setitem__(self, k: Tuple[int, Literal["keyword"]], v: Optional[str]) -> None: ...
+    @overload
+    def __setitem__(self, k: Tuple[int, Literal["type"]], v: Optional[Literal["substring", "word", "regex"]]
+        ) -> None: ...
+    @overload
+    def __setitem__(self, k: Tuple[int, Literal["action"]],
+        v: Optional[Literal["delete", "note", "mute", "kick", "ban"]]) -> None: ...
+
+logger = logging.getLogger(__name__)
+
+conf: AutomodConf
+
+regex: re.Pattern[str]
+def generate_regex() -> None:
+    global regex
+    parts = []
+    for i in conf.active:
+        if (keyword := conf[i, "keyword"]) is not None:
+            kind = conf[i, "type"]
+            if kind == "substring":
+                parts.append(r"(?P<_{}>{})".format(i, re.escape(keyword)))
+            elif kind == "word":
+                parts.append(r"(?P<_{}>\b{}\b)".format(i, re.escape(keyword)))
+            elif kind == "regex":
+                parts.append(r"(?P<_{}>{})".format(i, keyword))
+    if len(parts) > 0:
+        regex = re.compile("|".join(parts), re.I)
+    else:
+        regex = re.compile("(?!)")
+
+def parse_note(text: Optional[str]) -> Dict[int, int]:
+    data = {}
+    if text is not None:
+        for line in text.splitlines()[1:]:
+            words = line.split()
+            if len(words) == 5 and words[0] == "pattern" and words[2] == "matched" and words[4] == "times":
+                try:
+                    data[int(words[1])] = int(words[3])
+                except ValueError:
+                    pass
+    return data
+
+def serialize_note(data: Dict[int, int]) -> str:
+    return "Automod:\n" + "\n".join("pattern {} matched {} times".format(index, value) for index, value in data.items())
+
+async def process_messages(msgs: Iterable[discord.Message]) -> None:
+    for msg in msgs:
+        if msg.guild is None: continue
+        if msg.author.bot: continue
+
+        try:
+            if (match := plugins.phish.domain_regex.search(msg.content)) is not None:
+                try:
+                    reason = util.discord.format("Automatic action: found phishing domain: {!i}", match.group())
+                    await msg.delete()
+                    await msg.guild.ban(msg.author, reason=reason)
+                except (discord.Forbidden, discord.NotFound):
+                    logger.error("Could not moderate {}".format(msg.jump_url), exc_info=True)
+
+            if (match := regex.search(msg.content)) is not None:
+                for key, value in match.groupdict().items():
+                    if value is not None:
+                        index = int(key[1:])
+                        break
+                else: continue
+                logger.info("Message {} matches pattern {}".format(msg.id, index))
+                if isinstance(msg.author, discord.Member):
+                    if any(role.id in conf.exempt_roles for role in msg.author.roles):
+                        continue
+                if (action := conf[index, "action"]) is not None:
+                    try:
+                        reason = "Automatic action: message matches pattern {}".format(index)
+
+                        if action == "delete":
+                            await msg.delete()
+
+                        elif action == "note":
+                            await msg.delete()
+                            async with plugins.tickets.sessionmaker() as session:
+                                assert discord_client.client.user is not None
+                                notes = await plugins.tickets.find_notes_prefix(session, "Automod:\n",
+                                    modid=discord_client.client.user.id, targetid=msg.author.id)
+                                if len(notes) == 0:
+                                    await plugins.tickets.create_note(session, serialize_note({index: 1}),
+                                        modid=discord_client.client.user.id, targetid=msg.author.id)
+                                else:
+                                    data = parse_note(notes[-1].comment)
+                                    data[index] = 1 + data.get(index, 0)
+                                    notes[-1].comment = serialize_note(data)
+                                async with plugins.tickets.Ticket.publish_all(session):
+                                    await session.commit()
+                                await session.commit()
+
+                        elif action == "mute":
+                            await msg.delete()
+                            assert isinstance(msg.author, discord.Member)
+                            await msg.author.add_roles(discord.Object(conf.mute_role), reason=reason)
+
+                        elif action == "kick":
+                            await msg.delete()
+                            await msg.guild.kick(msg.author, reason=reason)
+
+                        elif action == "ban":
+                            await msg.delete()
+                            await msg.guild.ban(msg.author, reason=reason)
+
+                    except (discord.HTTPException, AssertionError):
+                        logger.error("Could not moderate {}".format(msg.jump_url), exc_info=True)
+        except:
+            logger.error("Could not automod scan {}".format(msg.jump_url), exc_info=True)
+
+@plugins.init
+async def init() -> None:
+    global conf
+    conf = cast(AutomodConf, await util.db.kv.load(__name__))
+    if conf.index is None: conf.index = 1
+    if conf.active is None: conf.active = util.frozen_list.FrozenList()
+    if conf.exempt_roles is None: conf.exempt_roles = util.frozen_list.FrozenList()
+    await conf
+    generate_regex()
+    await plugins.message_tracker.subscribe(__name__, None, process_messages, missing=True, retroactive=False)
+
+@plugins.finalizer
+async def finalize() -> None:
+    await plugins.message_tracker.unsubscribe(__name__, None)
+
+@plugins.commands.cleanup
+@plugins.commands.command("automod", cls=discord.ext.commands.Group)
+@plugins.privileges.priv("mod")
+async def automod_command(ctx: discord.ext.commands.Context) -> None:
+    """Manage automod."""
+    pass
+
+@automod_command.group("exempt", invoke_without_command=True)
+async def automod_exempt(ctx: discord.ext.commands.Context) -> None:
+    """Manage roles exempt from automod."""
+    output = []
+    for id in conf.exempt_roles:
+        role = discord.utils.find(lambda r: r.id == id, ctx.guild.roles if ctx.guild is not None else ())
+        if role is not None:
+            output.append(util.discord.format("{!M}({!i} {!i})", role, role.name, role.id))
+        else:
+            output.append(util.discord.format("{!M}({!i})", id, id))
+    await ctx.send("Roles exempt from automod: {}".format(", ".join(output)),
+        allowed_mentions=discord.AllowedMentions.none())
+
+@automod_exempt.command("add")
+async def automod_exempt_add(ctx: discord.ext.commands.Context, role: util.discord.PartialRoleConverter) -> None:
+    """Make a role exempt from automod."""
+    roles = set(conf.exempt_roles)
+    roles.add(role.id)
+    conf.exempt_roles = util.frozen_list.FrozenList(roles)
+    await conf
+    await ctx.send(util.discord.format("{!M} is now exempt from automod", role),
+        allowed_mentions=discord.AllowedMentions.none())
+
+@automod_exempt.command("remove")
+async def automod_exempt_remove(ctx: discord.ext.commands.Context, role: util.discord.PartialRoleConverter) -> None:
+    """Make a role not exempt from automod."""
+    roles = set(conf.exempt_roles)
+    roles.remove(role.id)
+    conf.exempt_roles = util.frozen_list.FrozenList(roles)
+    await conf
+    await ctx.send(util.discord.format("{!M} is no longer exempt from automod", role),
+        allowed_mentions=discord.AllowedMentions.none())
+
+@automod_command.command("list")
+async def automod_list(ctx: discord.ext.commands.Context) -> None:
+    """List all automod patterns (CW)."""
+    output = "**Automod patterns**:\n"
+    for i in conf.active:
+        if (keyword := conf[i, "keyword"]) is not None and (kind := conf[i, "type"]) is not None and (
+            action := conf[i, "action"]) is not None:
+            text = util.discord.format("**{}**: {} ||{!i}|| -> {}\n", i, kind, keyword, action)
+
+            if len(output) + len(text) > 2000:
+                if len(output) > 0:
+                    await ctx.send(output)
+                output = text
+            else:
+                output += text
+    if len(output) > 0:
+        await ctx.send(output)
+
+@automod_command.command("add")
+async def automod_add(ctx: discord.ext.commands.Context, kind: Literal["substring", "word", "regex"], *,
+    pattern: Union[util.discord.CodeBlock, util.discord.Inline, str]) -> None:
+    """
+        Add an automod pattern.
+        "substring" means the pattern will be matched anywhere in a message;
+        "word" means the pattern has to match a separate word;
+        "regex" means the pattern is a case-insensitive regex (use (?-i) to enable case sensitivity)
+    """
+    await ctx.message.delete()
+    ctx.send = ctx.channel.send # type: ignore # Undoing the effect of cleanup
+    if isinstance(pattern, (util.discord.CodeBlock, util.discord.Inline)):
+        pattern = pattern.text
+    if kind == "regex":
+        try:
+            regex = re.compile(pattern)
+        except Exception as exc:
+            raise util.discord.UserError("Could not compile regex: {}".format(exc))
+        if regex.search("") is not None:
+            raise util.discord.UserError("Regex matches empty string, that's probably not good")
+    else:
+        if pattern == "":
+            raise util.discord.UserError("The pattern is empty, that's probably not good")
+
+    for i in range(conf.index):
+        if conf[i, "keyword"] == pattern and conf[i, "type"] == kind and conf[i, "action"] == None:
+            break
+    else:
+        i = conf.index
+        conf.index += 1
+        conf[i, "keyword"] = pattern
+        conf[i, "type"] = kind
+        conf[i, "action"] = None
+        await conf
+    await ctx.send("Added as pattern **{}** with no action".format(i))
+
+@automod_command.command("remove")
+async def automod_remove(ctx: discord.ext.commands.Context, number: int) -> None:
+    """Remove an automod pattern by ID."""
+    if (keyword := conf[number, "keyword"]) is not None and (kind := conf[number, "type"]) is not None:
+        conf[number, "action"] = None
+    active = set(conf.active)
+    active.remove(number)
+    conf.active = util.frozen_list.FrozenList(active)
+    await conf
+    generate_regex()
+    if keyword is not None and kind is not None:
+        await ctx.send(util.discord.format("Removed {} ||{!i}||", kind, keyword))
+    else:
+        await ctx.send("No such pattern")
+
+@automod_command.command("action")
+async def automod_action(ctx: discord.ext.commands.Context, number: int,
+    action: Literal["delete", "note", "mute", "kick", "ban"]) -> None:
+    """Assign an action to an automod pattern. (All actions imply deletion)."""
+    if conf[number, "keyword"] is None or conf[number, "type"] is None:
+        raise util.discord.UserError("No such pattern")
+    conf[number, "action"] = action
+    active = set(conf.active)
+    active.add(number)
+    conf.active = util.frozen_list.FrozenList(active)
+    await conf
+    generate_regex()
+    await ctx.send("\u2705")
