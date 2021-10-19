@@ -179,10 +179,14 @@ def cleanup(cmd: T) -> T:
     cmd.invoke = invoke # type: ignore
 
     old_on_error = getattr(cmd, "on_error", None)
-    async def on_error(ctx: discord.ext.commands.Context, exc: Exception) -> None:
+    async def on_error(*args: Any) -> None:
+        if len(args) == 3:
+            cog, ctx, exc = args
+        else:
+            ctx, exc = args
         init_cleanup(ctx)
         if old_on_error is not None:
-            await old_on_error(exc)
+            await old_on_error(*args)
     cmd.on_error = on_error
 
     old_ensure_assignment_on_copy = cmd._ensure_assignment_on_copy # type: ignore
