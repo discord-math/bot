@@ -14,7 +14,8 @@ import sqlalchemy
 import sqlalchemy.ext.asyncio
 import sqlalchemy.dialects.postgresql
 import sqlalchemy.orm
-from typing import List, Dict, Tuple, Sequence, Optional, Any, Union, Callable, Iterable, Awaitable, Protocol, overload, cast
+from typing import (List, Dict, Tuple, Sequence, Optional, Any, Union, Callable, Iterable, Awaitable, Protocol, TypeVar,
+    overload, cast)
 import util.db
 import plugins
 import plugins.cogs
@@ -461,6 +462,23 @@ fetch_task: asyncio.Task[None]
 
 executor_queue: asyncio.Queue[Awaitable[None]] = asyncio.Queue()
 
+def schedule(cb: Awaitable[None]) -> None:
+    executor_queue.put_nowait(cb)
+
+T = TypeVar("T")
+
+async def return_result(cb: Awaitable[T], result: asyncio.Future[T]) -> None:
+    try:
+        result.set_result(await cb)
+    except BaseException as exc:
+        result.set_exception(exc)
+        raise
+
+async def schedule_and_wait(cb: Awaitable[T]) -> T:
+    result: asyncio.Future[T] = asyncio.Future()
+    schedule(return_result(cb, result))
+    return await result
+
 async def executor() -> None:
     while True:
         try:
@@ -487,7 +505,7 @@ async def init_executor() -> None:
     if discord_client.client.is_ready():
         chans = [channel for guild in discord_client.client.guilds for channel in guild.text_channels]
         last_msgs, thread_last_msgs = take_snapshot(chans)
-        executor_queue.put_nowait(process_ready(last_msgs, thread_last_msgs))
+        schedule(process_ready(last_msgs, thread_last_msgs))
 
 @plugins.finalizer
 def cancel_fetch() -> None:
@@ -497,11 +515,15 @@ def cancel_fetch() -> None:
 async def cancel_executor() -> None:
     async def kill_executor() -> None:
         raise asyncio.CancelledError()
-    executor_queue.put_nowait(kill_executor())
     try:
-        await executor_task
+        await schedule_and_wait(kill_executor())
     except asyncio.CancelledError:
         pass
+    finally:
+        try:
+            await executor_task
+        except asyncio.CancelledError:
+            pass
 
 async def process_ready(last_msgs: Dict[int, int], thread_last_msgs: Dict[int, Dict[int, int]]) -> None:
     async with sessionmaker() as session:
@@ -687,12 +709,12 @@ class MessageTracker(discord.ext.commands.Cog):
     async def on_ready(self) -> None:
         chans = [channel for guild in discord_client.client.guilds for channel in guild.text_channels]
         last_msgs, thread_last_msgs = take_snapshot(chans)
-        executor_queue.put_nowait(process_ready(last_msgs, thread_last_msgs))
+        schedule(process_ready(last_msgs, thread_last_msgs))
 
     @discord.ext.commands.Cog.listener()
     async def on_message(self, msg: discord.Message) -> None:
         if isinstance(msg.channel, (discord.TextChannel, discord.Thread)):
-            executor_queue.put_nowait(process_message(msg))
+            schedule(process_message(msg))
 
     @discord.ext.commands.Cog.listener()
     async def on_thread_update(self, before: discord.Thread, after: discord.Thread) -> None:
@@ -700,7 +722,7 @@ class MessageTracker(discord.ext.commands.Cog):
             assert before.archive_timestamp is not None
             # If this fails to commit, or if we've missed the event we will have missed the start of the thread.
             # I don't know how to fix this.
-            executor_queue.put_nowait(process_thread_unarchival(after, before.archive_timestamp))
+            schedule(process_thread_unarchival(after, before.archive_timestamp))
         elif not before.archived and after.archived:
             assert after.archive_timestamp is not None
             ts = last_archival_times.get(after.parent_id)
@@ -710,115 +732,107 @@ class MessageTracker(discord.ext.commands.Cog):
     @discord.ext.commands.Cog.listener()
     async def on_guild_channel_update(self, before: discord.abc.GuildChannel, after: discord.abc.GuildChannel) -> None:
         if isinstance(after, discord.TextChannel) and before.overwrites != after.overwrites:
-            executor_queue.put_nowait(process_permission_update(after.id))
+            schedule(process_permission_update(after.id))
 
     @discord.ext.commands.Cog.listener()
     async def on_guild_channel_create(self, channel: discord.abc.GuildChannel) -> None:
         if isinstance(channel, discord.TextChannel):
-            executor_queue.put_nowait(process_channel_creation(channel.id, channel.guild.id))
+            schedule(process_channel_creation(channel.id, channel.guild.id))
 
     @discord.ext.commands.Cog.listener()
     async def on_guild_channel_delete(self, channel: discord.abc.GuildChannel) -> None:
         if isinstance(channel, discord.TextChannel):
-            executor_queue.put_nowait(process_channel_deletion(channel.id))
+            schedule(process_channel_deletion(channel.id))
 
 async def process_subscription(subscriber: str, event_dict: Dict[str, Callback], cb: Callback,
-    last_msgs: Dict[int, int], thread_last_msgs: Dict[int, Dict[int, int]],
-    retroactive: bool, result: asyncio.Future[None]) -> None:
-    try:
-        async with sessionmaker() as session:
-            stmt = (sqlalchemy.select(ChannelState)
-                .join(ChannelState.channel)
-                .where(Channel.reachable, ChannelState.subscriber == subscriber))
-            have_chans = set()
-            for state in (await session.execute(stmt)).scalars():
-                if state.channel_id in last_msgs:
-                    have_chans.add(state.channel_id)
-            for channel_id in last_msgs:
-                if channel_id not in have_chans:
-                    channel = discord_client.client.get_channel(channel_id)
-                    if not isinstance(channel, discord.TextChannel): continue
-                    logger.debug("Channel {} is now subscibed for {!r}".format(channel_id, subscriber))
-                    stmt = (sqlalchemy.dialects.postgresql.insert(Channel)
-                        .values(guild_id=channel.guild.id, id=channel_id, reachable=True)
-                        .on_conflict_do_nothing(index_elements=["id"]))
-                    await session.execute(stmt)
-
-                    archive_ts = await approx_archival_ts(channel) if retroactive else None
-                    session.add(ChannelState(channel_id=channel_id, subscriber=subscriber,
-                        earliest_thread_archive_ts=archive_ts, last_message_id=last_msgs[channel_id]))
-                    if retroactive:
-                        logger.debug("Retroactively querying channel {} before {} for {!r}".format(channel_id,
-                            last_msgs[channel_id] + 1, subscriber))
-                        session.add(ChannelRequest(channel_id=channel_id, subscriber=subscriber,
-                            after_snowflake=channel_id, before_snowflake=last_msgs[channel_id] + 1))
-                        if channel_id in thread_last_msgs:
-                            for thread_id, thread_last_msg in thread_last_msgs[channel_id].items():
-                                logger.debug("Retroactively querying thread {} in channel {} before {} for {!r}".format(
-                                    thread_id, channel_id, thread_last_msg, subscriber))
-                                session.add(ThreadRequest(
-                                    thread_id=thread_id, channel_id=channel_id, subscriber=subscriber,
-                                    after_snowflake=thread_id, before_snowflake=thread_last_msg + 1))
-            await session.commit()
-
-            logger.debug("Looking for missing messages when subscribing {!r}".format(subscriber))
-            stmt = (sqlalchemy.select(ChannelState)
-                .join(ChannelState.channel)
-                .where(Channel.reachable, ChannelState.subscriber == subscriber))
-            states = [state for state in (await session.execute(stmt)).scalars() if state.channel_id in last_msgs]
-
-            archived_threads: Dict[int, List[discord.Thread]] = {channel_id: [] for channel_id in last_msgs}
-            for channel_id in last_msgs:
+    last_msgs: Dict[int, int], thread_last_msgs: Dict[int, Dict[int, int]], retroactive: bool) -> None:
+    async with sessionmaker() as session:
+        stmt = (sqlalchemy.select(ChannelState)
+            .join(ChannelState.channel)
+            .where(Channel.reachable, ChannelState.subscriber == subscriber))
+        have_chans = set()
+        for state in (await session.execute(stmt)).scalars():
+            if state.channel_id in last_msgs:
+                have_chans.add(state.channel_id)
+        for channel_id in last_msgs:
+            if channel_id not in have_chans:
                 channel = discord_client.client.get_channel(channel_id)
                 if not isinstance(channel, discord.TextChannel): continue
-                async for thread in channel.archived_threads(limit=None):
-                    assert thread.archive_timestamp is not None
-                    if thread.archive_timestamp < discord.Object(last_msgs[channel_id]).created_at: break
-                    if channel_id in thread_last_msgs and thread.id in thread_last_msgs[channel_id]: continue
-                    archived_threads[channel_id].append(thread)
-                logger.debug("Found archived threads in {}: {}".format(channel_id,
-                    ", ".join(str(thread.id) for thread in archived_threads[channel_id])))
+                logger.debug("Channel {} is now subscibed for {!r}".format(channel_id, subscriber))
+                stmt = (sqlalchemy.dialects.postgresql.insert(Channel)
+                    .values(guild_id=channel.guild.id, id=channel_id, reachable=True)
+                    .on_conflict_do_nothing(index_elements=["id"]))
+                await session.execute(stmt)
 
-            for state in states:
-                if state.channel_id in last_msgs and state.last_message_id < last_msgs[state.channel_id]:
-                    logger.debug("Requesting channel {} for {!r} from {} to {}".format(state.channel_id, subscriber,
-                        state.last_message_id, last_msgs[state.channel_id]))
-                    session.add(ChannelRequest(channel_id=state.channel_id, subscriber=subscriber,
-                        after_snowflake=state.last_message_id + 1, before_snowflake=last_msgs[state.channel_id] + 1))
-                if state.channel_id in thread_last_msgs:
-                    for thread_id, thread_last_msg in thread_last_msgs[state.channel_id].items():
-                        if state.last_message_id < thread_last_msg:
-                            logger.debug("Requesting thread {} in {} for {!r} from {} to {}".format(thread_id,
-                                state.channel_id, subscriber, state.last_message_id, thread_last_msg))
-                            session.add(ThreadRequest(
-                                thread_id=thread_id, channel_id=state.channel_id, subscriber=subscriber,
-                                after_snowflake=state.last_message_id + 1, before_snowflake=thread_last_msg + 1))
-                for thread in archived_threads[state.channel_id]:
-                    before = discord.utils.time_snowflake(thread.archive_timestamp + datetime.timedelta(milliseconds=1))
-                    if state.last_message_id < before - 1:
-                        logger.debug("Requesting archived thread {} in {} for {!r} from {} to {}".format(thread.id,
-                            state.channel_id, subscriber, state.last_message_id, before))
+                archive_ts = await approx_archival_ts(channel) if retroactive else None
+                session.add(ChannelState(channel_id=channel_id, subscriber=subscriber,
+                    earliest_thread_archive_ts=archive_ts, last_message_id=last_msgs[channel_id]))
+                if retroactive:
+                    logger.debug("Retroactively querying channel {} before {} for {!r}".format(channel_id,
+                        last_msgs[channel_id] + 1, subscriber))
+                    session.add(ChannelRequest(channel_id=channel_id, subscriber=subscriber,
+                        after_snowflake=channel_id, before_snowflake=last_msgs[channel_id] + 1))
+                    if channel_id in thread_last_msgs:
+                        for thread_id, thread_last_msg in thread_last_msgs[channel_id].items():
+                            logger.debug("Retroactively querying thread {} in channel {} before {} for {!r}".format(
+                                thread_id, channel_id, thread_last_msg, subscriber))
+                            session.add(ThreadRequest(thread_id=thread_id, channel_id=channel_id, subscriber=subscriber,
+                                after_snowflake=thread_id, before_snowflake=thread_last_msg + 1))
+        await session.commit()
+
+        logger.debug("Looking for missing messages when subscribing {!r}".format(subscriber))
+        stmt = (sqlalchemy.select(ChannelState)
+            .join(ChannelState.channel)
+            .where(Channel.reachable, ChannelState.subscriber == subscriber))
+        states = [state for state in (await session.execute(stmt)).scalars() if state.channel_id in last_msgs]
+
+        archived_threads: Dict[int, List[discord.Thread]] = {channel_id: [] for channel_id in last_msgs}
+        for channel_id in last_msgs:
+            channel = discord_client.client.get_channel(channel_id)
+            if not isinstance(channel, discord.TextChannel): continue
+            async for thread in channel.archived_threads(limit=None):
+                assert thread.archive_timestamp is not None
+                if thread.archive_timestamp < discord.Object(last_msgs[channel_id]).created_at: break
+                if channel_id in thread_last_msgs and thread.id in thread_last_msgs[channel_id]: continue
+                archived_threads[channel_id].append(thread)
+            logger.debug("Found archived threads in {}: {}".format(channel_id,
+                ", ".join(str(thread.id) for thread in archived_threads[channel_id])))
+
+        for state in states:
+            if state.channel_id in last_msgs and state.last_message_id < last_msgs[state.channel_id]:
+                logger.debug("Requesting channel {} for {!r} from {} to {}".format(state.channel_id, subscriber,
+                    state.last_message_id, last_msgs[state.channel_id]))
+                session.add(ChannelRequest(channel_id=state.channel_id, subscriber=subscriber,
+                    after_snowflake=state.last_message_id + 1, before_snowflake=last_msgs[state.channel_id] + 1))
+            if state.channel_id in thread_last_msgs:
+                for thread_id, thread_last_msg in thread_last_msgs[state.channel_id].items():
+                    if state.last_message_id < thread_last_msg:
+                        logger.debug("Requesting thread {} in {} for {!r} from {} to {}".format(thread_id,
+                            state.channel_id, subscriber, state.last_message_id, thread_last_msg))
                         session.add(ThreadRequest(
                             thread_id=thread_id, channel_id=state.channel_id, subscriber=subscriber,
-                            after_snowflake=state.last_message_id + 1, before_snowflake=before))
+                            after_snowflake=state.last_message_id + 1, before_snowflake=thread_last_msg + 1))
+            for thread in archived_threads[state.channel_id]:
+                before = discord.utils.time_snowflake(thread.archive_timestamp + datetime.timedelta(milliseconds=1))
+                if state.last_message_id < before - 1:
+                    logger.debug("Requesting archived thread {} in {} for {!r} from {} to {}".format(thread.id,
+                        state.channel_id, subscriber, state.last_message_id, before))
+                    session.add(ThreadRequest(
+                        thread_id=thread_id, channel_id=state.channel_id, subscriber=subscriber,
+                        after_snowflake=state.last_message_id + 1, before_snowflake=before))
 
-                if state.channel_id in thread_last_msgs:
-                    max_thread_msg = max(thread_last_msgs[state.channel_id].values())
-                    if max_thread_msg > state.last_message_id:
-                        state.last_message_id = max_thread_msg
-                if state.channel_id in last_msgs:
-                    if last_msgs[state.channel_id] > state.last_message_id:
-                        state.last_message_id = last_msgs[state.channel_id]
+            if state.channel_id in thread_last_msgs:
+                max_thread_msg = max(thread_last_msgs[state.channel_id].values())
+                if max_thread_msg > state.last_message_id:
+                    state.last_message_id = max_thread_msg
+            if state.channel_id in last_msgs:
+                if last_msgs[state.channel_id] > state.last_message_id:
+                    state.last_message_id = last_msgs[state.channel_id]
 
-            await session.commit()
-            fetch_map[subscriber] = cb
-            update_fetch()
-            event_dict[subscriber] = cb
-    except Exception as exc:
-        result.set_exception(exc)
-        raise
-    else:
-        result.set_result(None)
+        await session.commit()
+        fetch_map[subscriber] = cb
+        update_fetch()
+        event_dict[subscriber] = cb
 
 async def subscribe(name: str, channels: Optional[Union[discord.Guild, discord.TextChannel]],
     cb: Callback, *, missing: bool, retroactive: bool) -> None:
@@ -844,20 +858,16 @@ async def subscribe(name: str, channels: Optional[Union[discord.Guild, discord.T
         else:
             chans = [channels]
         last_msgs, thread_last_msgs = take_snapshot(chans)
-        result: asyncio.Future[None] = asyncio.Future()
-        executor_queue.put_nowait(process_subscription(name, events, cb, last_msgs, thread_last_msgs, retroactive,
-            result))
-        await result
+        await schedule_and_wait(process_subscription(name, events, cb, last_msgs, thread_last_msgs, retroactive))
         # TODO: If we have on_message -> subscribe, then this could get queued before the respective process_message,
         # which would be a problem, because last_msgs will contain that message, meaning it would be fetched, and at
         # the same time process_message will notify the subscriber
     else:
         event_dict[name] = cb
 
-async def process_unsubscription(subscriber: str, event_dict: Dict[str, Callback], when_done: asyncio.Event) -> None:
+async def process_unsubscription(subscriber: str, event_dict: Dict[str, Callback]) -> None:
     fetch_map.pop(subscriber, None)
     event_dict.pop(subscriber, None)
-    when_done.set()
 
 async def unsubscribe(name: str, channels: Optional[Union[discord.Guild, discord.TextChannel]]) -> None:
     if channels is None:
@@ -866,7 +876,5 @@ async def unsubscribe(name: str, channels: Optional[Union[discord.Guild, discord
         event_dict = events_guild.setdefault(channels.id, {})
     else:
         event_dict = events_channel.setdefault(channels.id, {})
-    done = asyncio.Event()
-    executor_queue.put_nowait(process_unsubscription(name, event_dict, done))
-    await done.wait()
+    await schedule_and_wait(process_unsubscription(name, event_dict))
     # TODO: same issue as with subscribing

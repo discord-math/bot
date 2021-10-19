@@ -128,66 +128,75 @@ def user_nick(user: str, nick: Optional[str]) -> str:
     else:
         return "{}({})".format(user, nick)
 
+async def process_message_edit(update: discord.RawMessageUpdateEvent) -> None:
+    async with sessionmaker() as session:
+        if (msg := await session.get(SavedMessage, update.message_id)) is not None:
+            old_content = msg.content
+            if "content" in update.data and (new_content := update.data["content"]) != old_content: # type: ignore
+                msg.content = new_content
+                await session.commit()
+                await util.discord.ChannelById(discord_client.client, conf.temp_channel).send(
+                    util.discord.format("**Message edit**: {!c} {!m}({}) {}: {}", msg.channel_id, msg.author_id,
+                        msg.author_id, user_nick(msg.username, msg.nick),
+                        format_word_diff(old_content, new_content))[:2000], # TODO: split
+                    allowed_mentions=discord.AllowedMentions.none())
+            # TODO: attachment edits
+
+async def process_message_delete(delete: discord.RawMessageDeleteEvent) -> None:
+    async with sessionmaker() as session:
+        if (msg := await session.get(SavedMessage, delete.message_id)) is not None:
+            stmt = sqlalchemy.select(SavedFile.url).where(SavedFile.message_id == msg.id)
+            file_urls = list((await session.execute(stmt)).scalars())
+            att_list = ""
+            if len(file_urls) > 0:
+                att_list = "\n**Attachments: {}**".format(", ".join("<{}>".format(url) for url in file_urls))
+            await util.discord.ChannelById(discord_client.client, conf.temp_channel).send(
+                util.discord.format("**Message delete**: {!c} {!m}({}) {}: {!i}{}", msg.channel_id, msg.author_id,
+                    msg.author_id, user_nick(msg.username, msg.nick), msg.content, att_list)[:2000],
+                    allowed_mentions=discord.AllowedMentions.none())
+
+async def process_message_bulk_delete( deletes: discord.RawBulkMessageDeleteEvent) -> None:
+    async with sessionmaker() as session:
+        attms: Dict[int, List[str]] = {}
+        stmt = (sqlalchemy.select(SavedFile.message_id, SavedFile.url)
+            .where(SavedFile.message_id.in_(deletes.message_ids)))
+        for message_id, url in await session.execute(stmt):
+            if message_id not in attms:
+                attms[message_id] = []
+            attms[message_id].append(url)
+
+        users: Set[int] = set()
+        log = []
+        stmt = (sqlalchemy.select(SavedMessage)
+            .where(SavedMessage.id.in_(deletes.message_ids))
+            .order_by(SavedMessage.id))
+        for msg in (await session.execute(stmt)).scalars():
+            users.add(msg.author_id)
+            log.append("{} {}: {}".format(msg.author_id, user_nick(msg.username, msg.nick), msg.content))
+            if msg.id in attms:
+                log.append("Attachments: {}".format(", ".join(attms[msg.id])))
+
+        await util.discord.ChannelById(discord_client.client, conf.perm_channel).send(
+            util.discord.format("**Message bulk delete**: {!c} {}", deletes.channel_id,
+                ", ".join(util.discord.format("{!m}", user) for user in users)),
+            file=discord.File(io.BytesIO("\n".join(log).encode("utf8")), filename="log.txt"),
+            allowed_mentions=discord.AllowedMentions.none())
+
 @plugins.cogs.cog
 class MessageLog(discord.ext.commands.Cog):
     @discord.ext.commands.Cog.listener()
     async def on_raw_message_edit(self, update: discord.RawMessageUpdateEvent) -> None:
-        async with sessionmaker() as session:
-            if (msg := await session.get(SavedMessage, update.message_id)) is not None:
-                old_content = msg.content
-                if "content" in update.data and (new_content := update.data["content"]) != old_content: # type: ignore
-                    msg.content = new_content
-                    await session.commit()
-                    await util.discord.ChannelById(discord_client.client, conf.temp_channel).send(
-                        util.discord.format("**Message edit**: {!c} {!m}({}) {}: {}", msg.channel_id, msg.author_id,
-                            msg.author_id, user_nick(msg.username, msg.nick),
-                            format_word_diff(old_content, new_content))[:2000], # TODO: split
-                        allowed_mentions=discord.AllowedMentions.none())
-                # TODO: attachment edits
+        plugins.message_tracker.schedule(process_message_edit(update))
 
     @discord.ext.commands.Cog.listener()
     async def on_raw_message_delete(self, delete: discord.RawMessageDeleteEvent) -> None:
         if delete.channel_id == conf.temp_channel: return
-        async with sessionmaker() as session:
-            if (msg := await session.get(SavedMessage, delete.message_id)) is not None:
-                stmt = sqlalchemy.select(SavedFile.url).where(SavedFile.message_id == msg.id)
-                file_urls = list((await session.execute(stmt)).scalars())
-                att_list = ""
-                if len(file_urls) > 0:
-                    att_list = "\n**Attachments: {}**".format(", ".join("<{}>".format(url) for url in file_urls))
-                await util.discord.ChannelById(discord_client.client, conf.temp_channel).send(
-                    util.discord.format("**Message delete**: {!c} {!m}({}) {}: {!i}{}", msg.channel_id, msg.author_id,
-                        msg.author_id, user_nick(msg.username, msg.nick), msg.content, att_list)[:2000],
-                        allowed_mentions=discord.AllowedMentions.none())
+        plugins.message_tracker.schedule(process_message_delete(delete))
 
     @discord.ext.commands.Cog.listener()
     async def on_raw_bulk_message_delete(self, deletes: discord.RawBulkMessageDeleteEvent) -> None:
         if deletes.channel_id == conf.temp_channel: return
-        async with sessionmaker() as session:
-            attms: Dict[int, List[str]] = {}
-            stmt = (sqlalchemy.select(SavedFile.message_id, SavedFile.url)
-                .where(SavedFile.message_id.in_(deletes.message_ids)))
-            for message_id, url in await session.execute(stmt):
-                if message_id not in attms:
-                    attms[message_id] = []
-                attms[message_id].append(url)
-
-            users: Set[int] = set()
-            log = []
-            stmt = (sqlalchemy.select(SavedMessage)
-                .where(SavedMessage.id.in_(deletes.message_ids))
-                .order_by(SavedMessage.id))
-            for msg in (await session.execute(stmt)).scalars():
-                users.add(msg.author_id)
-                log.append("{} {}: {}".format(msg.author_id, user_nick(msg.username, msg.nick), msg.content))
-                if msg.id in attms:
-                    log.append("Attachments: {}".format(", ".join(attms[msg.id])))
-
-            await util.discord.ChannelById(discord_client.client, conf.perm_channel).send(
-                util.discord.format("**Message bulk delete**: {!c} {}", deletes.channel_id,
-                    ", ".join(util.discord.format("{!m}", user) for user in users)),
-                file=discord.File(io.BytesIO("\n".join(log).encode("utf8")), filename="log.txt"),
-                allowed_mentions=discord.AllowedMentions.none())
+        plugins.message_tracker.schedule(process_message_bulk_delete(deletes))
 
     @discord.ext.commands.Cog.listener()
     async def on_member_join(self, member: discord.Member) -> None:
