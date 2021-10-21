@@ -44,7 +44,7 @@ class SavedMessage:
     author_id: int = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
     username: str = sqlalchemy.Column(sqlalchemy.TEXT, nullable=False)
     nick: Optional[str] = sqlalchemy.Column(sqlalchemy.TEXT)
-    content: str = sqlalchemy.Column(sqlalchemy.TEXT, nullable=False)
+    content: bytes = sqlalchemy.Column(sqlalchemy.dialects.postgresql.BYTEA, nullable=False)
 
 @registry.mapped
 class SavedFile:
@@ -63,7 +63,7 @@ async def register_messages(msgs: Iterable[discord.Message]) -> None:
                 session.add(SavedMessage(id=msg.id, channel_id=msg.channel.id, author_id=msg.author.id,
                     username=msg.author.name + "#" + msg.author.discriminator,
                     nick=msg.author.nick if isinstance(msg.author, discord.Member) else None,
-                    content=msg.content))
+                    content=msg.content.encode("utf8")))
                 attm_data = await asyncio.gather(*[attm.read(use_cached=True) for attm in msg.attachments],
                     return_exceptions=True)
                 await session.flush()
@@ -131,9 +131,9 @@ def user_nick(user: str, nick: Optional[str]) -> str:
 async def process_message_edit(update: discord.RawMessageUpdateEvent) -> None:
     async with sessionmaker() as session:
         if (msg := await session.get(SavedMessage, update.message_id)) is not None:
-            old_content = msg.content
+            old_content = msg.content.decode("utf8")
             if "content" in update.data and (new_content := update.data["content"]) != old_content: # type: ignore
-                msg.content = new_content
+                msg.content = new_content.encode("utf8")
                 await session.commit()
                 await util.discord.ChannelById(discord_client.client, conf.temp_channel).send(
                     util.discord.format("**Message edit**: {!c} {!m}({}) {}: {}", msg.channel_id, msg.author_id,
@@ -152,7 +152,7 @@ async def process_message_delete(delete: discord.RawMessageDeleteEvent) -> None:
                 att_list = "\n**Attachments: {}**".format(", ".join("<{}>".format(url) for url in file_urls))
             await util.discord.ChannelById(discord_client.client, conf.temp_channel).send(
                 util.discord.format("**Message delete**: {!c} {!m}({}) {}: {!i}{}", msg.channel_id, msg.author_id,
-                    msg.author_id, user_nick(msg.username, msg.nick), msg.content, att_list)[:2000],
+                    msg.author_id, user_nick(msg.username, msg.nick), msg.content.decode("utf8"), att_list)[:2000],
                     allowed_mentions=discord.AllowedMentions.none())
 
 async def process_message_bulk_delete( deletes: discord.RawBulkMessageDeleteEvent) -> None:
@@ -172,7 +172,7 @@ async def process_message_bulk_delete( deletes: discord.RawBulkMessageDeleteEven
             .order_by(SavedMessage.id))
         for msg in (await session.execute(stmt)).scalars():
             users.add(msg.author_id)
-            log.append("{} {}: {}".format(msg.author_id, user_nick(msg.username, msg.nick), msg.content))
+            log.append("{} {}: {}".format(msg.author_id, user_nick(msg.username, msg.nick), msg.content.decode("utf8")))
             if msg.id in attms:
                 log.append("Attachments: {}".format(", ".join(attms[msg.id])))
 
