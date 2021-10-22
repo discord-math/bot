@@ -21,9 +21,7 @@ import plugins.cogs
 registry: sqlalchemy.orm.registry = sqlalchemy.orm.registry()
 
 engine = util.db.create_async_engine()
-@plugins.finalizer
-async def cleanup_engine() -> None:
-    await engine.dispose()
+plugins.finalizer(engine.dispose)
 
 @registry.mapped
 class ModmailMessage:
@@ -225,6 +223,4 @@ async def init_task() -> None:
             await client.close()
 
     bot_task: asyncio.Task[None] = util.asyncio.run_async(run_modmail)
-    @plugins.finalizer
-    def cancel_bot_task() -> None:
-        bot_task.cancel()
+    plugins.finalizer(bot_task.cancel)

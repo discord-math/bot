@@ -26,9 +26,7 @@ logger: logging.Logger = logging.getLogger(__name__)
 registry: sqlalchemy.orm.registry = sqlalchemy.orm.registry()
 
 engine = util.db.create_async_engine()
-@plugins.finalizer
-async def cleanup_engine() -> None:
-    await engine.dispose()
+plugins.finalizer(engine.dispose)
 
 sessionmaker = sqlalchemy.orm.sessionmaker(engine, class_=sqlalchemy.ext.asyncio.AsyncSession, expire_on_commit=False)
 
@@ -501,29 +499,25 @@ executor_task: asyncio.Task[None]
 async def init_executor() -> None:
     global executor_task, fetch_task
     executor_task = asyncio.create_task(executor())
+    @plugins.finalizer
+    async def cancel_executor() -> None:
+        async def kill_executor() -> None:
+            raise asyncio.CancelledError()
+        try:
+            await schedule_and_wait(kill_executor())
+        except asyncio.CancelledError:
+            pass
+        finally:
+            try:
+                await executor_task
+            except asyncio.CancelledError:
+                pass
     fetch_task = asyncio.create_task(background_fetch())
+    plugins.finalizer(fetch_task.cancel)
     if discord_client.client.is_ready():
         chans = [channel for guild in discord_client.client.guilds for channel in guild.text_channels]
         last_msgs, thread_last_msgs = take_snapshot(chans)
         schedule(process_ready(last_msgs, thread_last_msgs))
-
-@plugins.finalizer
-def cancel_fetch() -> None:
-    fetch_task.cancel()
-
-@plugins.finalizer
-async def cancel_executor() -> None:
-    async def kill_executor() -> None:
-        raise asyncio.CancelledError()
-    try:
-        await schedule_and_wait(kill_executor())
-    except asyncio.CancelledError:
-        pass
-    finally:
-        try:
-            await executor_task
-        except asyncio.CancelledError:
-            pass
 
 async def process_ready(last_msgs: Dict[int, int], thread_last_msgs: Dict[int, Dict[int, int]]) -> None:
     async with sessionmaker() as session:

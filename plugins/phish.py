@@ -72,11 +72,8 @@ async def init() -> None:
     global conf, session, domains, ws_task
     conf = cast(PhishConf, await util.db.kv.load(__name__))
     session = aiohttp.ClientSession()
+    plugins.finalizer(session.close)
     domains = set(await get_all_domains())
     update_domain_regex()
     ws_task = asyncio.create_task(watch_websocket())
-
-@plugins.finalizer
-async def finalize() -> None:
-    ws_task.cancel()
-    await session.close()
+    plugins.finalizer(ws_task.cancel)

@@ -80,9 +80,7 @@ async def init_conf() -> None:
 registry: sqlalchemy.orm.registry = sqlalchemy.orm.registry()
 
 engine = util.db.create_async_engine()
-@plugins.finalizer
-async def cleanup_engine() -> None:
-    await engine.dispose()
+plugins.finalizer(engine.dispose)
 
 sessionmaker = sqlalchemy.orm.sessionmaker(engine, class_=sqlalchemy.ext.asyncio.AsyncSession, expire_on_commit=False)
 
@@ -1091,17 +1089,11 @@ delivery_task: asyncio.Task[None]
 async def init_tasks() -> None:
     global audit_log_task, expiry_task, delivery_task
     audit_log_task = asyncio.create_task(poll_audit_log())
-    @plugins.finalizer
-    def cancel_audit_task() -> None:
-        audit_log_task.cancel()
+    plugins.finalizer(audit_log_task.cancel)
     expiry_task = asyncio.create_task(expire_tickets())
-    @plugins.finalizer
-    def cancel_expiry_task() -> None:
-        expiry_task.cancel()
+    plugins.finalizer(expiry_task.cancel)
     delivery_task = asyncio.create_task(deliver_tickets())
-    @plugins.finalizer
-    def cancel_delivery_task() -> None:
-        delivery_task.cancel()
+    plugins.finalizer(delivery_task.cancel)
     audit_log_updated()
     expiry_updated()
     delivery_updated()

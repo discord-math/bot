@@ -147,10 +147,9 @@ async def init() -> None:
     await conf
     generate_regex()
     await plugins.message_tracker.subscribe(__name__, None, process_messages, missing=True, retroactive=False)
-
-@plugins.finalizer
-async def finalize() -> None:
-    await plugins.message_tracker.unsubscribe(__name__, None)
+    @plugins.finalizer
+    async def unsubscribe() -> None:
+        await plugins.message_tracker.unsubscribe(__name__, None)
 
 @plugins.commands.cleanup
 @plugins.commands.command("automod", cls=discord.ext.commands.Group)

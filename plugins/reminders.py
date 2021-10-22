@@ -158,9 +158,7 @@ async def init() -> None:
     await conf
 
     expiry_task: asyncio.Task[None] = util.asyncio.run_async(expire_reminders)
-    @plugins.finalizer
-    def cancel_expiry() -> None:
-        expiry_task.cancel()
+    plugins.finalizer(expiry_task.cancel)
 
 @plugins.commands.cleanup
 @plugins.commands.command("remindme", aliases=["remind"])

@@ -73,7 +73,7 @@ trace_builtins.__dict__["__import__"] = trace_import
 
 initializers: Dict[str, List[Callable[[], Awaitable[None]]]] = {}
 
-T = TypeVar("T", bound=Union[Callable[[], None], Callable[[], Awaitable[None]]])
+T = TypeVar("T", bound=Union[Callable[[], Any], Callable[[], Awaitable[Any]]])
 
 def init(init: T) -> T:
     """

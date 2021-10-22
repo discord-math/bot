@@ -29,9 +29,7 @@ conf: LoggerConf
 registry: sqlalchemy.orm.registry = sqlalchemy.orm.registry()
 
 engine = util.db.create_async_engine()
-@plugins.finalizer
-async def cleanup_engine() -> None:
-    await engine.dispose()
+plugins.finalizer(engine.dispose)
 
 sessionmaker = sqlalchemy.orm.sessionmaker(engine, class_=sqlalchemy.ext.asyncio.AsyncSession, expire_on_commit=False)
 
@@ -102,12 +100,11 @@ async def init() -> None:
     await util.db.init(util.db.get_ddl(registry.metadata.create_all))
     conf = cast(LoggerConf, await util.db.kv.load(__name__))
     await plugins.message_tracker.subscribe(__name__, None, register_messages, missing=True, retroactive=False)
+    @plugins.finalizer
+    async def unsubscribe() -> None:
+        await plugins.message_tracker.unsubscribe(__name__, None)
     cleanup_task = asyncio.create_task(clean_old_messages())
-
-@plugins.finalizer
-async def finalize() -> None:
-    await plugins.message_tracker.unsubscribe(__name__, None)
-    cleanup_task.cancel()
+    plugins.finalizer(cleanup_task.cancel)
 
 def format_word_diff(old: str, new: str) -> str:
     output = []
