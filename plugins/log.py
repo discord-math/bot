@@ -214,9 +214,7 @@ class MessageLog(discord.ext.commands.Cog):
         if before.nick != after.nick:
             await util.discord.ChannelById(discord_client.client, conf.perm_channel).send(
                 util.discord.format("**Nick change**: {!m}({}) {}: {} -> {}", after.id, after.id,
-                    after.name + "#" + after.discriminator,
-                    before.nick if before.nick is not None else before.name,
-                    after.nick if after.nick is not None else after.name),
+                    after.name + "#" + after.discriminator, before.display_name, after.display_name),
                 allowed_mentions=discord.AllowedMentions.none())
 
     @discord.ext.commands.Cog.listener()

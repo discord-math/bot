@@ -81,7 +81,7 @@ async def process_messages(msgs: Iterable[discord.Message]) -> None:
                 try:
                     reason = util.discord.format("Automatic action: found phishing domain: {!i}", match.group())
                     await msg.delete()
-                    await msg.guild.ban(msg.author, reason=reason)
+                    await msg.guild.ban(msg.author, reason=reason, delete_message_days=0)
                 except (discord.Forbidden, discord.NotFound):
                     logger.error("Could not moderate {}".format(msg.jump_url), exc_info=True)
 
@@ -130,7 +130,7 @@ async def process_messages(msgs: Iterable[discord.Message]) -> None:
 
                         elif action == "ban":
                             await msg.delete()
-                            await msg.guild.ban(msg.author, reason=reason)
+                            await msg.guild.ban(msg.author, reason=reason, delete_message_days=0)
 
                     except (discord.HTTPException, AssertionError):
                         logger.error("Could not moderate {}".format(msg.jump_url), exc_info=True)
