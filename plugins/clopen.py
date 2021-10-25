@@ -20,9 +20,9 @@ def available_embed() -> discord.Embed:
         description=util.discord.format(
             "Send your question here to claim the channel.\n\n"
             "Remember:\n"
-            "• Ask your math question in a clear, concise manner.\n"
-            "• Show your work, and if possible, explain where you are stuck.\n"
-            "• After 15 minutes, feel free to ping {!M}.\n"
+            "• **Ask** your math question in a clear, concise manner.\n"
+            "• **Show** your work, and if possible, explain where you are stuck.\n"
+            "• **After 15 minutes**, feel free to ping {!M}.\n"
             "• Type the command {!i} to free the channel when you're done.\n"
             "• Be polite and have a nice day!\n\n"
             "Read {!c} for further information on how to ask a good question, "
