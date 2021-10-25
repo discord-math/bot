@@ -125,8 +125,9 @@ def request_rename(chan: discord.TextChannel, name: str) -> None:
         try:
             await chan.edit(name=name)
         except asyncio.CancelledError:
-            last_rename[chan.id] = time.time()
             raise
+        except:
+            last_rename[chan.id] = time.time()
         else:
             last_rename[chan.id] = time.time()
     rename_tasks[chan.id] = asyncio.create_task(do_rename(chan, name))
