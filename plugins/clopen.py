@@ -14,7 +14,7 @@ import plugins.privileges
 
 def available_embed() -> discord.Embed:
     checkmark_url = "https://cdn.discordapp.com/emojis/901284681633370153.png?size=256"
-    helpers = 490548600406016015
+    helpers = 286206848099549185
     help_chan = 488120190538743810
     return discord.Embed(color=0x7CB342,
         description=util.discord.format(
