@@ -327,6 +327,7 @@ async def fetch_channel_messages(session: sqlalchemy.ext.asyncio.AsyncSession, c
         # TODO: find out that the request is exhausted on the previous iteration when/if we receive a truncated list
         logger.debug("Fetched no messages from {}".format(channel.id))
 
+    exception = None
     for request in requests:
         if (cb := fetch_map.get(request.subscriber)) is not None:
             idx_from = index_after_msg_desc(history, request.before_snowflake)
@@ -338,9 +339,10 @@ async def fetch_channel_messages(session: sqlalchemy.ext.asyncio.AsyncSession, c
                     await cb(history[i] for i in range(idx_from, idx_to))
                 except asyncio.CancelledError:
                     raise
-                except:
+                except Exception as exc:
                     logger.error("Exception when calling callback for {!r}, will redeliver".format(request.subscriber),
                         exc_info=True)
+                    exception = exc
                     continue
             if idx_to < len(history) or not history:
                 logger.debug("Done with request for {}-{} in {} for {!r}".format(
@@ -350,6 +352,8 @@ async def fetch_channel_messages(session: sqlalchemy.ext.asyncio.AsyncSession, c
                 request.before_snowflake = history[-1].id
                 logger.debug("Remaining {}-{} in {} for {!r}".format(
                     request.before_snowflake, request.after_snowflake, channel.id, request.subscriber))
+    if exception is not None:
+        raise exception
 
 async def fetch_thread_messages(session: sqlalchemy.ext.asyncio.AsyncSession, thread: discord.Thread,
     before_snowflake: int) -> None:
@@ -379,6 +383,7 @@ async def fetch_thread_messages(session: sqlalchemy.ext.asyncio.AsyncSession, th
     else:
         logger.debug("Fetched no messages from thread {} from channel {}".format(thread.id, thread.parent_id))
 
+    exception = None
     for request in requests:
         if (cb := fetch_map.get(request.subscriber)) is not None:
             idx_from = index_after_msg_desc(history, request.before_snowflake)
@@ -390,9 +395,10 @@ async def fetch_thread_messages(session: sqlalchemy.ext.asyncio.AsyncSession, th
                     await cb(history[i] for i in range(idx_from, idx_to))
                 except asyncio.CancelledError:
                     raise
-                except:
+                except Exception as exc:
                     logger.error("Exception when calling callback for {!r}, will redeliver".format(request.subscriber),
                         exc_info=True)
+                    exception = exc
                     continue
             if idx_to < len(history) or not history:
                 logger.debug("Done with request for {}-{} in thread {} for {!r}".format(
@@ -402,6 +408,8 @@ async def fetch_thread_messages(session: sqlalchemy.ext.asyncio.AsyncSession, th
                 request.before_snowflake = history[-1].id
                 logger.debug("Remaining {}-{} in thread {} for {!r}".format(
                     request.before_snowflake, request.after_snowflake, thread.id, request.subscriber))
+    if exception is not None:
+        raise exception
 
 fetch_updated: asyncio.Event = asyncio.Event()
 def update_fetch() -> None:
@@ -672,11 +680,11 @@ async def process_message(msg: discord.Message) -> None:
     requests_added = False
     async with sessionmaker() as session:
         stmt: Union[sqlalchemy.sql.expression.Select, sqlalchemy.sql.expression.Update]
-        for sub, cb in subscribers.items():
-            try:
-                await cb((msg,))
-            except:
-                logger.error("Exception when calling callback for {!r}, will redeliver".format(sub), exc_info=True)
+        subscriber_order = list(subscribers)
+        results = await asyncio.gather(*(subscribers[sub]((msg,)) for sub in subscriber_order), return_exceptions=True)
+        for sub, result in zip(subscriber_order, results):
+            if isinstance(result, Exception):
+                logger.error("Exception when calling callback for {!r}, will redeliver".format(sub), exc_info=result)
                 stmt = (sqlalchemy.select(True)
                     .where(ChannelState.channel_id == channel_id, ChannelState.subscriber == sub))
                 if (await session.execute(stmt)).scalar():

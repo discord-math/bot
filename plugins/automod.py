@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import re
 import discord
@@ -71,6 +72,22 @@ def parse_note(text: Optional[str]) -> Dict[int, int]:
 def serialize_note(data: Dict[int, int]) -> str:
     return "Automod:\n" + "\n".join("pattern {} matched {} times".format(index, value) for index, value in data.items())
 
+async def create_automod_note(target_id: int, index: int) -> None:
+    async with plugins.tickets.sessionmaker() as session:
+        assert discord_client.client.user is not None
+        notes = await plugins.tickets.find_notes_prefix(session, "Automod:\n",
+            modid=discord_client.client.user.id, targetid=target_id)
+        if len(notes) == 0:
+            await plugins.tickets.create_note(session, serialize_note({index: 1}),
+                modid=discord_client.client.user.id, targetid=target_id)
+        else:
+            data = parse_note(notes[-1].comment)
+            data[index] = 1 + data.get(index, 0)
+            notes[-1].comment = serialize_note(data)
+        async with plugins.tickets.Ticket.publish_all(session):
+            await session.commit()
+        await session.commit()
+
 async def process_messages(msgs: Iterable[discord.Message]) -> None:
     for msg in msgs:
         if msg.guild is None: continue
@@ -103,34 +120,23 @@ async def process_messages(msgs: Iterable[discord.Message]) -> None:
                             await msg.delete()
 
                         elif action == "note":
-                            await msg.delete()
-                            async with plugins.tickets.sessionmaker() as session:
-                                assert discord_client.client.user is not None
-                                notes = await plugins.tickets.find_notes_prefix(session, "Automod:\n",
-                                    modid=discord_client.client.user.id, targetid=msg.author.id)
-                                if len(notes) == 0:
-                                    await plugins.tickets.create_note(session, serialize_note({index: 1}),
-                                        modid=discord_client.client.user.id, targetid=msg.author.id)
-                                else:
-                                    data = parse_note(notes[-1].comment)
-                                    data[index] = 1 + data.get(index, 0)
-                                    notes[-1].comment = serialize_note(data)
-                                async with plugins.tickets.Ticket.publish_all(session):
-                                    await session.commit()
-                                await session.commit()
+                            await asyncio.gather(msg.delete(),
+                                create_automod_note(msg.author.id, index))
 
                         elif action == "mute":
-                            await msg.delete()
-                            assert isinstance(msg.author, discord.Member)
-                            await msg.author.add_roles(discord.Object(conf.mute_role), reason=reason)
+                            if isinstance(msg.author, discord.Member):
+                                await asyncio.gather(msg.delete(),
+                                    msg.author.add_roles(discord.Object(conf.mute_role), reason=reason))
+                            else:
+                                await msg.delete()
 
                         elif action == "kick":
-                            await msg.delete()
-                            await msg.guild.kick(msg.author, reason=reason)
+                            await asyncio.gather(msg.delete(),
+                                msg.guild.kick(msg.author, reason=reason))
 
                         elif action == "ban":
-                            await msg.delete()
-                            await msg.guild.ban(msg.author, reason=reason, delete_message_days=0)
+                            await asyncio.gather(msg.delete(),
+                                msg.guild.ban(msg.author, reason=reason, delete_message_days=0))
 
                     except (discord.HTTPException, AssertionError):
                         logger.error("Could not moderate {}".format(msg.jump_url), exc_info=True)
