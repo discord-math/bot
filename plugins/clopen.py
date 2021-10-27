@@ -325,7 +325,10 @@ class ClopenCog(discord.ext.commands.Cog):
     async def on_raw_message_delete(self, payload: discord.RawMessageDeleteEvent) -> None:
         if payload.channel_id in conf.channels and payload.message_id == conf[payload.channel_id, "op_id"]:
             async with channel_locks[payload.channel_id]:
-                await close(payload.channel_id, "Closed due to the original message being deleted", reopen=False)
+                if conf[payload.channel_id, "state"] in ["used", "pending"]:
+                    await close(payload.channel_id, "Closed due to the original message being deleted", reopen=False)
+                else:
+                    conf[payload.channel_id, "owner"] = None
 
     @discord.ext.commands.command("close")
     async def close_command(self, ctx: discord.ext.commands.Context) -> None:
