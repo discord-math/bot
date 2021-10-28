@@ -140,23 +140,10 @@ async def create_tag(ctx: discord.ext.commands.Context, name: str, update: bool)
             except Exception as exc:
                 raise util.discord.InvocationError("Could not parse embed data: {!r}".format(exc))
 
-            prompt = await ctx.channel.send("Embed preview", embed=embed)
-            ok_reaction = '\u2705'
-            del_reaction = '\u274C'
-            await prompt.add_reaction(ok_reaction)
-            await prompt.add_reaction(del_reaction)
-            confirmed = False
-            with plugins.reactions.ReactionMonitor(channel_id=ctx.channel.id, message_id=prompt.id,
-                author_id=ctx.author.id, event="add",
-                filter=lambda _, p: p.emoji.name in [ok_reaction, del_reaction], timeout_each=300) as mon:
-                try:
-                    confirmed = (await mon)[1].emoji.name == ok_reaction
-                except asyncio.TimeoutError:
-                    await ctx.send("Timed out.")
-                else:
-                    if not confirmed:
-                        await ctx.send("Cancelled.")
-            if not confirmed: return
+            prompt = await ctx.channel.send("Embed preview:", embed=embed)
+            if not await plugins.reactions.get_reaction(prompt, ctx.author, {"\u2705": True, "\u274C": False}):
+                await ctx.send("Cancelled.")
+                return
 
         session.add(Factoid(
             name=name,
