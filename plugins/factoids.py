@@ -59,13 +59,14 @@ class Factoids(discord.ext.commands.Cog):
         if not isinstance(msg.channel, (discord.abc.GuildChannel, discord.Thread)): return
         if not msg.content.startswith(conf.prefix): return
         if not plugins.locations.in_location("factoids", msg.channel): return
-        words = msg.content[len(conf.prefix):].split(maxsplit=1)
-        if len(words) == 0: return
-        name = words[0].lower()
+        text = " ".join(msg.content[len(conf.prefix):].split()).lower()
+        if not len(text): return
         async with sqlalchemy.ext.asyncio.AsyncSession(engine) as session:
-            print(name)
-            if (factoid := await session.get(Factoid, name)) is None: return
-            print(factoid)
+            stmt = (sqlalchemy.select(Factoid)
+                .where(Factoid.name == sqlalchemy.func.substring(text, 1, sqlalchemy.func.length(Factoid.name)))
+                .order_by(sqlalchemy.func.length(Factoid.name).desc())
+                .limit(1))
+            if (factoid := (await session.execute(stmt)).scalar()) is None: return
             embed = discord.Embed.from_dict(factoid.embed_data) if factoid.embed_data is not None else None
             reference = None
             if msg.reference is not None and msg.reference.message_id is not None:
@@ -87,13 +88,13 @@ class Factoids(discord.ext.commands.Cog):
 
     @plugins.privileges.priv("factoids")
     @tag_command.command("add")
-    async def tag_add(self, ctx: discord.ext.commands.Context, name: str) -> None:
+    async def tag_add(self, ctx: discord.ext.commands.Context, *, name: str) -> None:
         """Add a factoid. You will be prompted to enter the contents as a separate message."""
         await create_tag(ctx, name, False)
 
     @plugins.privileges.priv("factoids")
     @tag_command.command("edit")
-    async def tag_edit(self, ctx: discord.ext.commands.Context, name: str) -> None:
+    async def tag_edit(self, ctx: discord.ext.commands.Context, *, name: str) -> None:
         """Edit a factoid. You will be prompted to enter the contents as a separate message."""
         await create_tag(ctx, name, True)
 
@@ -109,9 +110,9 @@ class Factoids(discord.ext.commands.Cog):
                 for name, uses in results))
 
 async def create_tag(ctx: discord.ext.commands.Context, name: str, update: bool) -> None:
-    name = name.lower()
-    if any(c.isspace() for c in name):
-        raise util.discord.InvocationError("No spaces allowed in factoid name")
+    name = " ".join(name.split()).lower()
+    if not len(name):
+        raise util.discord.InvocationError("Factoid name must be nonempty")
     async with sqlalchemy.ext.asyncio.AsyncSession(engine) as session:
         if (factoid := await session.get(Factoid, name)) is not None:
             if update:
