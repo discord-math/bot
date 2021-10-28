@@ -3,8 +3,9 @@ import asyncio
 import weakref
 import discord
 import discord.ext.commands
-from typing import (Tuple, Union, Optional, Literal, AsyncIterator, Callable, Any, Generic, TypeVar, ContextManager,
-    overload, cast)
+from typing import (Tuple, Dict, Union, Optional, Literal, AsyncIterator, Callable, Any, Generic, TypeVar,
+    ContextManager, overload, cast)
+import discord_client
 import plugins
 import plugins.cogs
 import util.asyncio
@@ -171,3 +172,74 @@ class Reactions(discord.ext.commands.Cog):
     @discord.ext.commands.Cog.listener()
     async def on_raw_reaction_clear_emoji(self, payload: discord.RawReactionClearEmojiEvent) -> None:
         deliver_event("clear_emoji", payload)
+
+def emoji_key(emoji: Union[discord.Emoji, discord.PartialEmoji, str]) -> Union[str, int]:
+    if isinstance(emoji, str):
+        return emoji
+    elif emoji.id is None:
+        return emoji.name
+    else:
+        return emoji.id
+
+async def get_reaction(msg: discord.Message, user: discord.abc.Snowflake,
+    reactions: Dict[Union[discord.Emoji, discord.PartialEmoji, str], T], *,
+    timeout: Optional[float] = None, unreact: bool = True) -> Optional[T]:
+    assert discord_client.client.user is not None
+    reacts = {emoji_key(key): value for key, value in reactions.items()}
+    with plugins.reactions.ReactionMonitor(channel_id=msg.channel.id, message_id=msg.id, author_id=user.id,
+        event="add", filter=lambda _, p: emoji_key(p.emoji) in reacts, timeout_each=timeout) as mon:
+        try:
+            await asyncio.gather(*(msg.add_reaction(key) for key in reactions))
+        except (discord.NotFound, discord.Forbidden):
+            pass
+        try:
+            _, payload = await mon
+        except asyncio.TimeoutError:
+            return None
+    if unreact:
+        try:
+            await asyncio.gather(*(msg.remove_reaction(key, discord_client.client.user)
+                for key in reactions if emoji_key(key) != emoji_key(payload.emoji)))
+        except (discord.NotFound, discord.Forbidden):
+            pass
+    return reacts.get(emoji_key(payload.emoji))
+
+async def get_input(msg: discord.Message, user: discord.abc.Snowflake,
+    reactions: Dict[Union[discord.Emoji, discord.PartialEmoji, str], T], *,
+    timeout: Optional[float] = None, unreact: bool = True) -> Optional[Union[T, discord.Message]]:
+    assert discord_client.client.user is not None
+    reacts = {emoji_key(key): value for key, value in reactions.items()}
+    with plugins.reactions.ReactionMonitor(channel_id=msg.channel.id, message_id=msg.id, author_id=user.id,
+        event="add", filter=lambda _, p: emoji_key(p.emoji) in reacts, timeout_each=timeout) as mon:
+        try:
+            await asyncio.gather(*(msg.add_reaction(key) for key in reactions))
+        except (discord.NotFound, discord.Forbidden):
+            pass
+        msg_task = asyncio.create_task(discord_client.client.wait_for("message",
+            check=lambda m: m.channel == msg.channel and m.author.id == user.id))
+        reaction_task = asyncio.ensure_future(mon)
+        try:
+            done, pending = await asyncio.wait((msg_task, reaction_task), timeout=timeout,
+                return_when=asyncio.FIRST_COMPLETED)
+        except asyncio.TimeoutError:
+            return None
+    if msg_task in done:
+        reaction_task.cancel()
+        if unreact:
+            try:
+                await asyncio.gather(*(msg.remove_reaction(key, discord_client.client.user) for key in reactions))
+            except (discord.NotFound, discord.Forbidden):
+                pass
+        return msg_task.result()
+    elif reaction_task in done:
+        msg_task.cancel()
+        _, payload = reaction_task.result()
+        if unreact:
+            try:
+                await asyncio.gather(*(msg.remove_reaction(key, discord_client.client.user)
+                    for key in reactions if emoji_key(key) != emoji_key(payload.emoji)))
+            except (discord.NotFound, discord.Forbidden):
+                pass
+        return reacts.get(emoji_key(payload.emoji))
+    else:
+        return None

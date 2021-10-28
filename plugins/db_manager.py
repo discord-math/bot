@@ -8,7 +8,6 @@ import plugins.commands
 import plugins.privileges
 import plugins.reactions
 import util.discord
-import discord_client
 import util.db
 import util.db.kv
 import util.asyncio
@@ -110,23 +109,7 @@ async def sql_command(ctx: discord.ext.commands.Context,
         if not has_tx:
             return
 
-        await reply.add_reaction("\u21A9")
-        await reply.add_reaction("\u2705")
-        with plugins.reactions.ReactionMonitor(channel_id=ctx.channel.id, message_id=reply.id,
-            author_id=ctx.author.id, event="add", filter=lambda _, p: p.emoji.name in ["\u21A9", "\u2705"],
-            timeout_each=60) as mon:
-
-            rollback = True
-            try:
-                _, p = await mon
-                if p.emoji.name == "\u2705":
-                    rollback = False
-            except asyncio.TimeoutError:
-                pass
-
-            if rollback:
-                await tx.rollback()
-            else:
-                await tx.commit()
-            if discord_client.client.user is not None:
-                await reply.remove_reaction("\u2705" if rollback else "\u21A9", member=discord_client.client.user)
+        if await plugins.reactions.get_reaction(reply, ctx.author, {"\u21A9": False, "\u2705": True}, timeout=60):
+            await tx.commit()
+        else:
+            await tx.rollback()

@@ -169,28 +169,16 @@ class Modmail(discord.ext.commands.Cog):
             except (discord.NotFound, discord.Forbidden):
                 return
 
-            reactions = (anon_react, named_react, cancel_react)
-            try:
-                with plugins.reactions.ReactionMonitor(channel_id=query.channel.id, message_id=query.id,
-                    author_id=msg.author.id, event="add", filter=lambda _, p: p.emoji.name in reactions,
-                    timeout_each=120) as mon:
-                    for react in reactions:
-                        await query.add_reaction(react)
-                    _, payload = await mon
-                    reaction = payload.emoji.name
-            except (discord.NotFound, discord.Forbidden):
-                return
-            except asyncio.TimeoutError:
-                reaction = cancel_react
+            result = await plugins.reactions.get_reaction(query, msg.author,
+                {anon_react: "anon", named_react: "named", cancel_react: None}, timeout=120, unreact=False)
 
             await query.delete()
-            if reaction == cancel_react:
+            if result is None:
                 await msg.channel.send("Cancelled")
             else:
                 header = ""
-                if reaction == named_react:
-                    name = isinstance(msg.author, discord.Member) and msg.author.nick or msg.author.name
-                    header = util.discord.format("**From {}** {!m}:\n\n", name, msg.author)
+                if result == "named":
+                    header = util.discord.format("**From {}** {!m}:\n\n", msg.author.display_name, msg.author)
                 try:
                     chan = await client.fetch_channel(modmail.dm_channel_id)
                     if not isinstance(chan, discord.DMChannel):

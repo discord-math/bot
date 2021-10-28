@@ -17,7 +17,6 @@ import plugins.locations
 import plugins.privileges
 import plugins.cogs
 import plugins.reactions
-import discord_client
 
 registry: sqlalchemy.orm.registry = sqlalchemy.orm.registry()
 
@@ -125,32 +124,12 @@ async def create_tag(ctx: discord.ext.commands.Context, name: str, update: bool)
 
         content = None
         prompt = await ctx.send("Please enter the factoid contents:")
-        del_reaction = '\u274C'
-        await prompt.add_reaction(del_reaction)
-        with plugins.reactions.ReactionMonitor(channel_id=ctx.channel.id, message_id=prompt.id,
-            author_id=ctx.author.id, event="add", filter=lambda _, p: p.emoji.name == del_reaction) as mon:
-            msg_task = asyncio.create_task(
-                discord_client.client.wait_for('message',
-                    check=lambda msg: msg.channel == ctx.channel and msg.author == ctx.author))
-            reaction_task = asyncio.ensure_future(mon)
-            try:
-                done, pending = await asyncio.wait((msg_task, reaction_task),
-                    timeout=300, return_when=asyncio.FIRST_COMPLETED)
-            except asyncio.TimeoutError:
-                await ctx.send("Prompt timed out.")
-
-            if msg_task in done:
-                content = msg_task.result().content
-            elif reaction_task in done:
-                await ctx.send("Prompt cancelled.")
-            msg_task.cancel()
-            reaction_task.cancel()
-
-        if content is None: return
+        response = await plugins.reactions.get_input(prompt, ctx.author, {"\u274C": None}, timeout=300)
+        if response is None: return
 
         embed = None
         try:
-            embed_data = json.loads(content)
+            embed_data = json.loads(response.content)
         except:
             pass
         else:
@@ -181,7 +160,7 @@ async def create_tag(ctx: discord.ext.commands.Context, name: str, update: bool)
 
         session.add(Factoid(
             name=name,
-            message_text=content if embed is None else None,
+            message_text=response.content if embed is None else None,
             embed_data=embed.to_dict() if embed is not None else None, # type: ignore
             author_id=ctx.author.id,
             created_at=datetime.datetime.utcnow(),

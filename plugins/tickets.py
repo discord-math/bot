@@ -1230,26 +1230,9 @@ class Tickets(discord.ext.commands.Cog):
         if note is None:
             # Request the note dynamically
             prompt = await ctx.send("Please enter the note:")
-            del_reaction = '\u274C'
-            await prompt.add_reaction(del_reaction)
-            with plugins.reactions.ReactionMonitor(channel_id=ctx.channel.id, message_id=prompt.id,
-                author_id=ctx.author.id, event="add", filter=lambda _, p: p.emoji.name == del_reaction) as mon:
-                msg_task = asyncio.create_task(
-                    discord_client.client.wait_for('message',
-                        check=lambda msg: msg.channel == ctx.channel and msg.author == ctx.author))
-                reaction_task = asyncio.ensure_future(mon)
-                try:
-                    done, pending = await asyncio.wait((msg_task, reaction_task),
-                        timeout=300, return_when=asyncio.FIRST_COMPLETED)
-                except asyncio.TimeoutError:
-                    await ctx.send("Note prompt timed out, please try again.")
-
-                if msg_task in done:
-                    note = msg_task.result().content
-                elif reaction_task in done:
-                    await ctx.send("Note prompt cancelled, no note was created.")
-                msg_task.cancel()
-                reaction_task.cancel()
+            response = await plugins.reactions.get_input(prompt, ctx.author, {"\u274C": None}, timeout=300)
+            if response is not None:
+                note = response.content
 
         if note is not None:
             async with sessionmaker() as session:
