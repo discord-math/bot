@@ -72,10 +72,10 @@ async def init() -> None:
             message_map[msg.staff_message_id] = msg
 
 async def add_modmail(source: discord.Message, copy: discord.Message) -> None:
-    async with sqlalchemy.ext.asyncio.AsyncSession(engine) as session:
+    async with sqlalchemy.ext.asyncio.AsyncSession(engine, expire_on_commit=False) as session:
         msg = ModmailMessage(dm_channel_id=source.channel.id, dm_message_id=source.id, staff_message_id=copy.id)
         session.add(msg)
-        await session.flush()
+        await session.commit()
         message_map[msg.staff_message_id] = msg
 
 async def update_thread(user_id: int) -> Optional[int]:
