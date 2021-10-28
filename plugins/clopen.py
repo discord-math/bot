@@ -332,6 +332,7 @@ class ClopenCog(discord.ext.commands.Cog):
 
     @discord.ext.commands.command("close")
     async def close_command(self, ctx: discord.ext.commands.Context) -> None:
+        """For use in help channels. Close a channel."""
         if ctx.channel.id not in conf.channels:
             return
         if ctx.author.id != conf[ctx.channel.id, "owner"] and not plugins.privileges.PrivCheck("helper")(ctx):
@@ -342,6 +343,7 @@ class ClopenCog(discord.ext.commands.Cog):
 
     @discord.ext.commands.command("reopen")
     async def reopen_command(self, ctx: discord.ext.commands.Context) -> None:
+        """For use in help channels. Reopen a recently closed channel."""
         if ctx.channel.id not in conf.channels:
             return
         if ctx.author.id != conf[ctx.channel.id, "owner"] and not plugins.privileges.PrivCheck("helper")(ctx):
