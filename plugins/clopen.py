@@ -41,20 +41,24 @@ class ClopenConf(Protocol, Awaitable[None]):
     channels: util.frozen_list.FrozenList[int]
     available_category: int
     used_category: int
+    hidden_category: int
     owner_timeout: int
     timeout: int
+    min_avail: int
+    max_avail: int
+    max_channels: int
 
     @overload
     def __getitem__(self, k: Tuple[int, Literal["state"]]
-        ) -> Optional[Literal["available", "used", "pending", "closed"]]: ...
+        ) -> Optional[Literal["available", "used", "pending", "closed", "hidden"]]: ...
     @overload
     def __getitem__(self, k: Tuple[int, Literal["owner", "prompt_id", "op_id", "extension"]]) -> Optional[int]: ...
     @overload
     def __getitem__(self, k: Tuple[int, Literal["expiry"]]) -> Optional[float]: ...
 
     @overload
-    def __setitem__(self, k: Tuple[int, Literal["state"]], v: Literal["available", "used", "pending", "closed"]
-        ) -> None: ...
+    def __setitem__(self, k: Tuple[int, Literal["state"]],
+        v: Literal["available", "used", "pending", "closed", "hidden"]) -> None: ...
     @overload
     def __setitem__(self, k: Tuple[int, Literal["owner", "prompt_id", "op_id", "extension"]], v: Optional[int]
         ) -> None: ...
@@ -76,6 +80,16 @@ async def scheduler() -> None:
     await discord_client.client.wait_until_ready()
     while True:
         try:
+            hidden = [id for id in conf.channels if conf[id, "state"] == "hidden"]
+            if sum(conf[id, "state"] == "available" for id in conf.channels) < conf.min_avail:
+                for id in conf.channels:
+                    if conf[id, "state"] == "hidden":
+                        await make_available(id)
+                        break
+                else:
+                    if (new_id := await create_channel()) is not None:
+                        await make_available(new_id)
+
             min_next = None
             for id in conf.channels:
                 async with channel_locks[id]:
@@ -92,7 +106,10 @@ async def scheduler() -> None:
                             min_next = expiry
                     elif conf[id, "state"] in ["closed", None]:
                         if expiry is None or expiry < time.time():
-                            await make_available(id)
+                            if sum(conf[id, "state"] == "available" for id in conf.channels) >= conf.max_avail:
+                                await make_hidden(id)
+                            else:
+                                await make_available(id)
                         elif min_next is None or expiry < min_next:
                             min_next = expiry
             try:
@@ -216,7 +233,7 @@ async def close(id: int, reason: str, *, reopen: bool = True) -> None:
 async def make_available(id: int) -> None:
     logger.debug("Making {} available".format(id))
     assert isinstance(channel := discord_client.client.get_channel(id), discord.TextChannel)
-    assert conf[id, "state"] in ["closed", None]
+    assert conf[id, "state"] in ["closed", "hidden", None]
     conf[id, "state"] = "available"
     conf[id, "expiry"] = None
     try:
@@ -231,6 +248,38 @@ async def make_available(id: int) -> None:
     conf[id, "prompt_id"] = prompt.id
     await conf
     scheduler_updated()
+
+async def make_hidden(id: int) -> None:
+    logger.debug("Making {} hidden".format(id))
+    assert isinstance(channel := discord_client.client.get_channel(id), discord.TextChannel)
+    assert conf[id, "state"] in ["available", "closed", None]
+    conf[id, "state"] = "hidden"
+    conf[id, "expiry"] = None
+    conf[id, "prompt_id"] = None
+    try:
+        cat = discord_client.client.get_channel(conf.hidden_category)
+        assert isinstance(cat, discord.CategoryChannel)
+        await insert_chan(cat, channel)
+        prefix = channel.name.split("\uFF5C", 1)[0]
+        request_rename(channel, prefix)
+    except discord.Forbidden:
+        pass
+    await conf
+    scheduler_updated()
+
+async def create_channel() -> Optional[int]:
+    if len(conf.channels) >= conf.max_channels:
+        return None
+    logger.debug("Creating a new channel")
+    cat = discord_client.client.get_channel(conf.used_category)
+    assert isinstance(cat, discord.CategoryChannel)
+    try:
+        chan = await cat.create_text_channel(name="help-{}".format(len(conf.channels)))
+        logger.debug("Created a new channel: {}".format(chan.id))
+        conf.channels = conf.channels + [chan.id]
+        return chan.id
+    except discord.Forbidden:
+        return None
 
 async def extend(id: int) -> None:
     assert isinstance(channel := discord_client.client.get_channel(id), discord.TextChannel)
