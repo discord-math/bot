@@ -416,6 +416,7 @@ def update_fetch() -> None:
     fetch_updated.set()
 
 async def background_fetch() -> None:
+    await discord_client.client.wait_until_ready()
     while True:
         try:
             await fetch_updated.wait()
@@ -534,11 +535,13 @@ async def process_ready(last_msgs: Dict[int, int], thread_last_msgs: Dict[int, D
         stmt = sqlalchemy.select(Channel)
         have_chans = set()
         for chan in (await session.execute(stmt)).scalars():
+            have_chans.add(chan.id)
             if chan.reachable:
-                have_chans.add(chan.id)
                 if chan.id not in last_msgs:
                     logger.debug("Channel {} is missing, marking unreachable".format(chan.id))
                     chan.reachable = False
+            elif chan.id in last_msgs:
+                chan.reachable = True
         for channel_id in last_msgs:
             if channel_id not in have_chans:
                 channel = discord_client.client.get_channel(channel_id)
@@ -751,7 +754,7 @@ async def process_subscription(subscriber: str, event_dict: Dict[str, Callback],
     async with sessionmaker() as session:
         stmt = (sqlalchemy.select(ChannelState)
             .join(ChannelState.channel)
-            .where(Channel.reachable, ChannelState.subscriber == subscriber))
+            .where(ChannelState.subscriber == subscriber))
         have_chans = set()
         for state in (await session.execute(stmt)).scalars():
             if state.channel_id in last_msgs:
