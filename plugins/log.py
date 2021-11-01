@@ -111,10 +111,11 @@ async def clean_old_messages() -> None:
                     .where(SavedFile.id < cutoff)
                     .returning(SavedFile.local_filename))
                 for filepath in (await session.execute(stmt)).scalars():
-                    try:
-                        os.unlink(filepath)
-                    except FileNotFoundError:
-                        pass
+                    if filepath is not None:
+                        try:
+                            os.unlink(filepath)
+                        except FileNotFoundError:
+                            pass
                 stmt = (sqlalchemy.delete(SavedMessage)
                     .where(SavedMessage.id < cutoff))
                 await session.execute(stmt)
