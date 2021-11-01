@@ -7,6 +7,8 @@ import sqlalchemy.dialects.postgresql
 import sqlalchemy.orm
 import datetime
 import io
+import os
+import pathlib
 import difflib
 from typing import List, Dict, Set, Optional, Iterable, Protocol, cast
 import discord_client
@@ -23,6 +25,7 @@ class LoggerConf(Protocol):
     perm_channel: int
     keep: int
     interval: int
+    file_path: str
 
 conf: LoggerConf
 
@@ -52,25 +55,51 @@ class SavedFile:
     message_id: int = sqlalchemy.Column(sqlalchemy.BigInteger, sqlalchemy.ForeignKey(SavedMessage.id), nullable=False)
     filename: str = sqlalchemy.Column(sqlalchemy.TEXT, nullable=False)
     url: str = sqlalchemy.Column(sqlalchemy.TEXT, nullable=False)
-    content: Optional[bytes] = sqlalchemy.Column(sqlalchemy.dialects.postgresql.BYTEA)
+    local_filename: Optional[str] = sqlalchemy.Column(sqlalchemy.TEXT)
+
+def path_for(attm: discord.Attachment) -> pathlib.Path:
+    return pathlib.Path(conf.file_path, str(attm.id))
+
+async def save_attachment(attm: discord.Attachment) -> None:
+    path = path_for(attm)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        await attm.save(path, use_cached=True)
+    except discord.HTTPException:
+        await attm.save(path)
 
 async def register_messages(msgs: Iterable[discord.Message]) -> None:
     async with sessionmaker() as session:
-        for msg in msgs:
-            if not msg.author.bot:
-                session.add(SavedMessage(id=msg.id, channel_id=msg.channel.id, author_id=msg.author.id,
-                    username=msg.author.name + "#" + msg.author.discriminator,
-                    nick=msg.author.nick if isinstance(msg.author, discord.Member) else None,
-                    content=msg.content.encode("utf8")))
-                attm_data = await asyncio.gather(*[attm.read(use_cached=True) for attm in msg.attachments],
-                    return_exceptions=True)
-                await session.flush()
-                for attm, data in zip(msg.attachments, attm_data):
-                    if not isinstance(data, bytes):
-                        logger.info("Could not save attachment {} for {}".format(attm.proxy_url, msg.id), exc_info=data)
-                    session.add(SavedFile(id=attm.id, message_id=msg.id, filename=attm.filename, url=attm.url,
-                        content=data if isinstance(data, bytes) else None))
-        await session.commit()
+        try:
+            filepaths = set()
+            for msg in msgs:
+                if not msg.author.bot:
+                    session.add(SavedMessage(id=msg.id, channel_id=msg.channel.id, author_id=msg.author.id,
+                        username=msg.author.name + "#" + msg.author.discriminator,
+                        nick=msg.author.nick if isinstance(msg.author, discord.Member) else None,
+                        content=msg.content.encode("utf8")))
+                    filepaths |= {path_for(attm) for attm in msg.attachments}
+                    attm_data = await asyncio.gather(*[save_attachment(attm) for attm in msg.attachments],
+                        return_exceptions=True)
+                    await session.flush()
+                    for attm, exc in zip(msg.attachments, attm_data):
+                        if exc is not None:
+                            logger.info("Could not save attachment {} for {}".format(attm.proxy_url, msg.id),
+                                exc_info=exc)
+                            try:
+                                os.unlink(path_for(attm))
+                            except FileNotFoundError:
+                                pass
+                        session.add(SavedFile(id=attm.id, message_id=msg.id, filename=attm.filename, url=attm.url,
+                            local_filename=str(path_for(attm)) if exc is None else None))
+            await session.commit()
+            filepaths = set()
+        finally:
+            for filepath in filepaths:
+                try:
+                    os.unlink(filepath)
+                except FileNotFoundError:
+                    pass
 
 async def clean_old_messages() -> None:
     while True:
@@ -79,8 +108,13 @@ async def clean_old_messages() -> None:
             cutoff = discord.utils.time_snowflake(datetime.datetime.now() - datetime.timedelta(seconds=conf.keep))
             async with sessionmaker() as session:
                 stmt = (sqlalchemy.delete(SavedFile)
-                    .where(SavedFile.id < cutoff))
-                await session.execute(stmt)
+                    .where(SavedFile.id < cutoff)
+                    .returning(SavedFile.local_filename))
+                for filepath in (await session.execute(stmt)).scalars():
+                    try:
+                        os.unlink(filepath)
+                    except FileNotFoundError:
+                        pass
                 stmt = (sqlalchemy.delete(SavedMessage)
                     .where(SavedMessage.id < cutoff))
                 await session.execute(stmt)
