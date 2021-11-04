@@ -1,3 +1,4 @@
+import aiohttp
 import asyncio
 import logging
 import re
@@ -88,19 +89,39 @@ async def create_automod_note(target_id: int, index: int) -> None:
             await session.commit()
         await session.commit()
 
+URL_regex: re.Pattern[str] = re.compile(r"https?://([^/]*)/?\S*", re.I)
+
+async def phish_match(msg: discord.Message, text: str) -> None:
+    assert msg.guild is not None
+    try:
+        reason = "Automatic action: found phishing domain: {}".format(text)
+        await asyncio.gather(msg.delete(),
+            msg.guild.ban(msg.author, reason=reason, delete_message_days=0))
+    except (discord.Forbidden, discord.NotFound):
+        logger.error("Could not moderate {}".format(msg.jump_url), exc_info=True)
+
+async def resolve_link(msg: discord.Message, link: str) -> None:
+    if (target := await plugins.phish.resolve_link(link)) is not None:
+        if (match := URL_regex.match(target)) is not None:
+            if match.group(1) in plugins.phish.domains:
+                await phish_match(msg, util.discord.format("{!i} -> {!i}", link, match.group(1)))
+
 async def process_messages(msgs: Iterable[discord.Message]) -> None:
     for msg in msgs:
         if msg.guild is None: continue
         if msg.author.bot: continue
 
         try:
-            if (match := plugins.phish.domain_regex.search(msg.content)) is not None:
-                try:
-                    reason = util.discord.format("Automatic action: found phishing domain: {!i}", match.group())
-                    await msg.delete()
-                    await msg.guild.ban(msg.author, reason=reason, delete_message_days=0)
-                except (discord.Forbidden, discord.NotFound):
-                    logger.error("Could not moderate {}".format(msg.jump_url), exc_info=True)
+            match: Optional[re.Match[str]]
+            resolve_links = set()
+            for match in URL_regex.finditer(msg.content):
+                if match.group(1).lower() in plugins.phish.domains:
+                    await phish_match(msg, util.discord.format("{!i}", match.group(1)))
+                    break
+                elif plugins.phish.should_resolve_domain(match.group(1)):
+                    resolve_links.add(match.group(0))
+            for link in resolve_links:
+                asyncio.create_task(resolve_link(msg, link))
 
             if (match := regex.search(msg.content)) is not None:
                 for key, value in match.groupdict().items():

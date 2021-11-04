@@ -3,13 +3,15 @@ import aiohttp
 import json
 import re
 import logging
-from typing import List, Set, Iterable, Protocol, cast
+from typing import List, Set, Optional, Iterable, Protocol, cast
 import util.db.kv
+import util.frozen_list
 import plugins
 
 class PhishConf(Protocol):
     api: str
     identity: str
+    resolve_domains: util.frozen_list.FrozenList[str]
 
 conf: PhishConf
 logger = logging.getLogger(__name__)
@@ -27,16 +29,6 @@ async def get_all_domains() -> List[str]:
         return data
 
 domains: Set[str] = set()
-domain_regex: re.Pattern[str]
-
-def update_domain_regex() -> None:
-    global domain_regex
-    if len(domains) == 0:
-        regex = r"(?!)"
-    else:
-        regex = "".join((r"\bhttps?://(?:", "|".join(re.escape(domain) for domain in domains), ")/"))
-    domain_regex = re.compile(regex, re.I)
-update_domain_regex()
 
 async def watch_websocket() -> None:
     global domains
@@ -53,7 +45,6 @@ async def watch_websocket() -> None:
                             domains |= set(payload["domains"])
                         elif payload["type"] == "delete":
                             domains -= set(payload["domains"])
-                        update_domain_regex()
                     elif msg.type == aiohttp.WSMsgType.CLOSED:
                         break
                     elif msg.type == aiohttp.WSMsgType.ERROR:
@@ -67,6 +58,20 @@ async def watch_websocket() -> None:
             logger.error("Exception in phish websocket", exc_info=True)
         await asyncio.sleep(60)
 
+def should_resolve_domain(domain: str) -> bool:
+    return domain.lower() in conf.resolve_domains
+
+async def resolve_link(link: str) -> Optional[str]:
+    try:
+        logger.debug("Looking up {!r}".format(link))
+        async with plugins.phish.session.request("HEAD", link, allow_redirects=False, timeout=5.0) as response:
+            logger.debug("Link {!r} got {}, {!r}".format(link, response.status, response.headers.get("location")))
+            if response.status in [301, 302] and "location" in response.headers:
+                return response.headers["location"]
+    except aiohttp.ClientError:
+        pass
+    return None
+
 @plugins.init
 async def init() -> None:
     global conf, session, domains, ws_task
@@ -74,6 +79,5 @@ async def init() -> None:
     session = aiohttp.ClientSession()
     plugins.finalizer(session.close)
     domains = set(await get_all_domains())
-    update_domain_regex()
     ws_task = asyncio.create_task(watch_websocket())
     plugins.finalizer(ws_task.cancel)
