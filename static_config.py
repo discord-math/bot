@@ -20,4 +20,7 @@ def writeback() -> None:
         config.write(f)
 
 def __getattr__(name: str) -> configparser.SectionProxy:
-    return config[name]
+    try:
+        return config[name]
+    except KeyError as exc:
+        raise AttributeError(*exc.args)
