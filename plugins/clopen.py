@@ -157,10 +157,21 @@ async def insert_chan(cat: discord.CategoryChannel, chan: discord.TextChannel) -
         if other.id in channels and channels.index(other.id) >= channels.index(chan.id):
             break
         max_chan = other
+    def index_or(id: int) -> str:
+        return str(channels.index(id)) if id in channels else "???"
     if max_chan is None:
+        logger.debug("Moving #{} -> [{}], beginning".format(index_or(chan.id),
+            ",".join("{}:#{}".format(ch.position, index_or(ch.id)) for ch in cat.channels)))
         await chan.move(category=cat, sync_permissions=True, beginning=True)
+        logger.debug("Moved [{}]".format(
+            ",".join("{}:#{}".format(ch.position, index_or(ch.id)) for ch in cat.channels)))
     else:
+        logger.debug("Moving #{} -> [{}], after #{}".format(index_or(chan.id),
+            ",".join("{}:#{}".format(ch.position, index_or(ch.id)) for ch in cat.channels),
+            index_or(max_chan.id)))
         await chan.move(category=cat, sync_permissions=True, after=max_chan)
+        logger.debug("Moved [{}]".format(
+            ",".join("{}:#{}".format(ch.position, index_or(ch.id)) for ch in cat.channels)))
 
 async def occupy(id: int, msg_id: int, author: Union[discord.User, discord.Member]) -> None:
     logger.debug("Occupying {}, author {}, OP {}".format(id, author.id, msg_id))
