@@ -8,7 +8,7 @@ import datetime
 import json
 import discord
 import discord.ext.commands
-from typing import Optional, Any, Protocol, cast
+from typing import Optional, Union, Any, Protocol, cast
 import util.db
 import util.db.kv
 import plugins
@@ -28,13 +28,27 @@ class Factoid:
     __tablename__ = "factoids"
     __table_args__ = {"schema": "factoids"}
 
-    name: str = sqlalchemy.Column(sqlalchemy.TEXT, primary_key=True)
+    id: int = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True)
     message_text: Optional[str] = sqlalchemy.Column(sqlalchemy.TEXT)
     embed_data: Optional[Any] = sqlalchemy.Column(sqlalchemy.dialects.postgresql.JSONB)
     author_id: int = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
     created_at: datetime.datetime = sqlalchemy.Column(sqlalchemy.TIMESTAMP, nullable=False)
     uses: int = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
     used_at: Optional[datetime.datetime] = sqlalchemy.Column(sqlalchemy.TIMESTAMP)
+
+@registry.mapped
+class Alias:
+    __tablename__ = "aliases"
+    __table_args__ = {"schema": "factoids"}
+
+    name: str = sqlalchemy.Column(sqlalchemy.TEXT, primary_key=True)
+    id: int = sqlalchemy.Column(sqlalchemy.Integer, sqlalchemy.ForeignKey(Factoid.id), nullable=False)
+    author_id: int = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
+    created_at: datetime.datetime = sqlalchemy.Column(sqlalchemy.TIMESTAMP, nullable=False)
+    uses: int = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
+    used_at: Optional[datetime.datetime] = sqlalchemy.Column(sqlalchemy.TIMESTAMP)
+
+    factoid: Factoid = sqlalchemy.orm.relationship(Factoid, lazy="joined")
 
 class FactoidsConf(Protocol):
     prefix: str
@@ -62,22 +76,24 @@ class Factoids(discord.ext.commands.Cog):
         text = " ".join(msg.content[len(conf.prefix):].split()).lower()
         if not len(text): return
         async with sqlalchemy.ext.asyncio.AsyncSession(engine) as session:
-            stmt = (sqlalchemy.select(Factoid)
-                .where(Factoid.name == sqlalchemy.func.substring(text, 1, sqlalchemy.func.length(Factoid.name)))
-                .order_by(sqlalchemy.func.length(Factoid.name).desc())
+            stmt = (sqlalchemy.select(Alias)
+                .where(Alias.name == sqlalchemy.func.substring(text, 1, sqlalchemy.func.length(Alias.name)))
+                .order_by(sqlalchemy.func.length(Alias.name).desc())
                 .limit(1))
-            if (factoid := (await session.execute(stmt)).scalar()) is None: return
-            embed = discord.Embed.from_dict(factoid.embed_data) if factoid.embed_data is not None else None
+            if (alias := (await session.execute(stmt)).scalar()) is None: return
+            embed = discord.Embed.from_dict(alias.factoid.embed_data) if alias.factoid.embed_data is not None else None
             reference = None
             if msg.reference is not None and msg.reference.message_id is not None:
                 reference = discord.MessageReference(guild_id=msg.reference.guild_id,
                     channel_id=msg.reference.channel_id, message_id=msg.reference.message_id,
                     fail_if_not_exists=False)
-            await msg.channel.send(factoid.message_text, embed=embed, reference=reference,
+            await msg.channel.send(alias.factoid.message_text, embed=embed, reference=reference,
                 allowed_mentions=discord.AllowedMentions.none())
 
-            factoid.uses += 1
-            factoid.used_at = datetime.datetime.utcnow()
+            alias.factoid.uses += 1
+            alias.factoid.used_at = datetime.datetime.utcnow()
+            alias.uses += 1
+            alias.used_at = datetime.datetime.utcnow()
             await session.commit()
 
     @plugins.commands.cleanup
@@ -90,71 +106,182 @@ class Factoids(discord.ext.commands.Cog):
     @tag_command.command("add")
     async def tag_add(self, ctx: discord.ext.commands.Context, *, name: str) -> None:
         """Add a factoid. You will be prompted to enter the contents as a separate message."""
-        await create_tag(ctx, name, False)
+        name = validate_name(name)
+        async with sqlalchemy.ext.asyncio.AsyncSession(engine) as session:
+            if await session.get(Alias, name, options=(sqlalchemy.orm.raiseload(Alias.factoid),)) is not None:
+                raise util.discord.UserError(util.discord.format("The factoid {!i} already exists", conf.prefix + name))
+
+            content = await prompt_contents(ctx)
+            if content is None: return
+
+            session.add(Alias(
+                name=name,
+                author_id=ctx.author.id,
+                created_at=datetime.datetime.utcnow(),
+                uses=0,
+                factoid=Factoid(
+                    message_text=content if isinstance(content, str) else None,
+                    embed_data=content.to_dict() if not isinstance(content, str) else None, # type: ignore
+                    author_id=ctx.author.id,
+                    created_at=datetime.datetime.utcnow(),
+                    uses=0)))
+            await session.commit()
+        await ctx.send(util.discord.format("Factoid created, use with {!i}", conf.prefix + name))
+
+    @plugins.privileges.priv("factoids")
+    @tag_command.command("alias")
+    async def tag_alias(self, ctx: discord.ext.commands.Context, name: str, *, newname: str) -> None:
+        """
+        Alias a factoid. Both names will lead to the same output.
+        If the original factoid contains spaces, it would need to be quoted.
+        """
+        name = validate_name(name)
+        newname = " ".join(newname.split()).lower()
+        async with sqlalchemy.ext.asyncio.AsyncSession(engine) as session:
+            if await session.get(Alias, newname, options=(sqlalchemy.orm.raiseload(Alias.factoid),)) is not None:
+                raise util.discord.UserError(
+                    util.discord.format("The factoid {!i} already exists", conf.prefix + newname))
+            if (alias := await session.get(Alias, name, options=(sqlalchemy.orm.raiseload(Alias.factoid),))) is None:
+                raise util.discord.UserError(util.discord.format("The factoid {!i} does not exist", conf.prefix + name))
+
+            session.add(Alias(
+                name=newname,
+                author_id=ctx.author.id,
+                created_at=datetime.datetime.utcnow(),
+                uses=0,
+                id=alias.id))
+            await session.commit()
+        await ctx.send(util.discord.format("Aliased {!i} to {!i}", conf.prefix + newname, conf.prefix + name))
 
     @plugins.privileges.priv("factoids")
     @tag_command.command("edit")
     async def tag_edit(self, ctx: discord.ext.commands.Context, *, name: str) -> None:
-        """Edit a factoid. You will be prompted to enter the contents as a separate message."""
-        await create_tag(ctx, name, True)
+        """
+        Edit a factoid (and all factoids aliased to it).
+        You will be prompted to enter the contents as a separate message.
+        """
+        name = validate_name(name)
+        async with sqlalchemy.ext.asyncio.AsyncSession(engine) as session:
+            if (alias := await session.get(Alias, name)) is None:
+                raise util.discord.UserError(util.discord.format("The factoid {!i} does not exist", conf.prefix + name))
+
+            content = await prompt_contents(ctx)
+            if content is None: return
+
+            alias.factoid.message_text = content if isinstance(content, str) else None
+            alias.factoid.embed_data = content.to_dict() if not isinstance(content, str) else None # type: ignore
+            alias.factoid.author_id = ctx.author.id
+            await session.commit()
+        await ctx.send(util.discord.format("Factoid updated, use with {!i}", conf.prefix + name))
+
+    @plugins.privileges.priv("factoids")
+    @tag_command.command("unalias")
+    async def tag_unalias(self, ctx: discord.ext.commands.Context, *, name: str) -> None:
+        """
+        Remove an alias for a factoid. The last name for a factoid cannot be removed (use delete instead).
+        """
+        name = validate_name(name)
+        async with sqlalchemy.ext.asyncio.AsyncSession(engine) as session:
+            if (alias := await session.get(Alias, name)) is None:
+                raise util.discord.UserError(util.discord.format("The factoid {!i} does not exist", conf.prefix + name))
+            stmt = (sqlalchemy.select(True)
+                .where(Alias.id == alias.id, Alias.name != alias.name)
+                .limit(1))
+            if not (await session.execute(stmt)).scalar():
+                raise util.discord.UserError("Cannot remove the last alias")
+
+            await session.delete(alias)
+            await session.commit()
+        await ctx.send(util.discord.format("Alias removed"))
+
+    @plugins.privileges.priv("factoids")
+    @tag_command.command("delete")
+    async def tag_delete(self, ctx: discord.ext.commands.Context, *, name: str) -> None:
+        """Delete a factoid and all its aliases."""
+        name = validate_name(name)
+        async with sqlalchemy.ext.asyncio.AsyncSession(engine) as session:
+            if (alias := await session.get(Alias, name)) is None:
+                raise util.discord.UserError(util.discord.format("The factoid {!i} does not exist", conf.prefix + name))
+
+            stmt = (sqlalchemy.delete(Alias)
+                .where(Alias.id == alias.id))
+            await session.execute(stmt)
+            stmt = (sqlalchemy.delete(Factoid)
+                .where(Factoid.id == alias.id))
+            await session.execute(stmt)
+            await session.commit()
+        await ctx.send(util.discord.format("Factoid deleted"))
+
+    @tag_command.command("info")
+    async def tag_info(self, ctx: discord.ext.commands.Context, *, name: str) -> None:
+        """Show information about a factoid."""
+        name = validate_name(name)
+        async with sqlalchemy.ext.asyncio.AsyncSession(engine) as session:
+            if (alias := await session.get(Alias, name)) is None:
+                raise util.discord.UserError(util.discord.format("The factoid {!i} does not exist", conf.prefix + name))
+
+            stmt = (sqlalchemy.select(Alias)
+                .where(Alias.id == alias.id)
+                .order_by(Alias.uses.desc()))
+            aliases = (await session.execute(stmt)).scalars()
+
+            created_at = int(alias.factoid.created_at.replace(tzinfo=datetime.timezone.utc).timestamp())
+            used_at = None
+            if alias.factoid.used_at is not None:
+                used_at = int(alias.factoid.used_at.replace(tzinfo=datetime.timezone.utc).timestamp())
+            await ctx.send(util.discord.format(
+                    "Created by {!m} on <t:{}:F> (<t:{}:R>). Used {} times{}.\nAliases: {}",
+                    alias.factoid.author_id, created_at, created_at, alias.factoid.uses,
+                    "" if used_at is None else ", last on <t:{}:F> (<t:{}:R>)".format(used_at, used_at),
+                    ", ".join(util.discord.format("{!i} ({} uses)",
+                        conf.prefix + alias.name, alias.uses) for alias in aliases)),
+                allowed_mentions=discord.AllowedMentions.none())
 
     @tag_command.command("top")
     async def tag_top(sef, ctx: discord.ext.commands.Context) -> None:
         """Show most used factoids."""
         async with sqlalchemy.ext.asyncio.AsyncSession(engine) as session:
-            stmt = (sqlalchemy.select(Factoid.name, Factoid.uses)
+            aliases = sqlalchemy.orm.aliased(Alias)
+            stmt = (sqlalchemy.select(Alias.name, Factoid.uses)
+                .join(Alias.factoid)
+                .where(Alias.name == (sqlalchemy.select(aliases.name)
+                    .where(aliases.id == Factoid.id)
+                    .order_by(aliases.uses.desc())
+                    .limit(1)
+                    .scalar_subquery()))
                 .order_by(Factoid.uses.desc())
                 .limit(20))
             results = list(await session.execute(stmt))
             await ctx.send("\n".join(util.discord.format("{!i}: {} uses", conf.prefix + name, uses)
                 for name, uses in results))
 
-async def create_tag(ctx: discord.ext.commands.Context, name: str, update: bool) -> None:
-    name = " ".join(name.split()).lower()
-    if not len(name):
-        raise util.discord.InvocationError("Factoid name must be nonempty")
-    async with sqlalchemy.ext.asyncio.AsyncSession(engine) as session:
-        if (factoid := await session.get(Factoid, name)) is not None:
-            if update:
-                await session.delete(factoid)
-            else:
-                raise util.discord.UserError(util.discord.format("The factoid {!i} already exists", conf.prefix + name))
-        else:
-            if update:
-                raise util.discord.UserError(util.discord.format("The factoid {!i} does not exist", conf.prefix + name))
+async def prompt_contents(ctx: discord.ext.commands.Context) -> Optional[Union[str, discord.Embed]]:
+    prompt = await ctx.send("Please enter the factoid contents:")
+    response = await plugins.reactions.get_input(prompt, ctx.author, {"\u274C": None}, timeout=300)
+    if response is None: return None
 
-        content = None
-        prompt = await ctx.send("Please enter the factoid contents:")
-        response = await plugins.reactions.get_input(prompt, ctx.author, {"\u274C": None}, timeout=300)
-        if response is None: return
-
-        embed = None
+    try:
+        embed_data = json.loads(response.content)
+    except:
+        pass
+    else:
+        if not plugins.privileges.PrivCheck("admin")(ctx):
+            raise util.discord.UserError("Creating factoids with embeds is only available for admins")
         try:
-            embed_data = json.loads(response.content)
-        except:
-            pass
-        else:
-            if not plugins.privileges.PrivCheck("admin")(ctx):
-                raise util.discord.UserError("Creating factoids with embeds is only available for admins")
-            try:
-                embed = discord.Embed.from_dict(embed_data)
-            except Exception as exc:
-                raise util.discord.InvocationError("Could not parse embed data: {!r}".format(exc))
+            embed = discord.Embed.from_dict(embed_data)
+        except Exception as exc:
+            raise util.discord.InvocationError("Could not parse embed data: {!r}".format(exc))
 
-            prompt = await ctx.channel.send("Embed preview:", embed=embed)
-            if not await plugins.reactions.get_reaction(prompt, ctx.author, {"\u2705": True, "\u274C": False}):
-                await ctx.send("Cancelled.")
-                return
+        prompt = await ctx.channel.send("Embed preview:", embed=embed)
+        if not await plugins.reactions.get_reaction(prompt, ctx.author, {"\u2705": True, "\u274C": False}):
+            await ctx.send("Cancelled.")
+            return None
+        return embed
+    return response.content
 
-        session.add(Factoid(
-            name=name,
-            message_text=response.content if embed is None else None,
-            embed_data=embed.to_dict() if embed is not None else None, # type: ignore
-            author_id=ctx.author.id,
-            created_at=datetime.datetime.utcnow(),
-            uses=factoid.uses if factoid is not None else 0))
-        await session.commit()
-        if update:
-            await ctx.send(util.discord.format("Factoid updated, use with {!i}", conf.prefix + name))
-        else:
-            await ctx.send(util.discord.format("Factoid created, use with {!i}", conf.prefix + name))
+def validate_name(name: str) -> str:
+    name = " ".join(name.split()).lower()
+    if len(name) == 0:
+        raise util.discord.InvocationError("Factoid name must be nonempty")
+    else:
+        return name
