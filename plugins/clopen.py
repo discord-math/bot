@@ -149,9 +149,11 @@ def request_rename(chan: discord.TextChannel, name: str) -> None:
             last_rename[chan.id] = time.time()
     rename_tasks[chan.id] = asyncio.create_task(do_rename(chan, name))
 
-async def insert_chan(cat: discord.CategoryChannel, chan: discord.TextChannel) -> None:
+async def insert_chan(cat_id: int, chan: discord.TextChannel) -> None:
     channels = conf.channels
     assert chan.id in channels
+    cat = await discord_client.client.fetch_channel(cat_id)
+    assert isinstance(cat, discord.CategoryChannel)
     max_chan = None
     for other in cat.channels:
         if other.id in channels and channels.index(other.id) >= channels.index(chan.id):
@@ -160,18 +162,9 @@ async def insert_chan(cat: discord.CategoryChannel, chan: discord.TextChannel) -
     def index_or(id: int) -> str:
         return str(channels.index(id)) if id in channels else "???"
     if max_chan is None:
-        logger.debug("Moving #{} -> [{}], beginning".format(index_or(chan.id),
-            ",".join("{}:#{}".format(ch.position, index_or(ch.id)) for ch in cat.channels)))
         await chan.move(category=cat, sync_permissions=True, beginning=True)
-        logger.debug("Moved [{}]".format(
-            ",".join("{}:#{}".format(ch.position, index_or(ch.id)) for ch in cat.channels)))
     else:
-        logger.debug("Moving #{} -> [{}], after #{}".format(index_or(chan.id),
-            ",".join("{}:#{}".format(ch.position, index_or(ch.id)) for ch in cat.channels),
-            index_or(max_chan.id)))
         await chan.move(category=cat, sync_permissions=True, after=max_chan)
-        logger.debug("Moved [{}]".format(
-            ",".join("{}:#{}".format(ch.position, index_or(ch.id)) for ch in cat.channels)))
 
 async def occupy(id: int, msg_id: int, author: Union[discord.User, discord.Member]) -> None:
     logger.debug("Occupying {}, author {}, OP {}".format(id, author.id, msg_id))
@@ -193,9 +186,7 @@ async def occupy(id: int, msg_id: int, author: Union[discord.User, discord.Membe
     except (discord.NotFound, discord.Forbidden):
         pass
     try:
-        cat = discord_client.client.get_channel(conf.used_category)
-        assert isinstance(cat, discord.CategoryChannel)
-        await insert_chan(cat, channel)
+        await insert_chan(conf.used_category, channel)
         prefix = channel.name.split("\uFF5C", 1)[0]
         request_rename(channel, prefix + "\uFF5C" + author.display_name)
     except discord.Forbidden:
@@ -248,9 +239,7 @@ async def make_available(id: int) -> None:
     conf[id, "state"] = "available"
     conf[id, "expiry"] = None
     try:
-        cat = discord_client.client.get_channel(conf.available_category)
-        assert isinstance(cat, discord.CategoryChannel)
-        await insert_chan(cat, channel)
+        await insert_chan(conf.available_category, channel)
         prefix = channel.name.split("\uFF5C", 1)[0]
         request_rename(channel, prefix)
     except discord.Forbidden:
@@ -268,9 +257,7 @@ async def make_hidden(id: int) -> None:
     conf[id, "expiry"] = None
     conf[id, "prompt_id"] = None
     try:
-        cat = discord_client.client.get_channel(conf.hidden_category)
-        assert isinstance(cat, discord.CategoryChannel)
-        await insert_chan(cat, channel)
+        await insert_chan(conf.hidden_category, channel)
         prefix = channel.name.split("\uFF5C", 1)[0]
         request_rename(channel, prefix)
     except discord.Forbidden:
@@ -347,9 +334,7 @@ async def reopen(id: int) -> None:
     except (discord.NotFound, discord.Forbidden):
         pass
     try:
-        cat = discord_client.client.get_channel(conf.used_category)
-        assert isinstance(cat, discord.CategoryChannel)
-        await insert_chan(cat, channel)
+        await insert_chan(conf.used_category, channel)
         prefix = channel.name.split("\uFF5C", 1)[0]
         author = await channel.guild.fetch_member(owner)
         request_rename(channel, prefix + "\uFF5C" + author.display_name)
