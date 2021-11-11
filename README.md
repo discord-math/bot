@@ -134,6 +134,13 @@ Config:
 - ``config plugins.tickets prompt_interval <interval>`` -- if a moderator doesn't reply to a prompt for a comment, after how long (in seconds) should they be reminded?
 - ``config plugins.tickets audit_log_precision <float>`` -- in large guilds the audit log may lag behind, causing the bot to only realize much later that an action has had been taken. This is a delay (in seconds) to compensate.
 
+### `persistence`
+
+Remember members' roles when they leave the guild and rejoin.
+
+Config:
+- ``config plugins.persistence roles `[<role id>, ...]` `` -- list of roles to remember.
+
 ### `modmail`
 
 Run a mod-mail system. A separate bot user is spun up listening for DM's. Upon receiving a DM, the bot forwards it to a staff channel, and confirms delivery to the user by reacting under the message. When staff reply to the modmail, the reply is forwarded back to the user. The staff is prompted for whether the reply should be anonymous or not.
