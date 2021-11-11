@@ -534,7 +534,7 @@ async def process_ready(last_msgs: Dict[int, int], thread_last_msgs: Dict[int, D
 
         stmt = sqlalchemy.select(Channel)
         have_chans = set()
-        for chan in (await session.execute(stmt)).scalars():
+        for chan, in await session.execute(stmt):
             have_chans.add(chan.id)
             if chan.reachable:
                 if chan.id not in last_msgs:
@@ -564,7 +564,7 @@ async def process_ready(last_msgs: Dict[int, int], thread_last_msgs: Dict[int, D
         stmt = (sqlalchemy.select(ChannelState)
             .join(ChannelState.channel)
             .where(Channel.reachable, ChannelState.subscriber.in_(fetch_map.keys())))
-        states = [state for state in (await session.execute(stmt)).scalars() if state.channel_id in last_msgs]
+        states = [state for state, in await session.execute(stmt) if state.channel_id in last_msgs]
 
         min_last_msgs: Dict[int, int] = {}
         for state in states:
@@ -625,7 +625,7 @@ async def process_thread_unarchival(thread: discord.Thread, ts: datetime.datetim
         # include unreachable and unsubscribed just in case
         stmt = (sqlalchemy.select(ChannelState)
             .where(ChannelState.channel_id == thread.parent_id, ts < ChannelState.earliest_thread_archive_ts))
-        for state in (await session.execute(stmt)).scalars():
+        for state, in await session.execute(stmt):
             before = discord.utils.time_snowflake(thread.archive_timestamp + datetime.timedelta(milliseconds=1))
             logger.debug("Requesting unarchived thread {} in {} for {!r} up to {}".format(thread.id,
                 state.channel_id, state.subscriber, before))
@@ -756,7 +756,7 @@ async def process_subscription(subscriber: str, event_dict: Dict[str, Callback],
             .join(ChannelState.channel)
             .where(ChannelState.subscriber == subscriber))
         have_chans = set()
-        for state in (await session.execute(stmt)).scalars():
+        for state, in await session.execute(stmt):
             if state.channel_id in last_msgs:
                 have_chans.add(state.channel_id)
         for channel_id in last_msgs:

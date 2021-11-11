@@ -994,7 +994,7 @@ async def expire_tickets() -> None:
                 min_expiry = None
                 now = datetime.datetime.utcnow()
                 stmt = sqlalchemy.select(Ticket).where(Ticket.status == TicketStatus.IN_EFFECT, Ticket.duration != None)
-                for ticket in (await session.execute(stmt)).scalars():
+                for ticket, in await session.execute(stmt):
                     if (expiry := ticket.expiry) is None:
                         continue
                     if expiry <= now:
@@ -1118,19 +1118,19 @@ async def resolve_ticket(ref: Optional[discord.MessageReference],
             return ticket
         else:
             stmt = sqlalchemy.select(Ticket).where(Ticket.list_msgid == ticket_arg)
-            ticket = cast(Optional[Ticket], (await session.execute(stmt)).scalars().first())
+            ticket = cast(Optional[Ticket], (await session.execute(stmt)).scalar())
             if ticket is None:
                 raise util.discord.InvocationError("Message ID {} is not referring to a ticket".format(ticket_arg))
             return ticket
     elif isinstance(ticket_arg, discord.PartialMessage):
         stmt = sqlalchemy.select(Ticket).where(Ticket.list_msgid == ticket_arg.id)
-        ticket = cast(Optional[Ticket], (await session.execute(stmt)).scalars().first())
+        ticket = cast(Optional[Ticket], (await session.execute(stmt)).scalar())
         if ticket is None:
             raise util.discord.InvocationError("Message ID {} is not referring to a ticket".format(ticket_arg.id))
         return ticket
     elif ref is not None:
         stmt = sqlalchemy.select(Ticket).where(Ticket.list_msgid == ref.message_id)
-        ticket = cast(Optional[Ticket], (await session.execute(stmt)).scalars().first())
+        ticket = cast(Optional[Ticket], (await session.execute(stmt)).scalar())
         if ticket is None:
             raise util.discord.InvocationError("Message ID {} is not referring to a ticket".format(ref.message_id))
         return ticket
@@ -1506,7 +1506,7 @@ async def find_notes_prefix(session: sqlalchemy.ext.asyncio.AsyncSession, prefix
     ) -> List[NoteTicket]:
     stmt = sqlalchemy.select(NoteTicket).where(NoteTicket.modid == modid, NoteTicket.targetid == targetid,
         NoteTicket.comment.startswith(prefix)).order_by(NoteTicket.id)
-    return list((await session.execute(stmt)).scalars())
+    return (await session.execute(stmt)).scalars().all()
 
 async def create_note(session: sqlalchemy.ext.asyncio.AsyncSession, note: str, *, modid: int, targetid: int
     ) -> NoteTicket:
