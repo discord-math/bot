@@ -160,9 +160,9 @@ Additionally, if the message contains a link to a known phishing domain, the use
 
 Commands:
 - `automod list` -- list all the patterns currently searched for.
-- `automod add substring <substring>` -- add a substring keyword. The substring will be case-insensitively matched anywhere inside a message.
-- `automod add word <word>` -- add a word keyword. The word will be case-insensitively matched against whole words in a message.
-- `automod add regex <regex>` -- add a regex keyword. The regex is python flavor, case insensitive by default.
+- `automod add substring <substring>...` -- add a keyword with one or more substrings. The substrings will be case-insensitively matched anywhere inside a message.
+- `automod add word <word>...` -- add a keyword with one or more words. The words will be case-insensitively matched against whole words in a message.
+- `automod add regex <regex>...` -- add a keyword with one or more regexes. The regexes are python flavor, case insensitive by default.
 - `automod remove <id>` -- remove a pattern with given ID.
 - `automod action <id> <delete|note|mute|kick|ban>` -- set the action for the pattern with the given ID. Note creates a "note" ticket for the user, summarizing the patterns they matched.
 - `automod exempt` -- list roles that are exempt from punishment.
