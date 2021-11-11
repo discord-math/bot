@@ -21,14 +21,14 @@ class AutomodConf(Protocol, Awaitable[None]):
     exempt_roles: util.frozen_list.FrozenList[int]
 
     @overload
-    def __getitem__(self, k: Tuple[int, Literal["keyword"]]) -> Optional[str]: ...
+    def __getitem__(self, k: Tuple[int, Literal["keyword"]]) -> Optional[util.frozen_list.FrozenList[str]]: ...
     @overload
     def __getitem__(self, k: Tuple[int, Literal["type"]]) -> Optional[Literal["substring", "word", "regex"]]: ...
     @overload
     def __getitem__(self, k: Tuple[int, Literal["action"]]
         ) -> Optional[Literal["delete", "note", "mute", "kick", "ban"]]: ...
     @overload
-    def __setitem__(self, k: Tuple[int, Literal["keyword"]], v: Optional[str]) -> None: ...
+    def __setitem__(self, k: Tuple[int, Literal["keyword"]], v: Optional[util.frozen_list.FrozenList[str]]) -> None: ...
     @overload
     def __setitem__(self, k: Tuple[int, Literal["type"]], v: Optional[Literal["substring", "word", "regex"]]
         ) -> None: ...
@@ -40,19 +40,21 @@ logger = logging.getLogger(__name__)
 
 conf: AutomodConf
 
+def to_regex(kind: Literal["substring", "word", "regex"], keyword: str) -> str:
+    if kind == "substring":
+        return re.escape(keyword)
+    elif kind == "word":
+        return r"\b{}\b".format(re.escape(keyword))
+    else:
+        return r"(?:{})".format(keyword)
+
 regex: re.Pattern[str]
 def generate_regex() -> None:
     global regex
     parts = []
     for i in conf.active:
-        if (keyword := conf[i, "keyword"]) is not None:
-            kind = conf[i, "type"]
-            if kind == "substring":
-                parts.append(r"(?P<_{}>{})".format(i, re.escape(keyword)))
-            elif kind == "word":
-                parts.append(r"(?P<_{}>\b{}\b)".format(i, re.escape(keyword)))
-            elif kind == "regex":
-                parts.append(r"(?P<_{}>{})".format(i, keyword))
+        if (keywords := conf[i, "keyword"]) is not None and (kind := conf[i, "type"]) is not None:
+            parts.append(r"(?P<_{}>{})".format(i, r"|".join(to_regex(kind, keyword) for keyword in keywords)))
     if len(parts) > 0:
         regex = re.compile("|".join(parts), re.I)
     else:
@@ -171,6 +173,10 @@ async def init() -> None:
     if conf.index is None: conf.index = 1
     if conf.active is None: conf.active = util.frozen_list.FrozenList()
     if conf.exempt_roles is None: conf.exempt_roles = util.frozen_list.FrozenList()
+    for i in range(conf.index):
+        if isinstance(keyword := conf[i, "keyword"], str):
+            conf[i, "keyword"] = util.frozen_list.FrozenList((keyword,))
+
     await conf
     generate_regex()
     await plugins.message_tracker.subscribe(__name__, None, process_messages, missing=True, retroactive=False)
@@ -212,7 +218,7 @@ async def automod_exempt_add(ctx: discord.ext.commands.Context, role: util.disco
 async def automod_exempt_remove(ctx: discord.ext.commands.Context, role: util.discord.PartialRoleConverter) -> None:
     """Make a role not exempt from automod."""
     roles = set(conf.exempt_roles)
-    roles.remove(role.id)
+    roles.discard(role.id)
     conf.exempt_roles = util.frozen_list.FrozenList(roles)
     await conf
     await ctx.send(util.discord.format("{!M} is no longer exempt from automod", role),
@@ -223,9 +229,10 @@ async def automod_list(ctx: discord.ext.commands.Context) -> None:
     """List all automod patterns (CW)."""
     output = "**Automod patterns**:\n"
     for i in conf.active:
-        if (keyword := conf[i, "keyword"]) is not None and (kind := conf[i, "type"]) is not None and (
+        if (keywords := conf[i, "keyword"]) is not None and (kind := conf[i, "type"]) is not None and (
             action := conf[i, "action"]) is not None:
-            text = util.discord.format("**{}**: {} ||{!i}|| -> {}\n", i, kind, keyword, action)
+            text = "**{}**: {} {} -> {}\n".format(i, kind,
+                ", ".join(util.discord.format("||{!i}||", keyword) for keyword in keywords), action)
 
             if len(output) + len(text) > 2000:
                 if len(output) > 0:
@@ -237,36 +244,41 @@ async def automod_list(ctx: discord.ext.commands.Context) -> None:
         await ctx.send(output)
 
 @automod_command.command("add")
-async def automod_add(ctx: discord.ext.commands.Context, kind: Literal["substring", "word", "regex"], *,
-    pattern: Union[util.discord.CodeBlock, util.discord.Inline, str]) -> None:
+async def automod_add(ctx: discord.ext.commands.Context, kind: Literal["substring", "word", "regex"],
+    patterns: discord.ext.commands.Greedy[Union[util.discord.CodeBlock, util.discord.Inline, str]]) -> None:
     """
-        Add an automod pattern.
-        "substring" means the pattern will be matched anywhere in a message;
-        "word" means the pattern has to match a separate word;
-        "regex" means the pattern is a case-insensitive regex (use (?-i) to enable case sensitivity)
+        Add an automod pattern with one or more keywords.
+        "substring" means the patterns will be matched anywhere in a message;
+        "word" means the patterns have to match a separate word;
+        "regex" means the patterns are case-insensitive regexes (use (?-i) to enable case sensitivity)
     """
     await ctx.message.delete()
     ctx.send = ctx.channel.send # type: ignore # Undoing the effect of cleanup
-    if isinstance(pattern, (util.discord.CodeBlock, util.discord.Inline)):
-        pattern = pattern.text
-    if kind == "regex":
-        try:
-            regex = re.compile(pattern)
-        except Exception as exc:
-            raise util.discord.UserError("Could not compile regex: {}".format(exc))
-        if regex.search("") is not None:
-            raise util.discord.UserError("Regex matches empty string, that's probably not good")
-    else:
-        if pattern == "":
-            raise util.discord.UserError("The pattern is empty, that's probably not good")
+    if len(patterns) == 0:
+        raise util.discord.InvocationError("Provide at least one pattern")
+    keywords: List[str] = []
+    for pattern in patterns:
+        if isinstance(pattern, (util.discord.CodeBlock, util.discord.Inline)):
+            pattern = pattern.text
+        if kind == "regex":
+            try:
+                regex = re.compile(pattern)
+            except Exception as exc:
+                raise util.discord.UserError("Could not compile regex: {}".format(exc))
+            if regex.search("") is not None:
+                raise util.discord.UserError("Regex matches empty string, that's probably not good")
+        else:
+            if pattern == "":
+                raise util.discord.UserError("The pattern is empty, that's probably not good")
+        keywords.append(pattern)
 
     for i in range(conf.index):
-        if conf[i, "keyword"] == pattern and conf[i, "type"] == kind and conf[i, "action"] == None:
+        if conf[i, "keyword"] == keywords and conf[i, "type"] == kind and conf[i, "action"] == None:
             break
     else:
         i = conf.index
         conf.index += 1
-        conf[i, "keyword"] = pattern
+        conf[i, "keyword"] = util.frozen_list.FrozenList(keywords)
         conf[i, "type"] = kind
         conf[i, "action"] = None
         await conf
@@ -275,15 +287,16 @@ async def automod_add(ctx: discord.ext.commands.Context, kind: Literal["substrin
 @automod_command.command("remove")
 async def automod_remove(ctx: discord.ext.commands.Context, number: int) -> None:
     """Remove an automod pattern by ID."""
-    if (keyword := conf[number, "keyword"]) is not None and (kind := conf[number, "type"]) is not None:
+    if (keywords := conf[number, "keyword"]) is not None and (kind := conf[number, "type"]) is not None:
         conf[number, "action"] = None
     active = set(conf.active)
-    active.remove(number)
+    active.discard(number)
     conf.active = util.frozen_list.FrozenList(active)
     await conf
     generate_regex()
-    if keyword is not None and kind is not None:
-        await ctx.send(util.discord.format("Removed {} ||{!i}||", kind, keyword))
+    if keywords is not None and kind is not None:
+        await ctx.send("Removed {} {}".format(kind,
+            ", ".join(util.discord.format("||{!i}||", keyword) for keyword in keywords)))
     else:
         await ctx.send("No such pattern")
 
