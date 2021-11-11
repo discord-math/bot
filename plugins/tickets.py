@@ -28,6 +28,7 @@ import plugins.commands
 import plugins.reactions
 import plugins.privileges
 import plugins.cogs
+import plugins.persistence
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -823,7 +824,7 @@ class AddRoleTicket(Ticket):
         try:
             member = await guild.fetch_member(self.targetid)
         except discord.NotFound:
-            # User is no longer in the guild, nothing to do
+            await plugins.persistence.drop_persistent_role(user_id=self.targetid, role_id=self.roleid)
             return
         await member.remove_roles(role, reason=reason)
 
