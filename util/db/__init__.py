@@ -30,7 +30,8 @@ async def connection() -> AsyncIterator[LoggingConnection]:
 def create_async_engine(connect_args: Dict[str, Any] = {}, **kwargs: Any) -> sqlalchemy.ext.asyncio.AsyncEngine:
     args = connect_args.copy()
     args.setdefault("connection_class", LoggingConnection)
-    return sqlalchemy.ext.asyncio.create_async_engine(async_connection_uri, connect_args=args, **kwargs)
+    return sqlalchemy.ext.asyncio.create_async_engine(async_connection_uri,
+        pool_pre_ping=True, connect_args=args, **kwargs)
 
 from util.db.initialization import init as init, init_for as init_for
 
