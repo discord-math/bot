@@ -149,18 +149,17 @@ def request_rename(chan: discord.TextChannel, name: str) -> None:
             last_rename[chan.id] = time.time()
     rename_tasks[chan.id] = asyncio.create_task(do_rename(chan, name))
 
-async def insert_chan(cat_id: int, chan: discord.TextChannel) -> None:
+async def insert_chan(cat_id: int, chan: discord.TextChannel, *, beginning: bool = False) -> None:
     channels = conf.channels
     assert chan.id in channels
     cat = await discord_client.client.fetch_channel(cat_id)
     assert isinstance(cat, discord.CategoryChannel)
     max_chan = None
-    for other in cat.channels:
-        if other.id in channels and channels.index(other.id) >= channels.index(chan.id):
-            break
-        max_chan = other
-    def index_or(id: int) -> str:
-        return str(channels.index(id)) if id in channels else "???"
+    if not beginning:
+        for other in cat.channels:
+            if other.id in channels and channels.index(other.id) >= channels.index(chan.id):
+                break
+            max_chan = other
     if max_chan is None:
         await chan.move(category=cat, sync_permissions=True, beginning=True)
     else:
@@ -186,7 +185,7 @@ async def occupy(id: int, msg_id: int, author: Union[discord.User, discord.Membe
     except (discord.NotFound, discord.Forbidden):
         pass
     try:
-        await insert_chan(conf.used_category, channel)
+        await insert_chan(conf.used_category, channel, beginning=True)
         prefix = channel.name.split("\uFF5C", 1)[0]
         request_rename(channel, prefix + "\uFF5C" + author.display_name)
     except discord.Forbidden:
@@ -334,7 +333,7 @@ async def reopen(id: int) -> None:
     except (discord.NotFound, discord.Forbidden):
         pass
     try:
-        await insert_chan(conf.used_category, channel)
+        await insert_chan(conf.used_category, channel, beginning=True)
         prefix = channel.name.split("\uFF5C", 1)[0]
         author = await channel.guild.fetch_member(owner)
         request_rename(channel, prefix + "\uFF5C" + author.display_name)
