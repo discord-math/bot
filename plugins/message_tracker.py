@@ -605,7 +605,7 @@ async def process_ready(last_msgs: Dict[int, int], thread_last_msgs: Dict[int, D
                     logger.debug("Requesting archived thread {} in {} for {!r} from {} to {}".format(thread.id,
                         state.channel_id, state.subscriber, state.last_message_id, before))
                     session.add(ThreadRequest(
-                        thread_id=thread_id, channel_id=state.channel_id, subscriber=state.subscriber,
+                        thread_id=thread.id, channel_id=state.channel_id, subscriber=state.subscriber,
                         after_snowflake=state.last_message_id + 1, before_snowflake=before))
 
             if state.channel_id in thread_last_msgs:
