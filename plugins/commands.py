@@ -48,7 +48,21 @@ class Commands(discord.ext.commands.Cog):
             elif isinstance(exc, discord.ext.commands.CheckFailure):
                 return
             elif isinstance(exc, discord.ext.commands.UserInputError):
-                message = "Error: {}".format(str(exc))
+                if isinstance(exc, discord.ext.commands.BadUnionArgument):
+                    def conv_name(conv: Any) -> Any:
+                        try:
+                            return conv.__name__
+                        except AttributeError:
+                            if hasattr(conv, '__origin__'):
+                                return repr(conv)
+                            return conv.__class__.__name__
+
+                    exc_str = "Could not interpret \"{}\" as:\n{}".format(exc.param.name,
+                        "\n".join("{}: {}".format(conv_name(conv), sub_exc)
+                            for conv, sub_exc in zip(exc.converters, exc.errors)))
+                else:
+                    exc_str = str(exc)
+                message = "Error: {}".format(exc_str)
                 if ctx.command is not None:
                     if getattr(ctx.command, "suppress_usage", False):
                         return
