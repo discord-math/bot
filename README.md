@@ -133,6 +133,7 @@ Config:
 - ``config plugins.tickets ticket_list <channel id>`` -- channel where the log of tickets should be displayed.
 - ``config plugins.tickets prompt_interval <interval>`` -- if a moderator doesn't reply to a prompt for a comment, after how long (in seconds) should they be reminded?
 - ``config plugins.tickets audit_log_precision <float>`` -- in large guilds the audit log may lag behind, causing the bot to only realize much later that an action has had been taken. This is a delay (in seconds) to compensate.
+- ``config plugins.tickets cleanup_delay <float>`` -- if a non-ticket message is posted in the ticket list channel, it will be deleted after this delay.
 
 ### `persistence`
 

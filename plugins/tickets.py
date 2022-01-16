@@ -68,8 +68,11 @@ class TicketsConf(Protocol, Awaitable[None]):
     pending_unmutes: util.frozen_list.FrozenList[int] # List of users peding VC unmute
     pending_undeafens: util.frozen_list.FrozenList[int] # List of users peding VC undeafen
     audit_log_precision: float # How long to allow the audit log to catch up
+    cleanup_delay: Optional[float] # How long to wait before cleaning up junk messages in the ticket list
 
 conf: TicketsConf
+
+cleanup_exempt: Set[int] = set()
 
 @plugins.init
 async def init_conf() -> None:
@@ -417,6 +420,7 @@ class Ticket:
                 if message is None and not self.hidden:
                     message = await channel.send(embed=self.to_embed())
                     self.list_msgid = message.id
+                    cleanup_exempt.add(message.id)
 
         # Run mod ticket update hook
         await self.mod.ticket_updated(self)
@@ -1502,6 +1506,18 @@ class Tickets(discord.ext.commands.Cog):
                     async with Ticket.publish_all(session):
                         await session.commit()
                     await session.commit()
+
+    @discord.ext.commands.Cog.listener("on_message")
+    async def cleanup_message(self, msg: discord.Message) -> None:
+        if conf.cleanup_delay is not None:
+            if msg.channel.id == conf.ticket_list:
+                if msg.id in cleanup_exempt: return
+                await asyncio.sleep(conf.cleanup_delay)
+                if msg.id in cleanup_exempt: return
+                try:
+                    await msg.delete()
+                except (discord.NotFound, discord.Forbidden):
+                    pass
 
 async def find_notes_prefix(session: sqlalchemy.ext.asyncio.AsyncSession, prefix: str, *, modid: int, targetid: int
     ) -> List[NoteTicket]:
