@@ -191,6 +191,8 @@ Config:
 - ``config plugins.clopen min_avail <number>`` -- how many channels minimum should be "available". If not enough channels are available, channels may be unhidden, or new channels may be created.
 - ``config plugins.clopen max_avail <number>`` -- how many channels maximum should be "available". If too many channels are available, some may be hidden.
 - ``config plugins.clopen max_channels <number>`` -- do not create channels past this point.
+- ``config plugins.clopen limit <number>`` -- limit on how many channels can be occupied by a person at once.
+- ``config plugins.clopen limit_role <role id>`` -- role that is assigned when the limit is reached.
 
 ### `factoids`
 

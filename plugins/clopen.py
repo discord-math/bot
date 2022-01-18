@@ -34,6 +34,9 @@ def closed_embed(reason: str, reopen: bool) -> discord.Embed:
         reason += util.discord.format("\n\nUse {!i} if this was a mistake.", plugins.commands.conf.prefix + "reopen")
     return discord.Embed(color=0x000000, title="Channel closed", description=reason)
 
+def limit_embed() -> discord.Embed:
+    return discord.Embed(color=0xB37C42, description="Please don't occupy multiple help channels.")
+
 def prompt_message(mention: int) -> str:
     return util.discord.format("{!m} Has your question been resolved?", mention)
 
@@ -47,6 +50,8 @@ class ClopenConf(Protocol, Awaitable[None]):
     min_avail: int
     max_avail: int
     max_channels: int
+    limit: int
+    limit_role: int
 
     @overload
     def __getitem__(self, k: Tuple[int, Literal["state"]]
@@ -165,6 +170,26 @@ async def insert_chan(cat_id: int, chan: discord.TextChannel, *, beginning: bool
     else:
         await chan.move(category=cat, sync_permissions=True, after=max_chan)
 
+async def update_owner_limit(user_id: int) -> bool:
+    assert isinstance(cat := discord_client.client.get_channel(conf.used_category), discord.abc.GuildChannel)
+    user = cat.guild.get_member(user_id)
+    if user is None:
+        return False
+    role_id = conf.limit_role
+    has_role = any(role.id == role_id for role in user.roles)
+    reached_limit = sum(conf[id, "owner"] == user_id and conf[id, "state"] in ["used", "pending"]
+        for id in conf.channels) >= conf.limit
+    try:
+        if reached_limit and not has_role:
+            logger.debug("Adding limiting role for {}".format(user_id))
+            await user.add_roles(discord.Object(role_id))
+        elif not reached_limit and has_role:
+            logger.debug("Removing limiting role for {}".format(user_id))
+            await user.remove_roles(discord.Object(role_id))
+    except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+        pass
+    return reached_limit
+
 async def occupy(id: int, msg_id: int, author: Union[discord.User, discord.Member]) -> None:
     logger.debug("Occupying {}, author {}, OP {}".format(id, author.id, msg_id))
     assert isinstance(channel := discord_client.client.get_channel(id), discord.TextChannel)
@@ -175,6 +200,7 @@ async def occupy(id: int, msg_id: int, author: Union[discord.User, discord.Membe
     conf[id, "op_id"] = msg_id
     conf[id, "extension"] = 1
     conf[id, "expiry"] = time.time() + conf.owner_timeout
+    reached_limit = await update_owner_limit(author.id)
     try:
         if old_op_id is not None:
             await discord.PartialMessage(channel=channel, id=old_op_id).unpin()
@@ -192,6 +218,8 @@ async def occupy(id: int, msg_id: int, author: Union[discord.User, discord.Membe
         pass
     await conf
     scheduler_updated()
+    if reached_limit:
+        await channel.send(embed=limit_embed(), allowed_mentions=discord.AllowedMentions.none())
 
 async def keep_occupied(id: int, msg_author_id: int) -> None:
     logger.debug("Bumping {} by {}".format(id, msg_author_id))
@@ -212,9 +240,12 @@ async def close(id: int, reason: str, *, reopen: bool = True) -> None:
     now = time.time()
     conf[id, "expiry"] = max(now + 60, last_rename.get(id, now) + 600) # channel rename ratelimit
     old_op_id = conf[id, "op_id"]
+    old_owner_id = conf[id, "owner"]
     if not reopen:
         conf[id, "owner"] = None
         conf[id, "op_id"] = None
+    if old_owner_id is not None:
+        await update_owner_limit(old_owner_id)
     try:
         if not reopen and old_op_id is not None:
             await discord.PartialMessage(channel=channel, id=old_op_id).unpin()
@@ -327,6 +358,7 @@ async def reopen(id: int) -> None:
     if extension is None:
         extension = 1
     conf[id, "expiry"] = time.time() + conf.owner_timeout * extension
+    await update_owner_limit(owner)
     try:
         if prompt_id is not None:
             await discord.PartialMessage(channel=channel, id=prompt_id).delete()
