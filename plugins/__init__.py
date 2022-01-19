@@ -22,7 +22,6 @@ from typing import Any, List, Dict, Set, Optional, Union, Callable, Iterator, Aw
 import util.digraph
 
 # Allow importing plugins from other directories on the path
-__path__: List[str]
 __path__  = pkgutil.extend_path(__path__, __name__)
 
 # We don't manipulate the dependency graph/module table concurrently, so this lock is taken in all public entry points
