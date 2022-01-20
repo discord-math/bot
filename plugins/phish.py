@@ -38,7 +38,7 @@ local_blacklist: Set[str] = set()
 local_whitelist: Set[str] = set()
 
 async def watch_websocket() -> None:
-    global domains
+    global domains, local_blacklist, local_whitelist
     while True:
         try:
             ws = await session.ws_connect(conf.api + "/feed", headers={"X-Identity": conf.identity})
