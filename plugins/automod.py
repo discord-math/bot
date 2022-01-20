@@ -105,7 +105,7 @@ async def phish_match(msg: discord.Message, text: str) -> None:
 async def resolve_link(msg: discord.Message, link: str) -> None:
     if (target := await plugins.phish.resolve_link(link)) is not None:
         if (match := URL_regex.match(target)) is not None:
-            if match.group(1) in plugins.phish.domains:
+            if plugins.phish.is_bad_domain(match.group(1)):
                 await phish_match(msg, util.discord.format("{!i} -> {!i}", link, match.group(1)))
 
 async def process_messages(msgs: Iterable[discord.Message]) -> None:
@@ -117,7 +117,7 @@ async def process_messages(msgs: Iterable[discord.Message]) -> None:
             match: Optional[re.Match[str]]
             resolve_links = set()
             for match in URL_regex.finditer(msg.content):
-                if match.group(1).lower() in plugins.phish.domains:
+                if plugins.phish.is_bad_domain(match.group(1).lower()):
                     await phish_match(msg, util.discord.format("{!i}", match.group(1)))
                     break
                 elif plugins.phish.should_resolve_domain(match.group(1)):

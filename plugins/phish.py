@@ -61,6 +61,14 @@ async def watch_websocket() -> None:
 def should_resolve_domain(domain: str) -> bool:
     return domain.lower() in conf.resolve_domains
 
+def is_bad_domain(domain: str) -> bool:
+    if domain in domains:
+        return True
+    if domain.startswith("www."):
+        return domain.removeprefix("www.") in domains
+    else:
+        return ("www." + domain) in domains
+
 async def resolve_link(link: str) -> Optional[str]:
     try:
         logger.debug("Looking up {!r}".format(link))
