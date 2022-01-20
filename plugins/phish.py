@@ -48,17 +48,17 @@ async def watch_websocket() -> None:
                     if msg.type == aiohttp.WSMsgType.TEXT:
                         logger.debug("Got payload: {}".format(msg.data))
                         payload = json.loads(msg.data)
-                        domains = set(payload["domains"])
+                        new_domains = set(payload["domains"])
                         update_conf = False
                         if payload["type"] == "add":
-                            domains |= domains
-                            if local_blacklist & domains:
-                                local_blacklist -= domains
+                            domains |= new_domains
+                            if local_blacklist & new_domains:
+                                local_blacklist -= new_domains
                                 update_conf = True
                         elif payload["type"] == "delete":
-                            domains -= domains
-                            if local_whitelist & domains:
-                                local_whitelist -= domains
+                            domains -= new_domains
+                            if local_whitelist & new_domains:
+                                local_whitelist -= new_domains
                                 update_conf = True
                         if update_conf:
                             conf.local_blacklist = util.frozen_list.FrozenList(local_blacklist)
