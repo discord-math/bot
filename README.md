@@ -253,6 +253,7 @@ Commands:
 
 Manage reminders.
 
+Commands:
 - `remindme <interval> <text>` -- pings you with the given text after the given interval elapses. Intervals can be specified in the same way as for tickets, except multiple units can be chained together, e.g. `10 min 15 sec`.
 - `remind <interval> <text>` -- synonym for the above.
 - `reminder` -- list active reminders.
@@ -275,6 +276,14 @@ Config:
 - ``config plugins.talksrole channel <channel id>`` -- the channel.
 - ``config plugins.talksrole role <role id>`` -- the role.
 - ``config plugins.talksrole regex `"<regex>"` `` -- the regex for the keyword.
+
+### `bulk_perms`
+
+Edit permissions in bulk, by exporting them into a CSV file and then importing back.
+
+Commands:
+- `exportperms` -- sends a CSV file with all the permission settings in the current guild.
+- `importperms` -- you have to attach a CSV file in the same format as provided by `exportperms`, and the bot will load permissions from the CSV file. Channels not mentioned in the CSV file are unaffected.
 
 ### Miscellaneous Configuration
 - ``config plugins.commands prefix `"<prefix>"` `` -- set the prefix for the bot's "ordinary" commands.
