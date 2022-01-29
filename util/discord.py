@@ -139,9 +139,7 @@ class Formatter(string.Formatter):
             elif isinstance(value, int):
                 return "<@&{}>".format(value)
         elif conversion == "c":
-            if isinstance(value, discord.TextChannel):
-                return "<#{}>".format(value.id)
-            elif isinstance(value, discord.CategoryChannel):
+            if isinstance(value, discord.abc.GuildChannel):
                 return "<#{}>".format(value.id)
             elif isinstance(value, int):
                 return "<#{}>".format(value)

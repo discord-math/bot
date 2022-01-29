@@ -18,11 +18,10 @@ class FilteredQueue(asyncio.Queue[T], Generic[T]):
 
     __slots__ = "filter"
 
-    def __init__(self, maxsize: int = 0, *, loop: Optional[asyncio.AbstractEventLoop] = None,
-        filter: Optional[Callable[[T], bool]] = None):
+    def __init__(self, maxsize: int = 0, *, filter: Optional[Callable[[T], bool]] = None):
         self.filter: Callable[[T], bool]
         self.filter = filter if filter is not None else lambda _: True
-        return super().__init__(maxsize, loop=loop)
+        return super().__init__(maxsize)
 
     async def put(self, value: T) -> None:
         if self.filter(value):
@@ -108,7 +107,7 @@ class ReactionMonitor(ContextManager['ReactionMonitor[T]'], Generic[T]):
 
         def queue_filter(value: Union[BaseException, Tuple[str, ReactionEvent]]) -> bool:
             return isinstance(value, BaseException) or event_filter(*value)
-        self.queue = FilteredQueue(maxsize=0, loop=self.loop, filter=queue_filter)
+        self.queue = FilteredQueue(maxsize=0, filter=queue_filter)
 
     def __enter__(self) -> ReactionMonitor[T]:
         reaction_queues.add(self.queue)
