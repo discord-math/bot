@@ -25,6 +25,13 @@ def overwrite_sort_key(pair: Tuple[Union[discord.Role, discord.Member], discord.
     else:
         return -1
 
+def disambiguated_name(channel: discord.abc.GuildChannel) -> str:
+    chans: List[discord.abc.GuildChannel] = [chan for chan in channel.guild.channels if chan.name == channel.name]
+    if len(chans) < 2:
+        return channel.name
+    chans.sort(key=lambda chan: chan.id)
+    return "{} ({})".format(channel.name, 1 + chans.index(channel))
+
 @plugins.privileges.priv("mod")
 @plugins.commands.command("exportperms")
 async def exportperms(ctx: discord.ext.commands.Context) -> None:
@@ -41,9 +48,10 @@ async def exportperms(ctx: discord.ext.commands.Context) -> None:
 
     for channel in sorted(ctx.guild.channels, key=channel_sort_key):
         if isinstance(channel, discord.CategoryChannel):
-            header = [channel.name, ""]
+            header = [disambiguated_name(channel), ""]
         else:
-            header = [channel.category.name if channel.category is not None else "", channel.name]
+            header = [disambiguated_name(channel.category) if channel.category is not None else "",
+                disambiguated_name(channel)]
         writer.writerow(header + ["(synced)" if channel.permissions_synced else ""])
         if channel.permissions_synced: continue
         for target, overwrite in sorted(channel.overwrites.items(), key=overwrite_sort_key):
@@ -84,7 +92,7 @@ async def importperms(ctx: discord.ext.commands.Context) -> None:
     file = io.StringIO((await ctx.message.attachments[0].read()).decode())
     reader = csv.reader(file)
 
-    channels = {channel.name: channel for channel in ctx.guild.channels}
+    channels = {disambiguated_name(channel): channel for channel in ctx.guild.channels}
     roles = {role.name: role for role in ctx.guild.roles}
 
     header = next(reader)
