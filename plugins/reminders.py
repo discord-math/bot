@@ -110,6 +110,7 @@ async def handle_reminder(user_id: int, reminder: Reminder) -> None:
     reminders = reminders_optional.copy()
     reminders.remove(reminder)
     conf[user_id] = FrozenList(reminders)
+    await conf
 
 expiration_updated = asyncio.Semaphore(value=0)
 
@@ -177,6 +178,7 @@ async def remindme_command(ctx: discord.ext.commands.Context, interval: Duration
     reminders.append(reminder)
     reminders.sort(key=lambda a: a["time"])
     conf[ctx.author.id] = FrozenList(reminders)
+    await conf
     expiration_updated.release()
 
     await ctx.send("Created reminder {}".format(format_reminder(reminder))[:2000],
@@ -212,6 +214,7 @@ async def reminder_remove(ctx: discord.ext.commands.Context, index: int) -> None
     reminder = reminders[index - 1]
     del reminders[index - 1]
     conf[ctx.author.id] = FrozenList(reminders)
+    await conf
     expiration_updated.release()
     await ctx.send("Removed reminder {}".format(format_reminder(reminder))[:2000],
         allowed_mentions=discord.AllowedMentions.none())
