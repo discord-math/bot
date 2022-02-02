@@ -45,7 +45,7 @@ class LocContext(discord.ext.commands.Context):
     loc: str
 
 @plugins.commands.cleanup
-@plugins.commands.command("location", cls=discord.ext.commands.Group)
+@plugins.commands.group("location")
 @plugins.privileges.priv("shell")
 async def location_command(ctx: discord.ext.commands.Context) -> None:
     """Manage locations where a command can be invoked."""

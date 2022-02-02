@@ -104,7 +104,7 @@ async def reloadmod_command(ctx: discord.ext.commands.Context, module: str) -> N
         await ctx.send("\u2705")
 
 @plugins.commands.cleanup
-@plugins.commands.command("autoload", cls=discord.ext.commands.Group, invoke_without_command=True)
+@plugins.commands.group("autoload", invoke_without_command=True)
 @plugins.privileges.priv("admin")
 async def autoload_command(ctx: discord.ext.commands.Context) -> None:
     """Manage plugins loaded at startup."""

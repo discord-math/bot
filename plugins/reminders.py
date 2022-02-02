@@ -185,8 +185,7 @@ async def remindme_command(ctx: discord.ext.commands.Context, interval: Duration
         allowed_mentions=discord.AllowedMentions.none())
 
 @plugins.commands.cleanup
-@plugins.commands.command("reminder", aliases=["reminders"], cls=discord.ext.commands.Group,
-    invoke_without_command=True)
+@plugins.commands.group("reminder", aliases=["reminders"], invoke_without_command=True)
 @plugins.privileges.priv("remind")
 async def reminder_command(ctx: discord.ext.commands.Context) -> None:
     """Display your reminders."""

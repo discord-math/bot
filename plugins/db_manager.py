@@ -13,7 +13,7 @@ import util.db.kv
 import util.asyncio
 
 @plugins.commands.cleanup
-@plugins.commands.command("config", cls=discord.ext.commands.Group, invoke_without_command=True)
+@plugins.commands.group("config", invoke_without_command=True)
 @plugins.privileges.priv("shell")
 async def config_command(ctx: discord.ext.commands.Context, namespace: Optional[str], key: Optional[str],
     value: Optional[Union[util.discord.CodeBlock, util.discord.Inline, util.discord.Quoted]]) -> None:

@@ -57,7 +57,7 @@ class PrivContext(discord.ext.commands.Context):
     priv: str
 
 @plugins.commands.cleanup
-@plugins.commands.command("priv", cls=discord.ext.commands.Group)
+@plugins.commands.group("priv")
 @priv("shell")
 async def priv_command(ctx: discord.ext.commands.Context) -> None:
     """Manage privilege sets."""

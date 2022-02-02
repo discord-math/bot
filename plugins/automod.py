@@ -185,7 +185,7 @@ async def init() -> None:
         await plugins.message_tracker.unsubscribe(__name__, None)
 
 @plugins.commands.cleanup
-@plugins.commands.command("automod", cls=discord.ext.commands.Group)
+@plugins.commands.group("automod")
 @plugins.privileges.priv("mod")
 async def automod_command(ctx: discord.ext.commands.Context) -> None:
     """Manage automod."""

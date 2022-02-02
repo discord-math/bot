@@ -118,6 +118,10 @@ def command(name: Optional[str] = None, cls: Any = discord.ext.commands.Command,
         return cmd
     return decorator
 
+def group(name: Optional[str] = None, *args: Any, **kwargs: Any) -> Callable[
+    [Callable[..., Coroutine[Any, Any, None]]], discord.ext.commands.Group]:
+    return command(name, cls=discord.ext.commands.Group, *args, **kwargs) # type: ignore
+
 def suppress_usage(cmd: T) -> T:
     cmd.suppress_usage = True # type: ignore
     return cmd

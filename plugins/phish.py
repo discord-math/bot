@@ -109,7 +109,7 @@ async def resolve_link(link: str) -> Optional[str]:
         pass
     return None
 
-@plugins.commands.command("phish", cls=discord.ext.commands.Group)
+@plugins.commands.group("phish")
 @plugins.privileges.priv("mod")
 async def phish_command(ctx: discord.ext.commands.Context) -> None:
     """Manage the phishing domain list."""
