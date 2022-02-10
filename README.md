@@ -173,6 +173,22 @@ Commands:
 Config:
 - ``config plugins.automod mute_role <role id>`` -- which role to assign for the "mute" action.
 
+### `phish`
+
+As part of automod, maintain a list of known phishing domains.
+
+Commands:
+- `phish check <url or domain>` -- check if the domain appears in the phishing database, or if it is marked locally.
+- `phish add <url or domain>` -- locally mark a domain as malicious, and try to submit it to the phishing database.
+- `phish remove <url or domain>` -- locally mark a domain as safe.
+
+Config:
+- ``config plugins.phish api `"https://.../"` `` -- the API used to obtain the list of phishing domains.
+- ``config plugins.phish identity `"<identity>"` `` -- the identity presented to the API.
+- ``config plugins.phish resolve_domains `["domain.com", ...]` `` -- the list of domains for which we want to resolve redirects (URL shorteners).
+- ``config plugins.phish submit_url `"https://.../"` `` -- the API used to submit new domains.
+- ``config plugins.phish submit_token `"<token>"` `` -- the authorization header for the submission API.
+
 ### `clopen`
 
 Manage an Open/Closed help channels system. Channels can be "available", "occupied", "pending", "closed", or "hidden". If you post in an "available" channel, the bot pins your message and the channel becomes "occupied". As long as there is conversation in the channel, it remains "occupied". If a timeout is reached, you are prompted to close the channel and the channel becomes "pending". If you ignore the prompt, the channel will close automatically. If you decline the prompt, the channel goes back to "occupied", and the timeouts are doubled. Deleting the original post also closes the channel. A "closed" channel will remain in the "occupied" category for a while before moving back into either "occupied" or "hidden".
@@ -287,9 +303,6 @@ Commands:
 
 ### Miscellaneous Configuration
 - ``config plugins.commands prefix `"<prefix>"` `` -- set the prefix for the bot's "ordinary" commands.
-- ``config plugins.phish api `"https://.../"` `` -- the API used to obtain the list of phishing domains.
-- ``config plugins.phish identity `"<identity>"` `` -- the identity presented to the API.
-- ``config plugins.phish resolve_domains `["domain.com", ...]` `` -- the list of domains for which we want to resolve redirects (URL shorteners).
 
 ## Running
 
