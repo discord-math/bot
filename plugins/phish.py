@@ -14,6 +14,8 @@ import plugins.commands
 class PhishConf(Protocol, Awaitable[None]):
     api: str
     identity: str
+    submit_url: str
+    submit_token: str
     resolve_domains: util.frozen_list.FrozenList[str]
     local_blacklist: util.frozen_list.FrozenList[str]
     local_whitelist: util.frozen_list.FrozenList[str]
@@ -24,7 +26,7 @@ session: aiohttp.ClientSession
 ws_task: asyncio.Task[None]
 
 async def get_all_domains() -> List[str]:
-    async with session.request("GET", conf.api + "/v2/all", headers={"X-Identity": conf.identity}) as response:
+    async with session.get(conf.api + "/v2/all", headers={"X-Identity": conf.identity}) as response:
         assert response.status == 200
         assert response.headers["Content-Type"] == "application/json"
         data = json.loads(await response.text())
@@ -32,6 +34,11 @@ async def get_all_domains() -> List[str]:
         for domain in data:
             assert isinstance(domain, str)
         return data
+
+async def submit_link(link: str, reason: str) -> str:
+    payload = {"url": link, "reason": reason}
+    async with session.post(conf.submit_url, headers={"Authorization": conf.submit_token}, json=payload) as response:
+        return await response.text()
 
 domains: Set[str] = set()
 local_blacklist: Set[str] = set()
@@ -101,7 +108,7 @@ def is_bad_domain(domain: str) -> bool:
 async def resolve_link(link: str) -> Optional[str]:
     try:
         logger.debug("Looking up {!r}".format(link))
-        async with plugins.phish.session.request("HEAD", link, allow_redirects=False, timeout=5.0) as response:
+        async with plugins.phish.session.head(link, allow_redirects=False, timeout=5.0) as response:
             logger.debug("Link {!r} got {}, {!r}".format(link, response.status, response.headers.get("location")))
             if response.status in [301, 302] and "location" in response.headers:
                 return response.headers["location"]
@@ -116,7 +123,7 @@ async def phish_command(ctx: discord.ext.commands.Context) -> None:
     pass
 
 def link_to_domain(link: str) -> str:
-    if (match := re.match(r"\s*https?://([^/]*).*", link)) is not None:
+    if (match := re.match(r"\s*(?:https?://?)?([^/]*).*", link)) is not None:
         return match.group(1)
     else:
         return link.strip()
@@ -148,6 +155,7 @@ async def phish_add(ctx: discord.ext.commands.Context, *,
     domain = link_to_domain(link.text)
     checks = domain_checks(domain)
     output = []
+    do_submit = False
     for check in checks:
         if check in local_whitelist:
             local_whitelist.remove(check)
@@ -163,9 +171,18 @@ async def phish_add(ctx: discord.ext.commands.Context, *,
         if not any(check in domains for check in checks):
             local_blacklist.add(domain)
             conf.local_blacklist = util.frozen_list.FrozenList(local_blacklist)
-            output.append(util.discord.format("{!i} is now marked locally as malicious.", domain))
+            output.append(util.discord.format(
+                "{!i} is now marked locally as malicious. Submitting {!i} to the phishing database, "
+                "please input a reason (e.g. \"nitro scam\", \u274C to cancel):", domain, link.text))
+            do_submit = True
     await conf
-    await ctx.send("\n".join(output))
+    msg = await ctx.send("\n".join(output))
+
+    if do_submit:
+        reason = await plugins.reactions.get_input(msg, ctx.author, {"\u274C": None}, timeout=300)
+        if reason is not None:
+            result = await submit_link(link.text, util.discord.format("{!m}: {}", ctx.author, reason.content))
+            await ctx.send(util.discord.format("{!i}", result))
 
 @phish_command.command("remove")
 async def phish_remove(ctx: discord.ext.commands.Context, *,
