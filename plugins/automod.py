@@ -95,6 +95,10 @@ URL_regex: re.Pattern[str] = re.compile(r"https?://([^/]*)/?\S*", re.I)
 
 async def phish_match(msg: discord.Message, text: str) -> None:
     assert msg.guild is not None
+    logger.info("Message {} contains phishing: {}".format(msg.id, text))
+    if isinstance(msg.author, discord.Member):
+        if any(role.id in conf.exempt_roles for role in msg.author.roles):
+            return
     try:
         reason = "Automatic action: found phishing domain: {}".format(text)
         await asyncio.gather(msg.delete(),
