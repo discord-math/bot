@@ -540,6 +540,14 @@ class TicketHistory:
     modified_by: Optional[int] = sqlalchemy.Column(sqlalchemy.BigInteger)
     __table_args__ = (sqlalchemy.PrimaryKeyConstraint(id, version), {"schema": "tickets"})
 
+    @staticmethod
+    async def get(session: sqlalchemy.ext.asyncio.AsyncSession, id: int) -> List[TicketHistory]:
+        """Get history of a ticket by id, in chronological order"""
+        stmt = sqlalchemy.select(TicketHistory).where(TicketHistory.id == id
+            ).order_by(TicketHistory.version)
+        return (await session.execute(stmt)).scalars().all()
+
+
 # Map of audit actions to the associated handler methods.
 create_handlers: Dict[discord.AuditLogAction, List[Callable[[sqlalchemy.ext.asyncio.AsyncSession,
     discord.AuditLogEntry], Awaitable[Sequence[Ticket]]]]] = {}
@@ -1177,7 +1185,7 @@ async def pager(dest: discord.abc.Messageable, pages: List[Page]) -> None:
         raise ValueError("Cannot page with no pages!")
 
     # Send first page
-    msg = await dest.send(**pages[0]._asdict())
+    msg = await dest.send(allowed_mentions=discord.AllowedMentions.none(), **pages[0]._asdict())
 
     if len(pages) == 1:
         return
@@ -1201,10 +1209,10 @@ async def pager(dest: discord.abc.Messageable, pages: List[Page]) -> None:
                 elif str(payload.emoji) == all_reaction:
                     await msg.delete()
                     for page in pages:
-                        await dest.send(**page._asdict())
+                        await dest.send(allowed_mentions=discord.AllowedMentions.none(), **page._asdict())
                     break
                 index %= len(pages)
-                await msg.edit(**pages[index]._asdict())
+                await msg.edit(allowed_mentions=discord.AllowedMentions.none(), **pages[index]._asdict())
                 try:
                     await msg.remove_reaction(payload.emoji, discord.Object(payload.user_id))
                 except discord.HTTPException:
@@ -1452,6 +1460,54 @@ class Tickets(discord.ext.commands.Cog):
                     await pager(ctx, [Page(embed=embed) for embed in embeds])
                 else:
                     await ctx.send("No hidden tickets found for this user.")
+
+    @plugins.commands.cleanup
+    @ticket_command.command("history")
+    async def ticket_history(self, ctx: discord.ext.commands.Context, *,
+        ticket: Optional[Union[discord.PartialMessage, int]]) -> None:
+        """Show revision history for a ticket."""
+        async with sessionmaker() as session:
+            tkt = await resolve_ticket(ctx.message.reference, ticket, session)
+
+            pages = []
+            page = ""
+            for history in await TicketHistory.get(session, tkt.id):
+                row = []
+                if history.last_modified_at is not None:
+                    timestamp = int(history.last_modified_at.replace(tzinfo=datetime.timezone.utc).timestamp())
+                    row.append("<t:{}:f>, <t:{}:R>".format(timestamp, timestamp))
+                if history.modified_by is not None:
+                    row.append(util.discord.format("by {!m}", history.modified_by))
+                if history.type is not None:
+                    row.append(history.type.value)
+                if history.stage is not None:
+                    row.append(history.stage.value)
+                if history.status is not None:
+                    row.append(history.status.value)
+                if history.modid is not None:
+                    row.append(util.discord.format("moderator {!m}", history.modid))
+                if history.targetid is not None:
+                    row.append(util.discord.format("target: {!m}", history.targetid))
+                if history.roleid is not None:
+                    row.append(util.discord.format("role: {!M}", history.roleid))
+                if history.duration is not None:
+                    row.append(str(datetime.timedelta(seconds=history.duration)))
+                if history.comment is not None:
+                    row.append(util.discord.format("comment: {!i}", history.comment))
+                if history.list_msgid is not None:
+                    row.append("https://discord.com/channels/{}/{}/{}".format(
+                        conf.guild, conf.ticket_list, history.list_msgid))
+                if history.auditid is not None:
+                    row.append("from audit {}".format(history.auditid))
+
+                text = ", ".join(row)
+                if len(page) + 1 + len(text) > 2000:
+                    pages.append(page)
+                    page = text
+                else:
+                    page += "\n" + text
+            pages.append(page)
+            return await pager(ctx, [Page(content=content) for content in pages])
 
     @discord.ext.commands.Cog.listener("on_member_ban")
     @discord.ext.commands.Cog.listener("on_member_unban")
