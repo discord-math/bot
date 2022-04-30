@@ -670,12 +670,10 @@ class BanTicket(Ticket):
     async def revert_action(self, reason: Optional[str] = None) -> None:
         guild = discord_client.client.get_guild(conf.guild)
         assert guild
-        bans = await guild.bans()
-        user = next((entry.user for entry in bans if entry.user.id == self.targetid), None)
-        if user is None:
-            # User is not banned, nothing to do
-            return
-        await guild.unban(user, reason=reason)
+        async for entry in guild.bans(limit=None): # TODO: before/after?
+            if entry.user.id == self.targetid:
+                await guild.unban(entry.user, reason=reason)
+                break
 
 @registry.mapped
 @register_action
