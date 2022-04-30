@@ -10,9 +10,11 @@ def cog(cls: Type[T]) -> T:
     cog_name = "{}:{}:{}".format(cog.__module__, cog.__cog_name__, hex(id(cog)))
     cog.__cog_name__ = cog_name # type: ignore
 
-    discord_client.client.add_cog(cog)
-    @plugins.finalizer
-    def finalize_cog() -> None:
-        discord_client.client.remove_cog(cog_name)
+    @plugins.init
+    async def initialize_cog() -> None:
+        await discord_client.client.add_cog(cog)
+        @plugins.finalizer
+        async def finalize_cog() -> None:
+            await discord_client.client.remove_cog(cog_name)
 
     return cog

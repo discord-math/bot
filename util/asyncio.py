@@ -1,6 +1,6 @@
 import asyncio
 import plugins
-from typing import Any, Callable, Awaitable, TypeVar
+from typing import Any, Coroutine, Callable, Awaitable, TypeVar
 
 R = TypeVar("R")
 
@@ -16,9 +16,11 @@ def getloop() -> asyncio.AbstractEventLoop:
     except RuntimeError:
         return asyncio.get_event_loop()
 
-def run_async(coro: Callable[..., Awaitable[R]], *args: Any, **kwargs: Any) -> asyncio.Task[R]:
+def run_async(aw: Callable[..., Awaitable[R]], *args: Any, **kwargs: Any) -> asyncio.Task[R]:
     """Schedule an asynchronous computation from synchronous code"""
-    return getloop().create_task(coro(*args, **kwargs))
+    async def coroutine() -> R:
+        return await aw(*args, **kwargs)
+    return getloop().create_task(coroutine())
 
 def concurrently(fun: Callable[..., R], *args: Any, **kwargs: Any) -> Awaitable[R]:
     """
