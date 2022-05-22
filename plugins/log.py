@@ -4,15 +4,17 @@ import logging
 import discord
 import sqlalchemy
 import sqlalchemy.dialects.postgresql
+import sqlalchemy.ext.asyncio
 import sqlalchemy.orm
 import datetime
 import io
 import os
 import pathlib
 import difflib
-from typing import List, Dict, Set, Optional, Iterable, Protocol, cast
+from typing import List, Dict, Set, Optional, Iterable, Protocol, cast, TYPE_CHECKING
 import discord_client
 import util.discord
+import util.db
 import util.db.kv
 import plugins
 import plugins.cogs
@@ -34,28 +36,40 @@ registry: sqlalchemy.orm.registry = sqlalchemy.orm.registry()
 engine = util.db.create_async_engine()
 plugins.finalizer(engine.dispose)
 
-sessionmaker = sqlalchemy.orm.sessionmaker(engine, class_=sqlalchemy.ext.asyncio.AsyncSession, expire_on_commit=False)
+sessionmaker = sqlalchemy.ext.asyncio.async_sessionmaker(engine, future=True)
 
 @registry.mapped
 class SavedMessage:
     __tablename__ = "saved_messages"
 
-    id: int = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, autoincrement=False)
-    channel_id: int = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
-    author_id: int = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
-    username: str = sqlalchemy.Column(sqlalchemy.TEXT, nullable=False)
-    nick: Optional[str] = sqlalchemy.Column(sqlalchemy.TEXT)
-    content: bytes = sqlalchemy.Column(sqlalchemy.dialects.postgresql.BYTEA, nullable=False)
+    id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger, primary_key=True,
+        autoincrement=False)
+    channel_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger, nullable=False)
+    author_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger, nullable=False)
+    username: sqlalchemy.orm.Mapped[str] = sqlalchemy.orm.mapped_column(sqlalchemy.TEXT, nullable=False)
+    nick: sqlalchemy.orm.Mapped[Optional[str]] = sqlalchemy.orm.mapped_column(sqlalchemy.TEXT)
+    content: sqlalchemy.orm.Mapped[bytes] = sqlalchemy.orm.mapped_column(sqlalchemy.dialects.postgresql.BYTEA,
+        nullable=False)
+
+    if TYPE_CHECKING:
+        def __init__(self, *, id: int, channel_id: int, author_id: int, username: str, content: bytes,
+            nick: Optional[str] = ...) -> None: ...
 
 @registry.mapped
 class SavedFile:
     __tablename__ = "saved_files"
 
-    id: int = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, autoincrement=False)
-    message_id: int = sqlalchemy.Column(sqlalchemy.BigInteger, sqlalchemy.ForeignKey(SavedMessage.id), nullable=False)
-    filename: str = sqlalchemy.Column(sqlalchemy.TEXT, nullable=False)
-    url: str = sqlalchemy.Column(sqlalchemy.TEXT, nullable=False)
-    local_filename: Optional[str] = sqlalchemy.Column(sqlalchemy.TEXT)
+    id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger, primary_key=True,
+        autoincrement=False)
+    message_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger,
+        sqlalchemy.ForeignKey(SavedMessage.id), nullable=False) # type: ignore
+    filename: sqlalchemy.orm.Mapped[str] = sqlalchemy.orm.mapped_column(sqlalchemy.TEXT, nullable=False)
+    url: sqlalchemy.orm.Mapped[str] = sqlalchemy.orm.mapped_column(sqlalchemy.TEXT, nullable=False)
+    local_filename: sqlalchemy.orm.Mapped[Optional[str]] = sqlalchemy.orm.mapped_column(sqlalchemy.TEXT)
+
+    if TYPE_CHECKING:
+        def __init__(self, *, id: int, message_id: int, filename: str, url: str, local_filename: Optional[str] = ...
+            ) -> None: ...
 
 def path_for(attm: discord.Attachment) -> pathlib.Path:
     return pathlib.Path(conf.file_path, str(attm.id))

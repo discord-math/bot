@@ -23,32 +23,54 @@ registry: sqlalchemy.orm.registry = sqlalchemy.orm.registry()
 engine = util.db.create_async_engine()
 plugins.finalizer(engine.dispose)
 
+sessionmaker = sqlalchemy.ext.asyncio.async_sessionmaker(engine, future=True)
+
 @registry.mapped
 class Factoid:
     __tablename__ = "factoids"
     __table_args__ = {"schema": "factoids"}
 
-    id: int = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True)
-    message_text: Optional[str] = sqlalchemy.Column(sqlalchemy.TEXT)
-    embed_data: Optional[Any] = sqlalchemy.Column(sqlalchemy.dialects.postgresql.JSONB)
-    author_id: int = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
-    created_at: datetime.datetime = sqlalchemy.Column(sqlalchemy.TIMESTAMP, nullable=False)
-    uses: int = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
-    used_at: Optional[datetime.datetime] = sqlalchemy.Column(sqlalchemy.TIMESTAMP)
+    id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.Integer, primary_key=True)
+    message_text: sqlalchemy.orm.Mapped[Optional[str]] = sqlalchemy.orm.mapped_column(sqlalchemy.TEXT)
+    embed_data: sqlalchemy.orm.Mapped[Optional[Any]] = sqlalchemy.orm.mapped_column(
+        sqlalchemy.dialects.postgresql.JSONB)
+    author_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger, nullable=False)
+    created_at: sqlalchemy.orm.Mapped[datetime.datetime] = sqlalchemy.orm.mapped_column(sqlalchemy.TIMESTAMP,
+        nullable=False)
+    uses: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger, nullable=False)
+    used_at: sqlalchemy.orm.Mapped[Optional[datetime.datetime]] = sqlalchemy.orm.mapped_column(sqlalchemy.TIMESTAMP)
+
+    if TYPE_CHECKING:
+        def __init__(self, /, author_id: int, created_at: datetime.datetime, uses: int, id: Optional[int] = ...,
+            message_text: Optional[str] = ..., embed_data: Optional[Any] = ...,
+            used_at: Optional[datetime.datetime] = ...) -> None: ...
 
 @registry.mapped
 class Alias:
     __tablename__ = "aliases"
     __table_args__ = {"schema": "factoids"}
 
-    name: str = sqlalchemy.Column(sqlalchemy.TEXT, primary_key=True)
-    id: int = sqlalchemy.Column(sqlalchemy.Integer, sqlalchemy.ForeignKey(Factoid.id), nullable=False)
-    author_id: int = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
-    created_at: datetime.datetime = sqlalchemy.Column(sqlalchemy.TIMESTAMP, nullable=False)
-    uses: int = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
-    used_at: Optional[datetime.datetime] = sqlalchemy.Column(sqlalchemy.TIMESTAMP)
+    name: sqlalchemy.orm.Mapped[str] = sqlalchemy.orm.mapped_column(sqlalchemy.TEXT, primary_key=True)
+    id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.Integer,
+        sqlalchemy.ForeignKey(Factoid.id), nullable=False) # type: ignore
+    author_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger, nullable=False)
+    created_at: sqlalchemy.orm.Mapped[datetime.datetime] = sqlalchemy.orm.mapped_column(sqlalchemy.TIMESTAMP,
+        nullable=False)
+    uses: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger, nullable=False)
+    used_at: sqlalchemy.orm.Mapped[Optional[datetime.datetime]] = sqlalchemy.orm.mapped_column(sqlalchemy.TIMESTAMP)
 
-    factoid: Factoid = sqlalchemy.orm.relationship(Factoid, lazy="joined")
+    factoid: sqlalchemy.orm.Mapped[Factoid] = sqlalchemy.orm.relationship(Factoid, lazy="joined")
+
+    if TYPE_CHECKING:
+        @overload
+        def __init__(self, *, name: str, author_id: int, created_at: datetime.datetime, uses: int,
+            factoid: Factoid, used_at: Optional[datetime.datetime] = ...) -> None: ...
+        @overload
+        def __init__(self, *, name: str, author_id: int, created_at: datetime.datetime, uses: int,
+            id: int, used_at: Optional[datetime.datetime] = ...) -> None: ...
+        def __init__(self, *, name: str, author_id: int, created_at: datetime.datetime, uses: int,
+            factoid: Optional[Factoid] = ..., id: Optional[int] = ..., used_at: Optional[datetime.datetime] = ...
+            ) -> None: ...
 
 class FactoidsConf(Protocol):
     prefix: str
@@ -60,7 +82,7 @@ async def init() -> None:
     global conf
     conf = cast(FactoidsConf, await util.db.kv.load(__name__))
     await util.db.init(util.db.get_ddl(
-        sqlalchemy.schema.CreateSchema("factoids").execute,
+        sqlalchemy.schema.CreateSchema("factoids"),
         registry.metadata.create_all))
 
 
@@ -75,7 +97,7 @@ class Factoids(discord.ext.commands.Cog):
         if not plugins.locations.in_location("factoids", msg.channel): return
         text = " ".join(msg.content[len(conf.prefix):].split()).lower()
         if not len(text): return
-        async with sqlalchemy.ext.asyncio.AsyncSession(engine) as session:
+        async with sessionmaker() as session:
             stmt = (sqlalchemy.select(Alias)
                 .where(Alias.name == sqlalchemy.func.substring(text, 1, sqlalchemy.func.length(Alias.name)))
                 .order_by(sqlalchemy.func.length(Alias.name).desc())
@@ -107,7 +129,7 @@ class Factoids(discord.ext.commands.Cog):
     async def tag_add(self, ctx: discord.ext.commands.Context, *, name: str) -> None:
         """Add a factoid. You will be prompted to enter the contents as a separate message."""
         name = validate_name(name)
-        async with sqlalchemy.ext.asyncio.AsyncSession(engine) as session:
+        async with sessionmaker() as session:
             if await session.get(Alias, name, options=(sqlalchemy.orm.raiseload(Alias.factoid),)) is not None:
                 raise util.discord.UserError(util.discord.format("The factoid {!i} already exists", conf.prefix + name))
 
@@ -137,7 +159,7 @@ class Factoids(discord.ext.commands.Cog):
         """
         name = validate_name(name)
         newname = " ".join(newname.split()).lower()
-        async with sqlalchemy.ext.asyncio.AsyncSession(engine) as session:
+        async with sessionmaker() as session:
             if await session.get(Alias, newname, options=(sqlalchemy.orm.raiseload(Alias.factoid),)) is not None:
                 raise util.discord.UserError(
                     util.discord.format("The factoid {!i} already exists", conf.prefix + newname))
@@ -161,7 +183,7 @@ class Factoids(discord.ext.commands.Cog):
         You will be prompted to enter the contents as a separate message.
         """
         name = validate_name(name)
-        async with sqlalchemy.ext.asyncio.AsyncSession(engine) as session:
+        async with sessionmaker() as session:
             if (alias := await session.get(Alias, name)) is None:
                 raise util.discord.UserError(util.discord.format("The factoid {!i} does not exist", conf.prefix + name))
 
@@ -181,7 +203,7 @@ class Factoids(discord.ext.commands.Cog):
         Remove an alias for a factoid. The last name for a factoid cannot be removed (use delete instead).
         """
         name = validate_name(name)
-        async with sqlalchemy.ext.asyncio.AsyncSession(engine) as session:
+        async with sessionmaker() as session:
             if (alias := await session.get(Alias, name)) is None:
                 raise util.discord.UserError(util.discord.format("The factoid {!i} does not exist", conf.prefix + name))
             stmt = (sqlalchemy.select(True)
@@ -199,7 +221,7 @@ class Factoids(discord.ext.commands.Cog):
     async def tag_delete(self, ctx: discord.ext.commands.Context, *, name: str) -> None:
         """Delete a factoid and all its aliases."""
         name = validate_name(name)
-        async with sqlalchemy.ext.asyncio.AsyncSession(engine) as session:
+        async with sessionmaker() as session:
             if (alias := await session.get(Alias, name)) is None:
                 raise util.discord.UserError(util.discord.format("The factoid {!i} does not exist", conf.prefix + name))
 
@@ -216,7 +238,7 @@ class Factoids(discord.ext.commands.Cog):
     async def tag_info(self, ctx: discord.ext.commands.Context, *, name: str) -> None:
         """Show information about a factoid."""
         name = validate_name(name)
-        async with sqlalchemy.ext.asyncio.AsyncSession(engine) as session:
+        async with sessionmaker() as session:
             if (alias := await session.get(Alias, name)) is None:
                 raise util.discord.UserError(util.discord.format("The factoid {!i} does not exist", conf.prefix + name))
 
@@ -240,7 +262,7 @@ class Factoids(discord.ext.commands.Cog):
     @tag_command.command("top")
     async def tag_top(sef, ctx: discord.ext.commands.Context) -> None:
         """Show most used factoids."""
-        async with sqlalchemy.ext.asyncio.AsyncSession(engine) as session:
+        async with sessionmaker() as session:
             aliases = sqlalchemy.orm.aliased(Alias)
             stmt = (sqlalchemy.select(Alias.name, Factoid.uses)
                 .join(Alias.factoid)

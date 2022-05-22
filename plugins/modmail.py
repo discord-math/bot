@@ -8,7 +8,7 @@ import discord
 import discord.ext.commands
 import logging
 import datetime
-from typing import Dict, Tuple, Optional, Awaitable, Any, Protocol, cast
+from typing import Dict, Tuple, Optional, Awaitable, Any, Protocol, cast, TYPE_CHECKING
 import discord_client
 import util.db
 import util.db.kv
@@ -23,23 +23,33 @@ registry: sqlalchemy.orm.registry = sqlalchemy.orm.registry()
 engine = util.db.create_async_engine()
 plugins.finalizer(engine.dispose)
 
+sessionmaker = sqlalchemy.ext.asyncio.async_sessionmaker(engine, future=True)
+
 @registry.mapped
 class ModmailMessage:
     __tablename__ = "messages"
     __table_args__ = {"schema": "modmail"}
 
-    dm_channel_id: int = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
-    dm_message_id: int = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
-    staff_message_id: int = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True)
+    dm_channel_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger, nullable=False)
+    dm_message_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger, nullable=False)
+    staff_message_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger, primary_key=True)
+
+    if TYPE_CHECKING:
+        def __init__(self, *, dm_channel_id: int, dm_message_id: int, staff_message_id: int) -> None: ...
 
 @registry.mapped
 class ModmailThread:
     __tablename__ = "threads"
     __table_args__ = {"schema": "modmail"}
 
-    user_id: int = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
-    thread_first_message_id: int = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True)
-    last_used: datetime.datetime = sqlalchemy.Column(sqlalchemy.TIMESTAMP, nullable=False)
+    user_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger, nullable=False)
+    thread_first_message_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger,
+        primary_key=True)
+    last_used: sqlalchemy.orm.Mapped[datetime.datetime] = sqlalchemy.orm.mapped_column(sqlalchemy.TIMESTAMP,
+        nullable=False)
+
+    if TYPE_CHECKING:
+        def __init__(self, *, user_id: int, thread_first_message_id: int, last_used: int) -> None: ...
 
 class ModmailConf(Protocol, Awaitable[None]):
     token: str
@@ -64,10 +74,10 @@ async def init() -> None:
     await conf
 
     await util.db.init(util.db.get_ddl(
-        sqlalchemy.schema.CreateSchema("modmail").execute,
+        sqlalchemy.schema.CreateSchema("modmail"),
         registry.metadata.create_all))
 
-    async with sqlalchemy.ext.asyncio.AsyncSession(engine) as session:
+    async with sessionmaker() as session:
         for msg in (await session.execute(sqlalchemy.select(ModmailMessage))).scalars():
             message_map[msg.staff_message_id] = msg
 
@@ -79,7 +89,7 @@ async def add_modmail(source: discord.Message, copy: discord.Message) -> None:
         message_map[msg.staff_message_id] = msg
 
 async def update_thread(user_id: int) -> Optional[int]:
-    async with sqlalchemy.ext.asyncio.AsyncSession(engine) as session:
+    async with sessionmaker() as session:
         stmt = (sqlalchemy.update(ModmailThread).returning(ModmailThread.thread_first_message_id)
             .where(ModmailThread.user_id == user_id,
                 ModmailThread.last_used > sqlalchemy.func.current_timestamp() -
@@ -92,7 +102,7 @@ async def update_thread(user_id: int) -> Optional[int]:
         return thread
 
 async def create_thread(user_id: int, msg_id: int) -> None:
-    async with sqlalchemy.ext.asyncio.AsyncSession(engine) as session:
+    async with sessionmaker() as session:
         thread = ModmailThread(user_id=user_id, thread_first_message_id=msg_id,
             last_used=sqlalchemy.func.current_timestamp()) # type: ignore
         session.add(thread)

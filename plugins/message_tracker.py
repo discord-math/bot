@@ -15,7 +15,7 @@ import sqlalchemy.ext.asyncio
 import sqlalchemy.dialects.postgresql
 import sqlalchemy.orm
 from typing import (List, Dict, Tuple, Sequence, Optional, Any, Union, Callable, Iterable, Awaitable, Protocol, TypeVar,
-    overload, cast)
+    overload, cast, TYPE_CHECKING)
 import util.db
 import plugins
 import plugins.cogs
@@ -28,72 +28,89 @@ registry: sqlalchemy.orm.registry = sqlalchemy.orm.registry()
 engine = util.db.create_async_engine()
 plugins.finalizer(engine.dispose)
 
-sessionmaker = sqlalchemy.orm.sessionmaker(engine, class_=sqlalchemy.ext.asyncio.AsyncSession, expire_on_commit=False)
+sessionmaker = sqlalchemy.ext.asyncio.async_sessionmaker(engine, future=True, expire_on_commit=False)
 
 @registry.mapped
 class Channel:
     __tablename__ = "channels"
     __table_args__ = {"schema": "message_tracker"}
 
-    guild_id: int = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
-    id: int = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, autoincrement=False)
-    reachable: bool = sqlalchemy.Column(sqlalchemy.BOOLEAN, nullable=False)
+    guild_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger, nullable=False)
+    id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger, primary_key=True,
+        autoincrement=False)
+    reachable: sqlalchemy.orm.Mapped[bool] = sqlalchemy.orm.mapped_column(sqlalchemy.BOOLEAN, nullable=False)
+
+    if TYPE_CHECKING:
+        def __init__(self, *, guild_id: int, id: int, reachable: bool) -> None: ...
 
 @registry.mapped
 class ChannelState:
     __tablename__ = "channel_states"
     __table_args__ = {"schema": "message_tracker"}
 
-    channel_id: int = sqlalchemy.Column(sqlalchemy.BigInteger, sqlalchemy.ForeignKey(Channel.id), primary_key=True,
-        autoincrement=False)
-    subscriber: str = sqlalchemy.Column(sqlalchemy.TEXT, primary_key=True)
+    channel_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger,
+        sqlalchemy.ForeignKey(Channel.id), primary_key=True, autoincrement=False) # type: ignore
+    subscriber: sqlalchemy.orm.Mapped[str] = sqlalchemy.orm.mapped_column(sqlalchemy.TEXT, primary_key=True)
     # null means thread history fetch is complete
-    earliest_thread_archive_ts: Optional[datetime.datetime] = sqlalchemy.Column(sqlalchemy.TIMESTAMP(timezone=True))
+    earliest_thread_archive_ts: sqlalchemy.orm.Mapped[Optional[datetime.datetime]] = sqlalchemy.orm.mapped_column(
+        sqlalchemy.TIMESTAMP(timezone=True))
     # last message id in the channel or any of its threads
-    last_message_id = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
+    last_message_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger, nullable=False)
 
-    channel: Channel = sqlalchemy.orm.relationship(Channel)
+    channel: sqlalchemy.orm.Mapped[Channel] = sqlalchemy.orm.relationship(Channel)
+
+    if TYPE_CHECKING:
+        def __init__(self, *, channel_id: int, subscriber: str, last_message_id: int,
+            earliest_thread_archive_ts: Optional[datetime.datetime] = ...) -> None: ...
 
 @registry.mapped
 class ChannelRequest:
     __tablename__ = "channel_requests"
 
-    id: int = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True)
-    channel_id: int = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
-    subscriber: str = sqlalchemy.Column(sqlalchemy.TEXT, nullable=False)
+    id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.Integer, primary_key=True)
+    channel_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger, nullable=False)
+    subscriber: sqlalchemy.orm.Mapped[str] = sqlalchemy.orm.mapped_column(sqlalchemy.TEXT, nullable=False)
     # inclusive
-    after_snowflake: int = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
+    after_snowflake: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger, nullable=False)
     # exclusive
-    before_snowflake: int = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
+    before_snowflake: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger, nullable=False)
 
-    state: ChannelState = sqlalchemy.orm.relationship(ChannelState)
+    state: sqlalchemy.orm.Mapped[ChannelState] = sqlalchemy.orm.relationship(ChannelState)
 
     # TODO: EXCLUDE constraint on the snowflake ranges? What if conflict?
-    __table_args__ = sqlalchemy.ForeignKeyConstraint([channel_id, subscriber],
-        [ChannelState.channel_id, ChannelState.subscriber]), {"schema": "message_tracker"}
+    __table_args__ = sqlalchemy.ForeignKeyConstraint([channel_id, subscriber], # type: ignore
+        [ChannelState.channel_id, ChannelState.subscriber]), {"schema": "message_tracker"} # type: ignore
+
+    if TYPE_CHECKING:
+        def __init__(self, *, channel_id: int, subscriber: str, after_snowflake: int, before_snowflake: int,
+            id: int = ...) -> None: ...
 
 @registry.mapped
 class ThreadRequest:
     __tablename__ = "thread_requests"
 
-    id: int = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True)
-    thread_id: int = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
-    channel_id: int = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
-    subscriber: str = sqlalchemy.Column(sqlalchemy.TEXT, nullable=False)
+    id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.Integer, primary_key=True)
+    thread_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger, nullable=False)
+    channel_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger, nullable=False)
+    subscriber: sqlalchemy.orm.Mapped[str] = sqlalchemy.orm.mapped_column(sqlalchemy.TEXT, nullable=False)
     # inclusive
-    after_snowflake: int = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
+    after_snowflake: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger, nullable=False)
     # exclusive
-    before_snowflake: int = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
+    before_snowflake: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger, nullable=False)
 
-    state: ChannelState = sqlalchemy.orm.relationship(ChannelState)
+    state: sqlalchemy.orm.Mapped[ChannelState] = sqlalchemy.orm.relationship(ChannelState)
 
-    __table_args__ = sqlalchemy.ForeignKeyConstraint([channel_id, subscriber],
-        [ChannelState.channel_id, ChannelState.subscriber]), {"schema": "message_tracker"}
+    __table_args__ = sqlalchemy.ForeignKeyConstraint([channel_id, subscriber], # type: ignore
+        [ChannelState.channel_id, ChannelState.subscriber]), {"schema": "message_tracker"} # type: ignore
+
+    if TYPE_CHECKING:
+        def __init__(self, *, channel_id: int, thread_id: int, subscriber: str, after_snowflake: int,
+            before_snowflake: int, id: int = ...) -> None: ...
 
 @plugins.init
 async def init_db() -> None:
     await util.db.init(util.db.get_ddl(
-        sqlalchemy.schema.CreateSchema("message_tracker").execute,
+        sqlalchemy.schema.CreateSchema("message_tracker"),
         registry.metadata.create_all))
 
 Callback = Callable[[Iterable[discord.Message]], Awaitable[None]]
@@ -187,7 +204,7 @@ async def select_fetch_task(session: sqlalchemy.ext.asyncio.AsyncSession, subscr
                 .where(Channel.reachable, ThreadRequest.subscriber.in_(subscribers))
                 .order_by(ThreadRequest.before_snowflake.desc())
                 .limit(1))
-        .order_by(sqlalchemy.nullsfirst(sqlalchemy.literal_column("before_snowflake").desc()))
+        .order_by(sqlalchemy.nulls_first(sqlalchemy.literal_column("before_snowflake").desc()))
         .limit(1))
     row = (await session.execute(stmt)).first()
     if row is None: return None

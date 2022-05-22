@@ -11,7 +11,7 @@ import sqlalchemy
 import sqlalchemy.orm
 import sqlalchemy.ext.asyncio
 from typing import (List, Dict, Set, Tuple, Optional, Iterator, AsyncIterator, Sequence, Type, Union, Any, Callable,
-    Awaitable, Iterable, Protocol, cast, overload)
+    Awaitable, Iterable, Protocol, TypeVar, cast, overload, TYPE_CHECKING)
 import discord
 import discord.abc
 import discord.ext.commands
@@ -86,7 +86,7 @@ registry: sqlalchemy.orm.registry = sqlalchemy.orm.registry()
 engine = util.db.create_async_engine()
 plugins.finalizer(engine.dispose)
 
-sessionmaker = sqlalchemy.orm.sessionmaker(engine, class_=sqlalchemy.ext.asyncio.AsyncSession, expire_on_commit=False)
+sessionmaker = sqlalchemy.ext.asyncio.async_sessionmaker(engine, future=True, expire_on_commit=False)
 
 class TicketType(enum.Enum):
     """
@@ -130,14 +130,21 @@ ModQueueView = sqlalchemy.Table("mod_queues", sqlalchemy.MetaData(),
 class TicketMod:
     __tablename__ = "mods"
     __table_args__ = {"schema": "tickets"}
-    modid: int = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True, autoincrement=False)
-    last_read_msgid: int = sqlalchemy.Column(sqlalchemy.BigInteger)
-    scheduled_delivery: Optional[datetime.datetime] = sqlalchemy.Column(sqlalchemy.TIMESTAMP)
+    modid: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger, primary_key=True,
+        autoincrement=False)
+    last_read_msgid: sqlalchemy.orm.Mapped[Optional[int]] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger)
+    scheduled_delivery: sqlalchemy.orm.Mapped[Optional[datetime.datetime]] = sqlalchemy.orm.mapped_column(
+        sqlalchemy.TIMESTAMP, nullable=True)
 
-    queue_top: Optional[Ticket] = sqlalchemy.orm.relationship(lambda: Ticket, primaryjoin=lambda: # type: ignore
-            sqlalchemy.and_(TicketMod.modid == Ticket.modid, Ticket.id.in_(sqlalchemy.select(ModQueueView.columns.id))),
-        viewonly=True, uselist=False)
+    queue_top = sqlalchemy.orm.relationship(lambda: Ticket,
+            primaryjoin=lambda: sqlalchemy.and_(TicketMod.modid == Ticket.modid,
+                Ticket.id.in_(sqlalchemy.select(ModQueueView.columns.id))),
+        viewonly=True, uselist=False) # type: sqlalchemy.orm.Mapped[Optional[Ticket]]
         # needs to be refreshed whenever ticket.stage is updated
+
+    if TYPE_CHECKING:
+        def __init__(self, *, modid: int, last_read_msgid: Optional[int] = ...,
+            scheduled_delivery: Optional[datetime.datetime] = ...) -> None: ...
 
     @staticmethod
     async def get(session: sqlalchemy.ext.asyncio.AsyncSession, modid: int) -> TicketMod:
@@ -301,24 +308,26 @@ class TicketMod:
 class Ticket:
     __tablename__ = "tickets"
     __table_args__ = {"schema": "tickets"}
-    id: int = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True)
-    type: TicketType = sqlalchemy.Column(sqlalchemy.Enum(TicketType, schema="tickets"), nullable=False)
-    stage: TicketStage = sqlalchemy.Column(sqlalchemy.Enum(TicketStage, schema="tickets"), nullable=False,
-        default=TicketStage.NEW)
-    status: TicketStatus = sqlalchemy.Column(sqlalchemy.Enum(TicketStatus, schema="tickets"), nullable=False,
-        default=TicketStatus.IN_EFFECT)
-    modid: int = sqlalchemy.Column(sqlalchemy.BigInteger, sqlalchemy.ForeignKey(TicketMod.modid), nullable=False)
-    targetid: int = sqlalchemy.Column(sqlalchemy.BigInteger, nullable=False)
-    auditid: Optional[int] = sqlalchemy.Column(sqlalchemy.BigInteger)
-    duration: Optional[int] = sqlalchemy.Column(sqlalchemy.Integer)
-    comment: Optional[str] = sqlalchemy.Column(sqlalchemy.TEXT)
-    list_msgid: Optional[int] = sqlalchemy.Column(sqlalchemy.BigInteger)
-    delivered_id: Optional[int] = sqlalchemy.Column(sqlalchemy.BigInteger)
-    created_at: datetime.datetime = sqlalchemy.Column(sqlalchemy.TIMESTAMP, nullable=False,
-        default=sqlalchemy.func.current_timestamp().op("AT TIME ZONE")("UTC"))
-    modified_by: Optional[int] = sqlalchemy.Column(sqlalchemy.BigInteger)
+    id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.Integer, primary_key=True)
+    type: sqlalchemy.orm.Mapped[TicketType] = sqlalchemy.orm.mapped_column(
+        sqlalchemy.Enum(TicketType, schema="tickets"), nullable=False)
+    stage: sqlalchemy.orm.Mapped[TicketStage] = sqlalchemy.orm.mapped_column(
+        sqlalchemy.Enum(TicketStage, schema="tickets"), nullable=False, default=TicketStage.NEW)
+    status: sqlalchemy.orm.Mapped[TicketStatus] = sqlalchemy.orm.mapped_column(
+        sqlalchemy.Enum(TicketStatus, schema="tickets"), nullable=False, default=TicketStatus.IN_EFFECT)
+    modid: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger,
+        sqlalchemy.ForeignKey(TicketMod.modid), nullable=False) # type: ignore
+    targetid: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger, nullable=False)
+    auditid: sqlalchemy.orm.Mapped[Optional[int]] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger)
+    duration: sqlalchemy.orm.Mapped[Optional[int]] = sqlalchemy.orm.mapped_column(sqlalchemy.Integer)
+    comment: sqlalchemy.orm.Mapped[Optional[str]] = sqlalchemy.orm.mapped_column(sqlalchemy.TEXT)
+    list_msgid: sqlalchemy.orm.Mapped[Optional[int]] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger)
+    delivered_id: sqlalchemy.orm.Mapped[Optional[int]] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger)
+    created_at: sqlalchemy.orm.Mapped[datetime.datetime] = sqlalchemy.orm.mapped_column(sqlalchemy.TIMESTAMP,
+        nullable=False, default=sqlalchemy.func.current_timestamp().op("AT TIME ZONE")("UTC"))
+    modified_by: sqlalchemy.orm.Mapped[Optional[int]] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger)
 
-    mod: TicketMod = sqlalchemy.orm.relationship(TicketMod, lazy="joined")
+    mod: sqlalchemy.orm.Mapped[TicketMod] = sqlalchemy.orm.relationship(TicketMod, lazy="joined")
     __mapper_args__ = {"polymorphic_on": type}
 
     # Does this ticket type support reverting
@@ -521,24 +530,28 @@ class Ticket:
 @registry.mapped
 class TicketHistory:
     __tablename__ = "history"
-    version: int = sqlalchemy.Column(sqlalchemy.Integer)
-    last_modified_at: Optional[datetime.datetime] = sqlalchemy.Column(sqlalchemy.TIMESTAMP)
-    id: Optional[int] = sqlalchemy.Column(sqlalchemy.Integer,
-        sqlalchemy.ForeignKey(Ticket.id, onupdate="CASCADE"))
-    type: Optional[TicketType] = sqlalchemy.Column(sqlalchemy.Enum(TicketType, schema="tickets"))
-    stage: Optional[TicketStage] = sqlalchemy.Column(sqlalchemy.Enum(TicketStage, schema="tickets"))
-    status: Optional[TicketStatus] = sqlalchemy.Column(sqlalchemy.Enum(TicketStatus, schema="tickets"))
-    modid: Optional[int] = sqlalchemy.Column(sqlalchemy.BigInteger)
-    targetid: Optional[int] = sqlalchemy.Column(sqlalchemy.BigInteger)
-    roleid: Optional[int] = sqlalchemy.Column(sqlalchemy.BigInteger)
-    auditid: Optional[int] = sqlalchemy.Column(sqlalchemy.BigInteger)
-    duration: Optional[int] = sqlalchemy.Column(sqlalchemy.Integer)
-    comment: Optional[str] = sqlalchemy.Column(sqlalchemy.TEXT)
-    list_msgid: Optional[int] = sqlalchemy.Column(sqlalchemy.BigInteger)
-    delivered_id: Optional[int] = sqlalchemy.Column(sqlalchemy.BigInteger)
-    created_at: datetime.datetime = sqlalchemy.Column(sqlalchemy.TIMESTAMP)
-    modified_by: Optional[int] = sqlalchemy.Column(sqlalchemy.BigInteger)
-    __table_args__ = (sqlalchemy.PrimaryKeyConstraint(id, version), {"schema": "tickets"})
+    version: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.Integer)
+    last_modified_at: sqlalchemy.orm.Mapped[Optional[datetime.datetime]] = sqlalchemy.orm.mapped_column(
+        sqlalchemy.TIMESTAMP)
+    id: sqlalchemy.orm.Mapped[Optional[int]] = sqlalchemy.orm.mapped_column(sqlalchemy.Integer,
+        sqlalchemy.ForeignKey(Ticket.id, onupdate="CASCADE")) # type: ignore
+    type: sqlalchemy.orm.Mapped[Optional[TicketType]] = sqlalchemy.orm.mapped_column(
+        sqlalchemy.Enum(TicketType, schema="tickets"))
+    stage: sqlalchemy.orm.Mapped[Optional[TicketStage]] = sqlalchemy.orm.mapped_column(
+        sqlalchemy.Enum(TicketStage, schema="tickets"))
+    status: sqlalchemy.orm.Mapped[Optional[TicketStatus]] = sqlalchemy.orm.mapped_column(
+        sqlalchemy.Enum(TicketStatus, schema="tickets"))
+    modid: sqlalchemy.orm.Mapped[Optional[int]] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger)
+    targetid: sqlalchemy.orm.Mapped[Optional[int]] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger)
+    roleid: sqlalchemy.orm.Mapped[Optional[int]] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger)
+    auditid: sqlalchemy.orm.Mapped[Optional[int]] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger)
+    duration: sqlalchemy.orm.Mapped[Optional[int]] = sqlalchemy.orm.mapped_column(sqlalchemy.Integer)
+    comment: sqlalchemy.orm.Mapped[Optional[str]] = sqlalchemy.orm.mapped_column(sqlalchemy.TEXT)
+    list_msgid: sqlalchemy.orm.Mapped[Optional[int]] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger)
+    delivered_id: sqlalchemy.orm.Mapped[Optional[int]] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger)
+    created_at: sqlalchemy.orm.Mapped[datetime.datetime] = sqlalchemy.orm.mapped_column(sqlalchemy.TIMESTAMP)
+    modified_by: sqlalchemy.orm.Mapped[Optional[int]] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger)
+    __table_args__ = (sqlalchemy.PrimaryKeyConstraint(id, version), {"schema": "tickets"}) # type: ignore
 
     @staticmethod
     async def get(session: sqlalchemy.ext.asyncio.AsyncSession, id: int) -> List[TicketHistory]:
@@ -554,8 +567,10 @@ create_handlers: Dict[discord.AuditLogAction, List[Callable[[sqlalchemy.ext.asyn
 revert_handlers: Dict[discord.AuditLogAction, List[Callable[[sqlalchemy.ext.asyncio.AsyncSession,
     discord.AuditLogEntry], Awaitable[Sequence[Ticket]]]]] = {}
 
+T = TypeVar("T", bound=Ticket)
+
 # Decorator to register Ticket subclasses in action_handlers
-def register_action(cls: Type[Ticket]) -> Type[Ticket]:
+def register_action(cls: Type[T]) -> Type[T]:
     if (action := cls.trigger_action) is not None:
         create_handlers.setdefault(action, []).append(cls.create_from_audit)
     if (action := cls.revert_trigger_action) is not None:
@@ -566,6 +581,12 @@ def register_action(cls: Type[Ticket]) -> Type[Ticket]:
 @register_action
 class NoteTicket(Ticket):
     __mapper_args__ = {"polymorphic_identity": TicketType.NOTE} # type: ignore
+
+    if TYPE_CHECKING:
+        def __init__(self, *, mod: TicketMod, targetid: int, id: int = ..., stage: TicketStage = ...,
+            status: TicketStatus = ..., auditid: Optional[int] = ..., duration: Optional[int] = ...,
+            comment: Optional[str] = ..., list_msgid: Optional[int] = ..., delivered_id: Optional[int] = ...,
+            created_at: datetime.datetime = ..., modified_by: Optional[int] = ...) -> None: ...
 
     can_revert = True
 
@@ -617,6 +638,12 @@ async def audit_ticket_data(session: sqlalchemy.ext.asyncio.AsyncSession, audit:
 class KickTicket(Ticket):
     __mapper_args__ = {"polymorphic_identity": TicketType.KICK} # type: ignore
 
+    if TYPE_CHECKING:
+        def __init__(self, *, mod: TicketMod, targetid: int, id: int = ..., stage: TicketStage = ...,
+            status: TicketStatus = ..., auditid: Optional[int] = ..., duration: Optional[int] = ...,
+            comment: Optional[str] = ..., list_msgid: Optional[int] = ..., delivered_id: Optional[int] = ...,
+            created_at: datetime.datetime = ..., modified_by: Optional[int] = ...) -> None: ...
+
     can_revert = False
 
     trigger_action = discord.AuditLogAction.kick
@@ -641,6 +668,12 @@ class KickTicket(Ticket):
 @register_action
 class BanTicket(Ticket):
     __mapper_args__ = {"polymorphic_identity": TicketType.BAN} # type: ignore
+
+    if TYPE_CHECKING:
+        def __init__(self, *, mod: TicketMod, targetid: int, id: int = ..., stage: TicketStage = ...,
+            status: TicketStatus = ..., auditid: Optional[int] = ..., duration: Optional[int] = ...,
+            comment: Optional[str] = ..., list_msgid: Optional[int] = ..., delivered_id: Optional[int] = ...,
+            created_at: datetime.datetime = ..., modified_by: Optional[int] = ...) -> None: ...
 
     can_revert = True
 
@@ -679,6 +712,12 @@ class BanTicket(Ticket):
 @register_action
 class VCMuteTicket(Ticket):
     __mapper_args__ = {"polymorphic_identity": TicketType.VC_MUTE} # type: ignore
+
+    if TYPE_CHECKING:
+        def __init__(self, *, mod: TicketMod, targetid: int, id: int = ..., stage: TicketStage = ...,
+            status: TicketStatus = ..., auditid: Optional[int] = ..., duration: Optional[int] = ...,
+            comment: Optional[str] = ..., list_msgid: Optional[int] = ..., delivered_id: Optional[int] = ...,
+            created_at: datetime.datetime = ..., modified_by: Optional[int] = ...) -> None: ...
 
     can_revert = True
 
@@ -733,6 +772,12 @@ class VCMuteTicket(Ticket):
 class VCDeafenTicket(Ticket):
     __mapper_args__ = {"polymorphic_identity": TicketType.VC_DEAFEN} # type: ignore
 
+    if TYPE_CHECKING:
+        def __init__(self, *, mod: TicketMod, targetid: int, id: int = ..., stage: TicketStage = ...,
+            status: TicketStatus = ..., auditid: Optional[int] = ..., duration: Optional[int] = ...,
+            comment: Optional[str] = ..., list_msgid: Optional[int] = ..., delivered_id: Optional[int] = ...,
+            created_at: datetime.datetime = ..., modified_by: Optional[int] = ...) -> None: ...
+
     can_revert = True
 
     trigger_action = discord.AuditLogAction.member_update
@@ -784,8 +829,14 @@ class VCDeafenTicket(Ticket):
 @registry.mapped
 @register_action
 class AddRoleTicket(Ticket):
-    roleid: int = sqlalchemy.Column(sqlalchemy.BigInteger)
+    roleid: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger, nullable=True)
     __mapper_args__ = {"polymorphic_identity": TicketType.ADD_ROLE, "polymorphic_load": "inline"} # type: ignore
+
+    if TYPE_CHECKING:
+        def __init__(self, *, mod: TicketMod, targetid: int, roleid: int, id: int = ..., stage: TicketStage = ...,
+            status: TicketStatus = ..., auditid: Optional[int] = ..., duration: Optional[int] = ...,
+            comment: Optional[str] = ..., list_msgid: Optional[int] = ..., delivered_id: Optional[int] = ...,
+            created_at: datetime.datetime = ..., modified_by: Optional[int] = ...) -> None: ...
 
     can_revert = True
 
@@ -841,7 +892,7 @@ class AddRoleTicket(Ticket):
 @plugins.init
 async def init_db() -> None:
     await util.db.init(util.db.get_ddl(
-        sqlalchemy.schema.CreateSchema("tickets").execute,
+        sqlalchemy.schema.CreateSchema("tickets"),
         registry.metadata.create_all,
         sqlalchemy.DDL(r"""
             CREATE INDEX tickets_mod_queue ON tickets.tickets USING BTREE (modid, id) WHERE stage <> 'COMMENTED';
@@ -918,7 +969,7 @@ async def init_db() -> None:
                     (OLD.* IS DISTINCT FROM NEW.*)
                 EXECUTE PROCEDURE
                     tickets.log_ticket_update();
-        """).execute))
+        """)))
 
 # ----------- Audit logs -----------
 audit_log_event = asyncio.Event()

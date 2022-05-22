@@ -17,13 +17,15 @@ registry: sqlalchemy.orm.registry = sqlalchemy.orm.registry()
 engine = util.db.create_async_engine()
 plugins.finalizer(engine.dispose)
 
+sessionmaker = sqlalchemy.ext.asyncio.async_sessionmaker(engine, future=True)
+
 @registry.mapped
 class MemberRole:
     __tablename__ = "member_roles"
     __table_args__ = {"schema": "persistence"}
 
-    user_id: int = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True)
-    role_id: int = sqlalchemy.Column(sqlalchemy.BigInteger, primary_key=True)
+    user_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger, primary_key=True)
+    role_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger, primary_key=True)
 
 class PersistenceConf(Protocol):
     roles: util.frozen_list.FrozenList[int]
@@ -35,7 +37,7 @@ async def init() -> None:
     global conf
     conf = cast(PersistenceConf, await util.db.kv.load(__name__))
     await util.db.init(util.db.get_ddl(
-        sqlalchemy.schema.CreateSchema("persistence").execute,
+        sqlalchemy.schema.CreateSchema("persistence"),
         registry.metadata.create_all))
 
 @plugins.cogs.cog
@@ -45,7 +47,7 @@ class Persistence(discord.ext.commands.Cog):
     async def on_member_remove(self, member: discord.Member) -> None:
         role_ids = set(role.id for role in member.roles if role.id in conf.roles)
         if len(role_ids) == 0: return
-        async with sqlalchemy.ext.asyncio.AsyncSession(engine) as session:
+        async with sessionmaker() as session:
             stmt = (sqlalchemy.dialects.postgresql.insert(MemberRole)
                 .values([{"user_id": member.id, "role_id": role_id} for role_id in role_ids])
                 .on_conflict_do_nothing(index_elements=["user_id", "role_id"]))
@@ -54,7 +56,7 @@ class Persistence(discord.ext.commands.Cog):
 
     @discord.ext.commands.Cog.listener()
     async def on_member_join(self, member: discord.Member) -> None:
-        async with sqlalchemy.ext.asyncio.AsyncSession(engine) as session:
+        async with sessionmaker() as session:
             stmt = (sqlalchemy.delete(MemberRole)
                 .where(MemberRole.user_id == member.id)
                 .returning(MemberRole.role_id))
@@ -67,7 +69,7 @@ class Persistence(discord.ext.commands.Cog):
             await session.commit()
 
 async def drop_persistent_role(*, user_id: int, role_id: int) -> None:
-    async with sqlalchemy.ext.asyncio.AsyncSession(engine) as session:
+    async with sessionmaker() as session:
         stmt = (sqlalchemy.delete(MemberRole)
             .where(MemberRole.user_id == user_id, MemberRole.role_id == role_id))
         await session.execute(stmt)

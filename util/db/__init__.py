@@ -5,7 +5,7 @@ import sqlalchemy.schema
 import sqlalchemy.ext.asyncio
 import sqlalchemy.dialects.postgresql
 import logging
-from typing import Dict, AsyncIterator, Callable, Any
+from typing import Dict, AsyncIterator, Callable, Any, Union
 import static_config
 import util.db.log as util_db_log
 import util.db.dsn as util_db_dsn
@@ -35,17 +35,20 @@ def create_async_engine(connect_args: Dict[str, Any] = {}, **kwargs: Any) -> sql
 
 from util.db.initialization import init as init, init_for as init_for
 
-def get_ddl(*cbs: Callable[[sqlalchemy.engine.Engine], None]) -> str:
+def get_ddl(*cbs: Union[sqlalchemy.schema.DDLElement, Callable[[sqlalchemy.Connection], None]]) -> str:
     # By default sqlalchemy treats asyncpg as if it had paramstyle="format", which means it tries to escape percent
     # signs. We don't want that so we have to override the paramstyle. Ideally "numeric" would be the right choice here
     # but that doesn't work.
     dialect = sqlalchemy.dialects.postgresql.dialect(paramstyle="qmark") # type: ignore
     ddls = []
 
-    def executor(sql: sqlalchemy.schema.DDLElement) -> None:
+    def executor(sql: sqlalchemy.schema.ExecutableDDLElement, *args: Any, **kwargs: Any) -> None:
         ddls.append(str(sql.compile(dialect=dialect)) + ";")
-    mock_engine = sqlalchemy.create_mock_engine("postgresql://", executor)
+    conn = sqlalchemy.create_mock_engine(sqlalchemy.make_url("postgresql://"), executor)
     for cb in cbs:
-        cb(mock_engine) # type: ignore
+        if isinstance(cb, sqlalchemy.schema.DDLElement):
+            conn.execute(cb)
+        else:
+            cb(conn) # type: ignore
 
     return "\n".join(ddls)

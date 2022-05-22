@@ -14,6 +14,6 @@ jobs:
       with:
         python-version: 3.9
     - name: pip
-      run: pip install aiohttp types-requests sqlalchemy2-stubs mypy sqlalchemy[mypy]!=1.4.23
-    - name: mypy
-      run: mypy .
+      run: pip install aiohttp types-requests git+https://github.com/sqlalchemy/sqlalchemy@main pyright
+    - name: pyright
+      run: pyright
