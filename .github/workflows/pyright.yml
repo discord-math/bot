@@ -1,11 +1,11 @@
-name: mypy
+name: pyright
 
 on: [push, pull_request]
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    name: mypy
+    name: pyright
     steps:
     - uses: actions/checkout@v1
     - name: checkout submodules
@@ -14,6 +14,6 @@ jobs:
       with:
         python-version: 3.9
     - name: pip
-      run: pip install aiohttp types-requests git+https://github.com/sqlalchemy/sqlalchemy@main pyright
+      run: pip install aiohttp types-requests asyncpg git+https://github.com/sqlalchemy/sqlalchemy@main pyright
     - name: pyright
       run: pyright
