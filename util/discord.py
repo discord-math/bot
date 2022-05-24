@@ -2,18 +2,18 @@
 Some common utilities for interacting with discord.
 """
 from __future__ import annotations
-import asyncio
 import re
 import math
 import discord
 import discord.abc
 import discord.ext.commands
+import discord.ext.commands.view
+import discord.state
 import string
 import logging
-from typing import (Any, List, Sequence, Callable, Iterable, Optional, Union, Coroutine, AsyncContextManager, Generic,
-    TypeVar, Type, Protocol, cast)
+from typing import (Any, List, Sequence, Callable, Iterable, Optional, Union, AsyncContextManager, Generic, TypeVar,
+    Type, Protocol, cast)
 import discord_client
-import plugins
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -255,7 +255,7 @@ class TempMessage(AsyncContextManager[discord.Message]):
         self.message = await self.sendable.send(*self.args, **self.kwargs)
         return self.message
 
-    async def __aexit__(self, exc_type, exc_val, tb) -> None: # type: ignore
+    async def __aexit__(self, exc_type, exc_val, tb) -> None:
         try:
             if self.message is not None:
                 await self.message.delete()
@@ -269,7 +269,7 @@ class ChannelById(discord.abc.Messageable):
 
     def __init__(self, client: discord.Client, id: int):
         self.id = id
-        self._state = client._connection # type: ignore
+        self._state = client._connection
 
     async def _get_channel(self) -> discord.abc.Messageable:
         return self
@@ -312,6 +312,7 @@ def named_priority(x: NamedType, s: str) -> Optional[int]:
 # We inherit XCoverter from X, so that given a declaration x: XConverter could be used with the assumption that really
 # at runtime x: X
 class PartialUserConverter(discord.abc.Snowflake):
+    id: int
     mention_re: re.Pattern[str] = re.compile(r"<@!?(\d+)>")
     id_re: re.Pattern[str] = re.compile(r"\d{15,}")
     discrim_re: re.Pattern[str] = re.compile(r"(.*)#(\d{4})")
@@ -378,6 +379,7 @@ class UserConverter(discord.User):
             raise discord.ext.commands.BadArgument(format("No user found by ID {}", obj.id))
 
 class PartialRoleConverter(discord.abc.Snowflake):
+    id: int
     mention_re: re.Pattern[str] = re.compile(r"<@&(\d+)>")
     id_re: re.Pattern[str] = re.compile(r"\d{15,}")
 
@@ -490,8 +492,8 @@ class ChannelConverter(discord.abc.GuildChannel):
     async def convert(cls, ctx: discord.ext.commands.Context, arg: str) -> discord.abc.GuildChannel:
         return await PCConv.convert(ctx, arg, discord.abc.GuildChannel)
 
-def partial_message(channel: Union[discord.abc.Snowflake], id: int) -> discord.PartialMessage:
-    return discord.PartialMessage(channel=channel, id=id) # type: ignore
+def partial_message(channel: discord.abc.Snowflake, id: int) -> discord.PartialMessage:
+    return discord.PartialMessage(channel=discord_client.client.get_partial_messageable(channel.id), id=id)
 
 def partial_from_reply(pmsg: Optional[discord.PartialMessage], ctx: discord.ext.commands.Context
     ) -> discord.PartialMessage:
@@ -516,7 +518,7 @@ class ReplyConverter(discord.PartialMessage):
     @classmethod
     async def convert(cls, ctx: discord.ext.commands.Context, arg: str) -> discord.PartialMessage:
         pos = undo_get_quoted_word(ctx.view, arg)
-        if (ref := ctx.message.reference) is not None:
+        if ctx.message.reference is not None:
             ctx.view.index = pos
             return partial_from_reply(None, ctx)
         return await discord.ext.commands.PartialMessageConverter().convert(ctx, arg)

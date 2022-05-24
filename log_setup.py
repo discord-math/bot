@@ -7,18 +7,18 @@ import static_config
 
 logging.basicConfig(handlers=[], force=True)
 
-@(lambda f: f())
 def closure() -> None:
     old_showwarning = warnings.showwarning
 
-    def showwarning(message, category, filename, lineno, file=None, line=None) -> None: # type: ignore
+    def showwarning(message, category, filename, lineno, file=None, line=None) -> None:
         if file is not None:
-            old_showwarning = warnings.showwarning
+            old_showwarning(message, category, filename, lineno, line)
         else:
             text = warnings.formatwarning(message, category, filename, lineno, line)
             logging.getLogger("__builtins__").error(text)
 
     warnings.showwarning = showwarning
+closure()
 
 logger: logging.Logger = logging.getLogger()
 logger.setLevel(logging.NOTSET)

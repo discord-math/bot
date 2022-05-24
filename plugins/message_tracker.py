@@ -10,12 +10,13 @@ import logging
 import datetime
 import bisect
 import discord
+import discord.ext.commands
 import sqlalchemy
 import sqlalchemy.ext.asyncio
 import sqlalchemy.dialects.postgresql
 import sqlalchemy.orm
-from typing import (List, Dict, Tuple, Sequence, Optional, Any, Union, Callable, Iterable, Awaitable, Protocol, TypeVar,
-    overload, cast, TYPE_CHECKING)
+from typing import (List, Dict, Tuple, Sequence, Optional, Any, Union, Callable, Iterable, Awaitable, TypeVar, overload,
+    cast, TYPE_CHECKING)
 import util.db
 import plugins
 import plugins.cogs
@@ -153,7 +154,7 @@ class MessageIDList(Sequence[int]):
     @overload
     def __getitem__(self, i: int) -> int: ...
     @overload
-    def __getitem__(self, s: slice) -> Sequence[int]: ...
+    def __getitem__(self, i: slice) -> Sequence[int]: ...
     def __getitem__(self, i: Any) -> Any:
         assert isinstance(i, int)
         id = self.msgs[i].id
@@ -173,6 +174,7 @@ async def select_fetch_task(session: sqlalchemy.ext.asyncio.AsyncSession, subscr
         Tuple[int, int, None, None],
         Tuple[int, int, None, int],
         Tuple[int, int, int, int]]:
+    subs = list(subscribers)
     stmt = (sqlalchemy.union_all(
             sqlalchemy.select(
                     Channel.guild_id,
@@ -180,7 +182,7 @@ async def select_fetch_task(session: sqlalchemy.ext.asyncio.AsyncSession, subscr
                     sqlalchemy.cast(sqlalchemy.null(), sqlalchemy.BigInteger).label("thread_id"),
                     sqlalchemy.null().label("before_snowflake"))
                 .join(ChannelState.channel)
-                .where(Channel.reachable, ChannelState.subscriber.in_(subscribers),
+                .where(Channel.reachable, ChannelState.subscriber.in_(subs),
                     ChannelState.earliest_thread_archive_ts != None)
                 .order_by(ChannelState.earliest_thread_archive_ts.desc())
                 .limit(1),
@@ -191,7 +193,7 @@ async def select_fetch_task(session: sqlalchemy.ext.asyncio.AsyncSession, subscr
                     ChannelRequest.before_snowflake)
                 .join(ChannelRequest.state)
                 .join(ChannelState.channel)
-                .where(Channel.reachable, ChannelRequest.subscriber.in_(subscribers))
+                .where(Channel.reachable, ChannelRequest.subscriber.in_(subs))
                 .order_by(ChannelRequest.before_snowflake.desc())
                 .limit(1),
             sqlalchemy.select(
@@ -201,7 +203,7 @@ async def select_fetch_task(session: sqlalchemy.ext.asyncio.AsyncSession, subscr
                     ThreadRequest.before_snowflake)
                 .join(ThreadRequest.state)
                 .join(ChannelState.channel)
-                .where(Channel.reachable, ThreadRequest.subscriber.in_(subscribers))
+                .where(Channel.reachable, ThreadRequest.subscriber.in_(subs))
                 .order_by(ThreadRequest.before_snowflake.desc())
                 .limit(1))
         .order_by(sqlalchemy.nulls_first(sqlalchemy.literal_column("before_snowflake").desc()))
@@ -213,14 +215,15 @@ async def select_fetch_task(session: sqlalchemy.ext.asyncio.AsyncSession, subscr
 
 async def select_channel_requests_overlapping(session: sqlalchemy.ext.asyncio.AsyncSession, subscribers: Iterable[str],
     channel_id: int, before: int) -> Iterable[ChannelRequest]:
+    subs = list(subscribers)
     nonrec_first = (sqlalchemy.select(ChannelRequest.after_snowflake)
-        .where(ChannelRequest.channel_id == channel_id, ChannelRequest.subscriber.in_(subscribers),
+        .where(ChannelRequest.channel_id == channel_id, ChannelRequest.subscriber.in_(subs),
             ChannelRequest.before_snowflake >= before)
         .order_by(ChannelRequest.before_snowflake)
         .limit(1)
         .cte("first", recursive=True))
     rec_first = (sqlalchemy.select(ChannelRequest.after_snowflake)
-        .where(ChannelRequest.channel_id == channel_id, ChannelRequest.subscriber.in_(subscribers),
+        .where(ChannelRequest.channel_id == channel_id, ChannelRequest.subscriber.in_(subs),
             ChannelRequest.before_snowflake >= nonrec_first.c.after_snowflake)
         .order_by(ChannelRequest.before_snowflake)
         .limit(1)
@@ -229,21 +232,22 @@ async def select_channel_requests_overlapping(session: sqlalchemy.ext.asyncio.As
         .select_from(nonrec_first.join(rec_first, sqlalchemy.true())))
     min_after = sqlalchemy.select(sqlalchemy.func.min(first.c.after_snowflake)).scalar_subquery()
     stmt = (sqlalchemy.select(ChannelRequest)
-        .where(ChannelRequest.channel_id == channel_id, ChannelRequest.subscriber.in_(subscribers),
+        .where(ChannelRequest.channel_id == channel_id, ChannelRequest.subscriber.in_(subs),
             ChannelRequest.before_snowflake <= before,
             ChannelRequest.after_snowflake >= min_after))
     return (await session.execute(stmt)).scalars()
 
 async def select_thread_requests_overlapping(session: sqlalchemy.ext.asyncio.AsyncSession, subscribers: Iterable[str],
     thread_id: int, before: int) -> Iterable[ThreadRequest]:
+    subs = list(subscribers)
     nonrec_first = (sqlalchemy.select(ThreadRequest.after_snowflake)
-        .where(ThreadRequest.thread_id == thread_id, ThreadRequest.subscriber.in_(subscribers),
+        .where(ThreadRequest.thread_id == thread_id, ThreadRequest.subscriber.in_(subs),
             ThreadRequest.before_snowflake >= before)
         .order_by(ThreadRequest.before_snowflake)
         .limit(1)
         .cte("first", recursive=True))
     rec_first = (sqlalchemy.select(ThreadRequest.after_snowflake)
-        .where(ThreadRequest.thread_id == thread_id, ThreadRequest.subscriber.in_(subscribers),
+        .where(ThreadRequest.thread_id == thread_id, ThreadRequest.subscriber.in_(subs),
             ThreadRequest.before_snowflake >= nonrec_first.c.after_snowflake)
         .order_by(ThreadRequest.before_snowflake)
         .limit(1)
@@ -252,7 +256,7 @@ async def select_thread_requests_overlapping(session: sqlalchemy.ext.asyncio.Asy
         .select_from(nonrec_first.join(rec_first, sqlalchemy.true())))
     min_after = sqlalchemy.select(sqlalchemy.func.min(first.c.after_snowflake)).scalar_subquery()
     stmt = (sqlalchemy.select(ThreadRequest)
-        .where(ThreadRequest.thread_id == thread_id, ThreadRequest.subscriber.in_(subscribers),
+        .where(ThreadRequest.thread_id == thread_id, ThreadRequest.subscriber.in_(subs),
             ThreadRequest.before_snowflake <= before,
             ThreadRequest.after_snowflake >= min_after))
     return (await session.execute(stmt)).scalars()
@@ -283,9 +287,9 @@ async def fetch_thread_archive(session: sqlalchemy.ext.asyncio.AsyncSession, cha
     max_archival_ts = max(cast(datetime.datetime, state.earliest_thread_archive_ts) for state in states)
 
     try:
-        threads = [thread
-            for thread in await channel.archived_threads(limit=50, before=max_archival_ts).flatten()
-            if thread.archive_timestamp is not None]
+        threads = []
+        async for thread in channel.archived_threads(limit=50, before=max_archival_ts):
+            threads.append(thread)
     except (discord.NotFound, discord.Forbidden):
         logger.warning("Cannot iterate archived threads in {}, marking unreachable".format(channel.id))
         await mark_channel_unreachable(session, channel.id)
@@ -580,7 +584,7 @@ async def process_ready(last_msgs: Dict[int, int], thread_last_msgs: Dict[int, D
 
         stmt = (sqlalchemy.select(ChannelState)
             .join(ChannelState.channel)
-            .where(Channel.reachable, ChannelState.subscriber.in_(fetch_map.keys())))
+            .where(Channel.reachable, ChannelState.subscriber.in_(list(fetch_map.keys()))))
         states = [state for state, in await session.execute(stmt) if state.channel_id in last_msgs]
 
         min_last_msgs: Dict[int, int] = {}
@@ -717,7 +721,7 @@ async def process_message(msg: discord.Message) -> None:
                     requests_added = True
 
         stmt = (sqlalchemy.update(ChannelState)
-            .where(ChannelState.channel_id == channel_id, ChannelState.subscriber.in_(subscribers))
+            .where(ChannelState.channel_id == channel_id, ChannelState.subscriber.in_(list(subscribers)))
             .values(last_message_id = sqlalchemy.func.greatest(ChannelState.last_message_id,
                 sqlalchemy.literal(msg.id, type_=sqlalchemy.BigInteger))))
         await session.execute(stmt)

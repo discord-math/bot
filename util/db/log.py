@@ -63,7 +63,7 @@ def LoggingConnection(logger: logging.Logger) -> Type[asyncpg.connection.Connect
         logger.debug("{} closed".format(id(conn)))
 
     the_logger = logger
-    class LoggingConnection(asyncpg.connection.Connection): # type: ignore
+    class LoggingConnection(asyncpg.connection.Connection):
         logger: logging.Logger = the_logger
 
         def __init__(self, proto: Any, transport: Any, *args: Any, **kwargs: Any):
@@ -75,19 +75,19 @@ def LoggingConnection(logger: logging.Logger) -> Type[asyncpg.connection.Connect
         async def copy_from_query(self, query: str, *args: Sequence[Any], log_data: Union[bool, Sequence[int]] = True,
             **kwargs: Any) -> str:
             self.logger.debug("{} copy_from_query: {}".format(id(self), fmt_query_single(query, log_data, args)))
-            return await super().copy_from_query(query, *args, **kwargs) # type: ignore
+            return await super().copy_from_query(query, *args, **kwargs)
 
         async def copy_from_table(self, table_name: str, schema_name: Optional[str] = None, **kwargs: Any) -> str:
             self.logger.debug("{}: copy_from_table: {}".format(id(self), fmt_table(table_name, schema_name)))
-            return await super().copy_from_table(table_name, schema_name=schema_name, **kwargs) # type: ignore
+            return await super().copy_from_table(table_name, schema_name=schema_name, **kwargs)
 
         async def copy_records_to_table(self, table_name: str, schema_name: Optional[str] = None, **kwargs: Any) -> str:
             self.logger.debug("{}: copy_records_to_table: {}".format(id(self), fmt_table(table_name, schema_name)))
-            return await super().copy_records_to_table(table_name, schema_name=schema_name, **kwargs) # type: ignore
+            return await super().copy_records_to_table(table_name, schema_name=schema_name, **kwargs)
 
         async def copy_to_table(self, table_name: str, schema_name: Optional[str] = None, **kwargs: Any) -> str:
             self.logger.debug("{}: copy_to_table: {}".format(id(self), fmt_table(table_name, schema_name)))
-            return await super().copy_to_table(table_name, schema_name=schema_name, **kwargs) # type: ignore
+            return await super().copy_to_table(table_name, schema_name=schema_name, **kwargs)
 
         def cursor(self, query: str, *args: Sequence[Any], log_data: Union[bool, Sequence[int]] = True, **kwargs: Any
             ) -> asyncpg.cursor.CursorFactory:
@@ -97,17 +97,17 @@ def LoggingConnection(logger: logging.Logger) -> Type[asyncpg.connection.Connect
         async def execute(self, query: str, *args: Sequence[Any], log_data: Union[bool, Sequence[int]] = True,
             **kwargs: Any) -> str:
             self.logger.debug("{} execute: {}".format(id(self), fmt_query_single(query, log_data, args)))
-            return await super().execute(query, *args, **kwargs) # type: ignore
+            return await super().execute(query, *args, **kwargs)
 
         async def executemany(self, query: str, args: Sequence[Sequence[Any]],
             log_data: Union[bool, Sequence[int]] = True, **kwargs: Any) -> None:
             self.logger.debug("{} executemany: {}".format(id(self), fmt_query_multi(query, log_data, args)))
-            return await super().executemany(query, args, **kwargs) # type: ignore
+            return await super().executemany(query, args, **kwargs)
 
         async def fetch(self, query: str, *args: Sequence[Any], log_data: Union[bool, Sequence[int]] = True,
             **kwargs: Any) -> Sequence[asyncpg.Record]:
             self.logger.debug("{} fetch: {}".format(id(self), fmt_query_single(query, log_data, args)))
-            return await super().fetch(query, *args, **kwargs) # type: ignore
+            return await super().fetch(query, *args, **kwargs)
 
         async def fetchrow(self, query: str, *args: Sequence[Any], log_data: Union[bool, Sequence[int]] = True,
             **kwargs: Any) -> Optional[asyncpg.Record]:

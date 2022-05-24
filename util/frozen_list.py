@@ -1,7 +1,7 @@
 from __future__ import annotations
-from typing import Any, List, Iterator, Callable, Iterable, Union, Generic, TypeVar
+from typing import Any, List, Iterator, Iterable, SupportsIndex, Optional, Union, Generic, TypeVar, overload
 
-T = TypeVar("T")
+T = TypeVar("T", covariant=True)
 
 class FrozenList(Generic[T]):
     """
@@ -9,72 +9,88 @@ class FrozenList(Generic[T]):
     underlying list object.
     """
 
-    __slots__ = ("___iter__", "___getitem__", "___len__", "___str__", "___repr__", "___gt__", "___lt__", "___ge__",
-        "___le__", "___eq__", "___ne__", "___mul__", "___rmul__", "___add__", "___radd__", "___contains__", "_copy",
-        "_index", "_count")
+    __slots__ = ("___iter__", "__getitem__", "__len__", "__str__", "__repr__", "__gt__", "__lt__", "__ge__", "__le__",
+        "__eq__", "__ne__", "__mul__", "__rmul__", "__add__", "__radd__", "__contains__", "copy", "index", "count")
 
-    def __init__(self, gen: Iterable[T] =(), /):
+    def __init__(self, gen: Iterable[T] = (), /):
         lst = list(gen)
-        self.___iter__: Callable[[], Iterator[T]]
-        self.___getitem__: Callable[[int], T]
-        self.___len__: Callable[[], int]
-        self.___str__: Callable[[], str]
-        self.___repr__: Callable[[], str]
-        self.___iter__ = lambda: lst.__iter__()
-        self.___getitem__ = lambda index: lst.__getitem__(index)
-        self.___len__ = lambda: lst.__len__()
-        self.___str__ = lambda: "FrozenList(" + lst.__str__() + ")"
-        self.___repr__ = lambda: "FrozenList(" + lst.__repr__() + ")"
+        def __iter__() -> Iterator[T]:
+            return lst.__iter__()
+        self.___iter__ = __iter__
+        @overload
+        def __getitem__(index: SupportsIndex, /) -> T: ...
+        @overload
+        def __getitem__(index: slice, /) -> T: ...
+        def __getitem__(index: Any, /) -> Any:
+            if isinstance(index, slice):
+                return FrozenList(lst.__getitem__(index))
+            else:
+                return lst.__getitem__(index)
+        def __len__() -> int:
+            return lst.__len__()
+        self.__len__ = __len__
+        def __str__() -> str:
+            return "FrozenList({})".format(lst.__str__())
+        self.__str__ = __str__
+        def __repr__() -> str:
+            return "FrozenList({})".format(lst.__repr__())
+        self.__repr__ = __repr__
+        def __gt__(other: Union[List[T], FrozenList[T]], /) -> bool:
+            return other.__lt__(lst) if isinstance(other, FrozenList) else lst.__gt__(other)
+        self.__gt__ = __gt__
+        def __lt__(other: Union[List[T], FrozenList[T]], /) -> bool:
+            return other.__gt__(lst) if isinstance(other, FrozenList) else lst.__lt__(other)
+        self.__lt__ = __lt__
+        def __ge__(other: Union[List[T], FrozenList[T]], /) -> bool:
+            return other.__le__(lst) if isinstance(other, FrozenList) else lst.__ge__(other)
+        self.__ge__ = __ge__
+        def __le__(other: Union[List[T], FrozenList[T]], /) -> bool:
+            return other.__ge__(lst) if isinstance(other, FrozenList) else lst.__le__(other)
+        self.__le__ = __le__
+        def __eq__(other: Any, /) -> bool:
+            return other.__eq__(lst) if isinstance(other, FrozenList) else lst.__eq__(other)
+        self.__eq__ = __eq__
+        def __ne__(other: Any, /) -> bool:
+            return other.__ne__(lst) if isinstance(other, FrozenList) else lst.__ne__(other)
+        self.__ne__ = __ne__
+        def __mul__(other: SupportsIndex, /) -> FrozenList[T]:
+            return FrozenList(lst.__mul__(other))
+        self.__mul__ = __mul__
+        def __rmul__(other: SupportsIndex, /) -> FrozenList[T]:
+            return FrozenList(lst.__rmul__(other))
+        self.__rmul__ = __rmul__
+        def __add__(other: Union[List[T], FrozenList[T]], /) -> FrozenList[T]:
+            return other.__radd__(lst) if isinstance(other, FrozenList) else FrozenList(lst.__add__(other))
+        self.__add__ = __add__
+        def __radd__(other: Union[List[T], FrozenList[T]], /) -> FrozenList[T]:
+            return other.__add__(lst) if isinstance(other, FrozenList) else FrozenList(other.__add__(lst))
+        self.__radd__ = __radd__
+        def __contains__(other: Any, /) -> bool:
+            return lst.__contains__(other)
+        self.__contains__ = __contains__
+        def copy() -> List[T]:
+            return lst.copy()
+        self.copy = copy
+        @overload
+        def index(value: Any, /) -> int: ...
+        @overload
+        def index(value: Any, start: SupportsIndex, /) -> int: ...
+        @overload
+        def index(value: Any, start: SupportsIndex, stop: SupportsIndex, /) -> int: ...
+        def index(value: Any, start: Optional[SupportsIndex] = None, stop: Optional[SupportsIndex] = None, /) -> int:
+            if stop is None:
+                if start is None:
+                    return lst.index(value)
+                else:
+                    return lst.index(value, start)
+            elif start is None:
+                return lst.index(value, 0, stop)
+            else:
+                return lst.index(value, start, stop)
+        self.index = index
+        def count(other: Any) -> int:
+            return lst.count(other)
+        self.count = count
 
-        self.___gt__: Callable[[Union[List[T], FrozenList[T]]], bool]
-        self.___lt__: Callable[[Union[List[T], FrozenList[T]]], bool]
-        self.___ge__: Callable[[Union[List[T], FrozenList[T]]], bool]
-        self.___le__: Callable[[Union[List[T], FrozenList[T]]], bool]
-        self.___eq__: Callable[[Any], bool]
-        self.___ne__: Callable[[Any], bool]
-        self.___gt__ = lambda other: other.___lt__(lst) if isinstance(other, FrozenList) else lst.__gt__(other)
-        self.___lt__ = lambda other: other.___gt__(lst) if isinstance(other, FrozenList) else lst.__lt__(other)
-        self.___ge__ = lambda other: other.___le__(lst) if isinstance(other, FrozenList) else lst.__ge__(other)
-        self.___le__ = lambda other: other.___ge__(lst) if isinstance(other, FrozenList) else lst.__le__(other)
-        self.___eq__ = lambda other: other.___eq__(lst) if isinstance(other, FrozenList) else lst.__eq__(other)
-        self.___ne__ = lambda other: other.___ne__(lst) if isinstance(other, FrozenList) else lst.__ne__(other)
-
-        self.___mul__: Callable[[int], FrozenList[T]]
-        self.___rmul__: Callable[[int], FrozenList[T]]
-        self.___add__: Callable[[Union[List[T], FrozenList[T]]], FrozenList[T]]
-        self.___radd__: Callable[[Union[List[T], FrozenList[T]]], FrozenList[T]]
-        self.___mul__ = lambda other: FrozenList(lst.__mul__(other))
-        self.___rmul__ = lambda other: FrozenList(lst.__rmul__(other))
-        self.___add__ = lambda other: (
-            other.___radd__(lst) if isinstance(other, FrozenList) else FrozenList(lst.__add__(other)))
-        self.___radd__ = lambda other: (
-            other.___add__(lst) if isinstance(other, FrozenList) else FrozenList(other.__add__(lst)))
-
-        self.___contains__: Callable[[T], bool]
-        self._copy: Callable[[], List[T]]
-        self._index: Callable[..., int]
-        self._count: Callable[[T], int]
-        self.___contains__ = lambda other: lst.__contains__(other)
-        self._copy = lambda: lst.copy()
-        self._index = lambda *args: lst.index(*args)
-        self._count = lambda x: lst.count(x)
-
-    def __iter__(self) -> Iterator[T]: return self.___iter__()
-    def __getitem__(self, index: int) -> T: return self.___getitem__(index)
-    def __len__(self) -> int: return self.___len__()
-    def __str__(self) -> str: return self.___str__()
-    def __repr__(self) -> str: return self.___repr__()
-    def __gt__(self, other: Union[List[T], FrozenList[T]]) -> bool: return self.___gt__(other)
-    def __lt__(self, other: Union[List[T], FrozenList[T]]) -> bool: return self.___lt__(other)
-    def __ge__(self, other: Union[List[T], FrozenList[T]]) -> bool: return self.___ge__(other)
-    def __le__(self, other: Union[List[T], FrozenList[T]]) -> bool: return self.___le__(other)
-    def __eq__(self, other: Any) -> bool: return self.___eq__(other)
-    def __ne__(self, other: object) -> bool: return self.___ne__(other)
-    def __mul__(self, other: int) -> FrozenList[T]: return self.___mul__(other)
-    def __rmul__(self, other: int) -> FrozenList[T]: return self.___rmul__(other)
-    def __add__(self, other: Union[List[T], FrozenList[T]]) -> FrozenList[T]: return self.___add__(other)
-    def __radd__(self, other: Union[List[T], FrozenList[T]]) -> FrozenList[T]: return self.___radd__(other)
-    def __contains__(self, other: T) -> bool: return self.___contains__(other)
-    def copy(self) -> List[T]: return self._copy()
-    def index(self, *args: Any) -> int: return self._index(*args)
-    def count(self, x: T, /) -> int: return self._count(x)
+    def __iter__(self) -> Iterator[T]:
+        return self.___iter__()

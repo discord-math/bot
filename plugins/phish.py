@@ -10,8 +10,11 @@ import util.discord
 import util.frozen_list
 import plugins
 import plugins.commands
+import plugins.phish
+import plugins.privileges
+import plugins.reactions
 
-class PhishConf(Protocol, Awaitable[None]):
+class PhishConf(Awaitable[None], Protocol):
     api: str
     identity: str
     submit_url: str

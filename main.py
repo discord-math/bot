@@ -1,12 +1,12 @@
 import logging
-import log_setup
+import log_setup # type: ignore
 
 logger: logging.Logger = logging.getLogger(__name__)
 
 try:
     import asyncio
 
-    import util.restart
+    import util.restart # type: ignore
     import plugins
     import discord_client
 

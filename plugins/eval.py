@@ -5,7 +5,6 @@ import inspect
 import sys
 import types
 import traceback
-import os
 import itertools
 import discord
 import discord.ext.commands
@@ -35,10 +34,10 @@ async def exec_command(ctx: discord.ext.commands.Context,
     code_scope["ctx"] = ctx
     code_scope["client"] = discord_client.client
     def mk_code_print(fp: io.StringIO) -> Callable[..., None]:
-        def code_print( # type: ignore
-            *args, sep=" ", end="\n", file=fp, flush=False):
+        def code_print(*args, sep=" ", end="\n", file=fp, flush=False):
             return print(*args, sep=sep, end=end, file=file, flush=flush)
         return code_print
+    fp = io.StringIO()
     try:
         for arg in args:
             if isinstance(arg, (util.discord.CodeBlock, util.discord.Inline)):

@@ -25,7 +25,7 @@ class Reminder(TypedDict):
     time: int
     contents: str
 
-class RemindersConf(Protocol, Awaitable[None]):
+class RemindersConf(Awaitable[None], Protocol):
     def __getitem__(self, user_id: int) -> Optional[FrozenList[Reminder]]: ...
     def __setitem__(self, user_id: int, obj: Optional[FrozenList[Reminder]]) -> None: ...
     def __iter__(self) -> Iterator[Tuple[str]]: ...
@@ -154,8 +154,8 @@ async def init() -> None:
     for user_id, in conf:
         obj = conf[int(user_id)]
         assert obj is not None
-        conf[int(user_id)] = FrozenList({"guild": int(rem["guild"]), "channel": int(rem["channel"]),
-            "msg": int(rem["msg"]), "time": int(rem["time"]), "contents": rem["contents"]} for rem in obj)
+        conf[int(user_id)] = FrozenList(Reminder(guild=int(rem["guild"]), channel=int(rem["channel"]),
+            msg=int(rem["msg"]), time=int(rem["time"]), contents=rem["contents"]) for rem in obj)
     await conf
 
     expiry_task: asyncio.Task[None] = util.asyncio.run_async(expire_reminders)
@@ -173,8 +173,8 @@ async def remindme_command(ctx: discord.ext.commands.Context, interval: Duration
     reminders_optional = conf[ctx.author.id]
     reminders = reminders_optional.copy() if reminders_optional is not None else []
     reminder_time = int(datetime.now(timezone.utc).timestamp()) + interval
-    reminder: Reminder = {"guild": ctx.guild.id, "channel": ctx.channel.id, "msg": ctx.message.id,
-        "time": reminder_time, "contents": text or ""}
+    reminder = Reminder(guild=ctx.guild.id, channel=ctx.channel.id, msg=ctx.message.id, time=reminder_time,
+        contents=text or "")
     reminders.append(reminder)
     reminders.sort(key=lambda a: a["time"])
     conf[ctx.author.id] = FrozenList(reminders)

@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import TypeVar, Generic, Dict, Set, Iterator
+from typing import TypeVar, Generic, Dict, Set, Iterator, Iterable
 
 T = TypeVar("T")
 
@@ -66,7 +66,7 @@ class Digraph(Generic[T]):
         dfs(x)
         return graph
 
-    def topo_sort_fwd(self, sources: Set[T] = set()) -> Iterator[T]:
+    def topo_sort_fwd(self, sources: Iterable[T] = ()) -> Iterator[T]:
         """
         Iterate through vertices in such a way that whenever there is an edge from x to y, x will come up earlier in
         iteration than y. The sources are forcibly included in the iteration.
@@ -87,7 +87,7 @@ class Digraph(Generic[T]):
         for x in sources:
             yield from dfs(x)
 
-    def topo_sort_bck(self, sources: Set[T] = set()) -> Iterator[T]:
+    def topo_sort_bck(self, sources: Iterable[T] = ()) -> Iterator[T]:
         """
         Iterate through vertices in such a way that whenever there is an edge from x to y, x will come up later in
         iteration than y. The sources are forcibly included in the iteration.

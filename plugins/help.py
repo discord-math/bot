@@ -27,12 +27,13 @@ class HelpCommand(discord.ext.commands.HelpCommand):
         prefix = self.context.prefix or ""
 
         listing = "\n".join("{}: {}".format(module.rsplit(".", 1)[-1],
-                ", ".join(util.discord.format("{!i}", prefix + cmd.name) for cmd in sorted(cmds, key=lambda c: c.name)))
-            for module, cmds in sorted(commands.items(), key=lambda mc: mc[0].rsplit(".", 1)[-1]))
+                ", ".join(util.discord.format("{!i}", prefix + cmd.name)
+                    for cmd in sorted(cmds, key=lambda c: c.name))) # type:ignore
+            for module, cmds in sorted(commands.items(), key=lambda mc: mc[0].rsplit(".", 1)[-1])) # type: ignore
 
         await self.get_destination().send(
             util.discord.format("**Commands:**\n{}\n\nType {!i} for more info on a command.",
-                listing, prefix + self.invoked_with + " <command name>"))
+                listing, prefix + (self.invoked_with or "") + " <command name>"))
 
     async def send_command_help(self, command: discord.ext.commands.Command) -> None:
         if self.context is None: return
@@ -68,7 +69,7 @@ class HelpCommand(discord.ext.commands.HelpCommand):
         desc = group.help
 
         subcommands = []
-        for cmd in sorted(group.walk_commands(), key=lambda c: c.qualified_name):
+        for cmd in sorted(group.walk_commands(), key=lambda c: c.qualified_name): # type: ignore
             args = [cmd.name, cmd.signature]
             if isinstance(cmd, discord.ext.commands.Group) and not cmd.invoke_without_command:
                 continue
@@ -89,7 +90,7 @@ class HelpCommand(discord.ext.commands.HelpCommand):
         await self.get_destination().send(util.discord.format(
             "**Usage:** {!i}{}\n{}\n**Sub-commands:**\n{}{}\n\nType {!i} for more info on a sub-command.",
             usage, akanote, desc, "\n".join(subcommands), privnote,
-            prefix + self.invoked_with + " " + group.qualified_name + " <sub-command name>"))
+            prefix + (self.invoked_with or "") + " " + group.qualified_name + " <sub-command name>"))
 
 old_help = discord_client.client.help_command
 discord_client.client.help_command = HelpCommand()

@@ -8,7 +8,7 @@ import discord
 import discord.ext.commands
 import logging
 import datetime
-from typing import Dict, Tuple, Optional, Awaitable, Any, Protocol, cast, TYPE_CHECKING
+from typing import Dict, Optional, Awaitable, Any, Protocol, cast, TYPE_CHECKING
 import discord_client
 import util.db
 import util.db.kv
@@ -51,7 +51,7 @@ class ModmailThread:
     if TYPE_CHECKING:
         def __init__(self, *, user_id: int, thread_first_message_id: int, last_used: int) -> None: ...
 
-class ModmailConf(Protocol, Awaitable[None]):
+class ModmailConf(Awaitable[None], Protocol):
     token: str
     guild: int
     channel: int
@@ -148,8 +148,10 @@ class ModMailClient(discord.Client):
                 if len(part) + len(footer) <= 2000:
                     part += footer
                     sent_footer = True
-                copy = await channel.send(part,
-                    allowed_mentions=mentions, reference=reference if copy_first is None else None)
+                if reference is not None and copy_first is None:
+                    copy = await channel.send(part, allowed_mentions=mentions, reference=reference)
+                else:
+                    copy = await channel.send(part, allowed_mentions=mentions)
                 await add_modmail(msg, copy)
                 if copy_first is None:
                     copy_first = copy
@@ -166,41 +168,46 @@ class Modmail(discord.ext.commands.Cog):
     """Handle modmail messages"""
     @discord.ext.commands.Cog.listener("on_message")
     async def modmail_reply(self, msg: discord.Message) -> None:
-        if msg.reference and msg.reference.message_id in message_map and not msg.author.bot:
-            modmail = message_map[msg.reference.message_id]
+        if msg.author.bot:
+            return
+        if msg.reference is None or msg.reference.message_id is None:
+            return
+        if msg.reference.message_id not in message_map:
+            return
+        modmail = message_map[msg.reference.message_id]
 
-            anon_react = "\U0001F574"
-            named_react = "\U0001F9CD"
-            cancel_react = "\u274C"
+        anon_react = "\U0001F574"
+        named_react = "\U0001F9CD"
+        cancel_react = "\u274C"
 
+        try:
+            query = await msg.channel.send(
+                "Reply anonymously {}, personally {}, or cancel {}".format(anon_react, named_react, cancel_react))
+        except (discord.NotFound, discord.Forbidden):
+            return
+
+        result = await plugins.reactions.get_reaction(query, msg.author,
+            {anon_react: "anon", named_react: "named", cancel_react: None}, timeout=120, unreact=False)
+
+        await query.delete()
+        if result is None:
+            await msg.channel.send("Cancelled")
+        else:
+            header = ""
+            if result == "named":
+                header = util.discord.format("**From {}** {!m}:\n\n", msg.author.display_name, msg.author)
             try:
-                query = await msg.channel.send(
-                    "Reply anonymously {}, personally {}, or cancel {}".format(anon_react, named_react, cancel_react))
+                chan = await client.fetch_channel(modmail.dm_channel_id)
+                if not isinstance(chan, discord.DMChannel):
+                    await msg.channel.send("Could not deliver DM (DM closed)")
+                    return
+                await chan.send(header + msg.content,
+                    reference=discord.MessageReference(message_id=modmail.dm_message_id,
+                        channel_id=modmail.dm_channel_id, fail_if_not_exists=False))
             except (discord.NotFound, discord.Forbidden):
-                return
-
-            result = await plugins.reactions.get_reaction(query, msg.author,
-                {anon_react: "anon", named_react: "named", cancel_react: None}, timeout=120, unreact=False)
-
-            await query.delete()
-            if result is None:
-                await msg.channel.send("Cancelled")
+                await msg.channel.send("Could not deliver DM (User left guild?)")
             else:
-                header = ""
-                if result == "named":
-                    header = util.discord.format("**From {}** {!m}:\n\n", msg.author.display_name, msg.author)
-                try:
-                    chan = await client.fetch_channel(modmail.dm_channel_id)
-                    if not isinstance(chan, discord.DMChannel):
-                        await msg.channel.send("Could not deliver DM (DM closed)")
-                        return
-                    await chan.send(header + msg.content,
-                        reference=discord.MessageReference(message_id=modmail.dm_message_id,
-                            channel_id=modmail.dm_channel_id, fail_if_not_exists=False))
-                except (discord.NotFound, discord.Forbidden):
-                    await msg.channel.send("Could not deliver DM (User left guild?)")
-                else:
-                    await msg.channel.send("Message delivered")
+                await msg.channel.send("Signed reply delivered" if result == "named" else "Anonymous reply delivered")
 
 client: discord.Client = ModMailClient(
     loop=asyncio.get_event_loop(),

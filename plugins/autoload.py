@@ -4,12 +4,12 @@ Automatically load certain plugins after bot initialization.
 
 import asyncio
 import logging
-from typing import List, Set, Tuple, Optional, Iterator, Awaitable, Protocol, cast
+from typing import Set, Tuple, Optional, Iterator, Awaitable, Protocol, cast
 import util.asyncio
 import util.db.kv
 import plugins
 
-class AutoloadConf(Protocol, Awaitable[None]):
+class AutoloadConf(Awaitable[None], Protocol):
     def __getitem__(self, key: str) -> Optional[bool]: ...
     def __setitem__(self, key: str, val: Optional[bool]) -> None: ...
     def __iter__(self) -> Iterator[Tuple[str]]: ...

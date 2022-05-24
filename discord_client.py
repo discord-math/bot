@@ -12,7 +12,7 @@ import static_config
 logger: logging.Logger = logging.getLogger(__name__)
 
 try:
-    client
+    client # type: ignore
     logger.warn("Refusing to re-create the Discord client", stack_info=True)
 except NameError:
     intents = discord.Intents.all()

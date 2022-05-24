@@ -7,7 +7,7 @@ import plugins.cogs
 import util.discord
 import util.db.kv
 
-class TalksConf(Protocol, Awaitable[None]):
+class TalksConf(Awaitable[None], Protocol):
     channel: Optional[int]
     role: Optional[int]
     regex: Optional[str]

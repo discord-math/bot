@@ -7,7 +7,6 @@ execution of the bot. This module implements __getattr__ so that you could write
 """
 
 import configparser
-from typing import Dict
 
 config_file: str = "bot.conf"
 

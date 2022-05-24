@@ -3,7 +3,6 @@ import traceback
 import importlib
 import discord
 import discord.ext.commands
-from typing import Optional
 import plugins
 import plugins.autoload
 import plugins.commands

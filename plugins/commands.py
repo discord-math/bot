@@ -2,13 +2,11 @@
 Utilities for registering basic commands. Commands are triggered by a configurable prefix.
 """
 
-import re
 import asyncio
 import logging
 import discord
 import discord.ext.commands
-from typing import (Dict, Set, Iterator, Optional, Callable, Awaitable, Coroutine, Any, Type, TypeVar, Protocol, cast,
-    overload)
+from typing import Set, Optional, Callable, Coroutine, Any, Type, TypeVar, Protocol, cast, overload
 import util.discord
 import discord_client
 import util.db.kv
@@ -120,7 +118,7 @@ def command(name: Optional[str] = None, cls: Any = discord.ext.commands.Command,
 
 def group(name: Optional[str] = None, *args: Any, **kwargs: Any) -> Callable[
     [Callable[..., Coroutine[Any, Any, None]]], discord.ext.commands.Group]:
-    return command(name, cls=discord.ext.commands.Group, *args, **kwargs) # type: ignore
+    return command(name, cls=discord.ext.commands.Group, *args, **kwargs)
 
 def suppress_usage(cmd: T) -> T:
     cmd.suppress_usage = True # type: ignore
@@ -137,7 +135,7 @@ class CleanupReference:
         msg_id = ctx.message.id
         async def cleanup_task() -> None:
             await ctx.bot.wait_for("raw_message_delete",
-                check=lambda m: m.channel_id == chan_id and m.message_id == msg_id)
+                check=lambda m: m.channel_id == chan_id and m.message_id == msg_id) # type: ignore
         self.task = asyncio.create_task(cleanup_task(), name="Cleanup task for {}-{}".format(chan_id, msg_id))
 
     def __del__(self) -> None:
@@ -146,7 +144,7 @@ class CleanupReference:
             self.task = None
 
     def add(self, msg: discord.Message) -> None:
-        self.messages.add(discord.PartialMessage(channel=msg.channel, id=msg.id)) # type: ignore
+        self.messages.add(discord.PartialMessage(channel=msg.channel, id=msg.id))
 
     async def finalize(self) -> None:
         if self.task is None:
@@ -176,7 +174,7 @@ def init_cleanup(ctx: discord.ext.commands.Context) -> None:
             msg = await old_send(*args, **kwargs)
             ref.add(msg)
             return msg
-        ctx.send = send # type: ignore
+        ctx.send = send
 
 async def finalize_cleanup(ctx: discord.ext.commands.Context) -> None:
     if (ref := getattr(ctx, "cleanup", None)) is not None:
@@ -194,22 +192,22 @@ def cleanup(cmd: T) -> T:
         init_cleanup(ctx)
         await old_invoke(ctx)
         await finalize_cleanup(ctx)
-    cmd.invoke = invoke # type: ignore
+    cmd.invoke = invoke
 
     old_on_error = getattr(cmd, "on_error", None)
     async def on_error(*args: Any) -> None:
         if len(args) == 3:
-            cog, ctx, exc = args
+            _, ctx, _ = args
         else:
-            ctx, exc = args
+            ctx, _ = args
         init_cleanup(ctx)
         if old_on_error is not None:
             await old_on_error(*args)
     cmd.on_error = on_error
 
-    old_ensure_assignment_on_copy = cmd._ensure_assignment_on_copy # type: ignore
+    old_ensure_assignment_on_copy = cmd._ensure_assignment_on_copy
     def ensure_assignment_on_copy(other: T) -> T:
-        return cleanup(old_ensure_assignment_on_copy(other)) # type: ignore
-    cmd._ensure_assignment_on_copy = ensure_assignment_on_copy # type: ignore
+        return cleanup(old_ensure_assignment_on_copy(other))
+    cmd._ensure_assignment_on_copy = ensure_assignment_on_copy
 
     return cmd

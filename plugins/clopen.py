@@ -3,8 +3,10 @@ import time
 import collections
 import logging
 import discord
-import discord.ext.commands.cog
-from typing import List, Dict, Tuple, Optional, Union, Any, Literal, Awaitable, Protocol, overload, cast
+import discord.ext.commands
+from typing import Dict, Tuple, Optional, Union, Any, Literal, Awaitable, Protocol, overload, cast
+import util.discord
+import util.frozen_list
 import util.db.kv
 import discord_client
 import plugins
@@ -40,7 +42,7 @@ def limit_embed() -> discord.Embed:
 def prompt_message(mention: int) -> str:
     return util.discord.format("{!m} Has your question been resolved?", mention)
 
-class ClopenConf(Protocol, Awaitable[None]):
+class ClopenConf(Awaitable[None], Protocol):
     channels: util.frozen_list.FrozenList[int]
     available_category: int
     used_category: int
@@ -85,7 +87,6 @@ async def scheduler() -> None:
     await discord_client.client.wait_until_ready()
     while True:
         try:
-            hidden = [id for id in conf.channels if conf[id, "state"] == "hidden"]
             if sum(conf[id, "state"] == "available" for id in conf.channels) < conf.min_avail:
                 for id in conf.channels:
                     if conf[id, "state"] == "hidden":

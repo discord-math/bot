@@ -8,7 +8,6 @@ import static_config
 import hashlib
 import plugins
 import util.db as db
-from typing import Callable
 
 logger = logging.getLogger(__name__)
 

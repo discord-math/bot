@@ -8,6 +8,7 @@ from typing import (Tuple, Dict, Union, Optional, Literal, AsyncIterator, Callab
 import discord_client
 import plugins
 import plugins.cogs
+import plugins.reactions
 import util.asyncio
 import util.discord
 
@@ -113,7 +114,7 @@ class ReactionMonitor(ContextManager['ReactionMonitor[T]'], Generic[T]):
         reaction_queues.add(self.queue)
         return self
 
-    def __exit__(self, exc_type, exc_val, tb) -> None: # type: ignore
+    def __exit__(self, exc_type, exc_val, tb) -> None:
         reaction_queues.discard(self.queue)
 
     @util.asyncio.__await__
@@ -218,7 +219,7 @@ async def get_input(msg: discord.Message, user: discord.abc.Snowflake,
             check=lambda m: m.channel == msg.channel and m.author.id == user.id))
         reaction_task = asyncio.ensure_future(mon)
         try:
-            done, pending = await asyncio.wait((msg_task, reaction_task), timeout=timeout,
+            done, _ = await asyncio.wait((msg_task, reaction_task), timeout=timeout,
                 return_when=asyncio.FIRST_COMPLETED)
         except asyncio.TimeoutError:
             return None

@@ -2,6 +2,7 @@ import io
 import csv
 import collections
 import discord
+import discord.ext.commands
 from typing import List, Dict, Set, Tuple, Callable, Awaitable, Union, Optional, Any
 import util.discord
 import plugins.commands
@@ -60,7 +61,7 @@ async def exportperms(ctx: discord.ext.commands.Context) -> None:
             else:
                 name = "User {} {}".format(target.id, target.name)
             writer.writerow(header + [name] + ["+" if allow else "-" if deny else "/"
-                for (flag, allow), (_, deny) in zip(*overwrite.pair())])
+                for (_, allow), (_, deny) in zip(*overwrite.pair())])
 
     await ctx.send(file=discord.File(io.BytesIO(file.getvalue().encode()), "perms.csv"))
 
@@ -80,6 +81,32 @@ def overwrites_for(channel: discord.abc.GuildChannel, target: Union[discord.Role
         if t.id == target.id:
             return overwrite
     return discord.PermissionOverwrite()
+
+SubChannel = Union[discord.TextChannel, discord.VoiceChannel, discord.StageChannel, discord.ForumChannel]
+GuildChannel = Union[discord.CategoryChannel, SubChannel]
+
+def edit_role_perms(role: discord.Role, add_mask: int, remove_mask: int
+    ) -> Callable[[], Awaitable[Optional[discord.Role]]]:
+    return lambda: role.edit(permissions=discord.Permissions(
+        role.permissions.value & ~remove_mask | add_mask))
+
+def edit_channel_category(channel: SubChannel, category: Optional[discord.CategoryChannel]
+    ) -> Callable[[], Awaitable[Any]]:
+    return lambda: channel.edit(category=category)
+
+def edit_channel_overwrites(channel: GuildChannel,
+    overwrites: Dict[Union[discord.Role, discord.Member], Tuple[int, int, int]]) -> Callable[[], Awaitable[Any]]:
+    if isinstance(channel, (discord.VoiceChannel, discord.CategoryChannel, discord.StageChannel)):
+        return lambda: channel.edit(overwrites={target:
+            tweak_overwrite(overwrites_for(channel, target), add_mask, remove_mask, reset_mask)
+            for target, (add_mask, remove_mask, reset_mask) in overwrites.items()})
+    else:
+        return lambda: channel.edit(overwrites={target:
+            tweak_overwrite(overwrites_for(channel, target), add_mask, remove_mask, reset_mask)
+            for target, (add_mask, remove_mask, reset_mask) in overwrites.items()})
+
+def sync_channel(channel: SubChannel) -> Callable[[], Awaitable[Any]]:
+    return lambda: channel.edit(sync_permissions=True)
 
 @plugins.privileges.priv("admin")
 @plugins.commands.command("importperms")
@@ -108,11 +135,11 @@ async def importperms(ctx: discord.ext.commands.Context) -> None:
 
     actions: List[Callable[[], Awaitable[Any]]] = []
     output: List[str] = []
-    new_overwrites: Dict[discord.abc.GuildChannel, Dict[Union[discord.Role, discord.Member], Tuple[int, int, int]]]
+    new_overwrites: Dict[GuildChannel, Dict[Union[discord.Role, discord.Member], Tuple[int, int, int]]]
     new_overwrites = collections.defaultdict(dict)
-    overwrites_changed: Set[discord.abc.GuildChannel] = set()
-    want_sync: Set[discord.abc.GuildChannel] = set()
-    seen_moved: Dict[discord.abc.GuildChannel, Optional[discord.CategoryChannel]] = {}
+    overwrites_changed: Set[GuildChannel] = set()
+    want_sync: Set[SubChannel] = set()
+    seen_moved: Dict[SubChannel, Optional[discord.CategoryChannel]] = {}
 
     for row in reader:
         if len(row) < 3:
@@ -137,13 +164,10 @@ async def importperms(ctx: discord.ext.commands.Context) -> None:
             if changes:
                 output.append(util.discord.format("{!M}: {}", role, ", ".join(changes)))
             if add_mask != 0 or remove_mask != 0:
-                actions.append((lambda role, add_mask, remove_mask: lambda:
-                    role.edit(permissions=discord.Permissions(role.permissions.value & ~remove_mask | add_mask)))
-                    (role, add_mask, remove_mask))
+                actions.append(edit_role_perms(role, add_mask, remove_mask))
         else:
             category: Optional[discord.CategoryChannel]
-            channel: Union[discord.CategoryChannel,
-                discord.TextChannel, discord.StoreChannel, discord.VoiceChannel, discord.StageChannel]
+            channel: discord.abc.GuildChannel
             if row[1] == "":
                 category = None
                 if row[0] not in channels:
@@ -171,9 +195,7 @@ async def importperms(ctx: discord.ext.commands.Context) -> None:
                 if not channel in seen_moved:
                     seen_moved[channel] = category
                     output.append(util.discord.format("Move {!c} to {!c}", channel, category))
-                    actions.append((lambda channel, category: lambda:
-                        channel.edit(category=category))
-                        (channel, category))
+                    actions.append(edit_channel_category(channel, category))
 
             if row[2] == "(synced)" and not isinstance(channel, discord.CategoryChannel):
                 want_sync.add(channel)
@@ -216,11 +238,8 @@ async def importperms(ctx: discord.ext.commands.Context) -> None:
                 new_overwrites[channel][target] = (add_mask, remove_mask, reset_mask)
             else:
                 new_overwrites[channel]
-    for chan in new_overwrites:
+    for channel in new_overwrites:
         if channel in want_sync: continue
-        if not isinstance(chan, (discord.CategoryChannel,
-            discord.TextChannel, discord.StoreChannel, discord.VoiceChannel, discord.StageChannel)): continue
-        channel = chan
         for add_mask, remove_mask, reset_mask in new_overwrites[channel].values():
             if add_mask != 0 or remove_mask != 0 or reset_mask != 0:
                 overwrites_changed.add(channel)
@@ -231,23 +250,14 @@ async def importperms(ctx: discord.ext.commands.Context) -> None:
                     "{!c} remove {!M}" if isinstance(target, discord.Role) else "{!c} remove {!m}",
                     channel, target))
                 overwrites_changed.add(channel)
-        actions.append((lambda channel: lambda:
-            channel.edit(overwrites={
-                target: tweak_overwrite(overwrites_for(channel, target), add_mask, remove_mask, reset_mask)
-                for target, (add_mask, remove_mask, reset_mask) in new_overwrites[channel].items()}))
-            (channel))
-    for chan in want_sync:
-        if not isinstance(chan,
-            (discord.TextChannel, discord.StoreChannel, discord.VoiceChannel, discord.StageChannel)): continue
-        channel = chan
+        actions.append(edit_channel_overwrites(channel, new_overwrites[channel]))
+    for channel in want_sync:
         new_category = seen_moved.get(channel, channel.category)
         if new_category is None:
             raise util.discord.UserError(util.discord.format("Cannot sync channel {!c} with no category", channel))
         if not channel.permissions_synced or channel in seen_moved or new_category in overwrites_changed:
             output.append(util.discord.format("Sync {!c} with {!c}", channel, new_category))
-            actions.append((lambda channel: lambda:
-                channel.edit(sync_permissions=True))
-                (channel))
+            actions.append(sync_channel(channel))
 
     if not output:
         await ctx.send("No changes.")

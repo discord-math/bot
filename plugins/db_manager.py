@@ -1,9 +1,8 @@
-import asyncio
 import json
 import asyncpg
 import discord
 import discord.ext.commands
-from typing import List, Optional, Union, Any
+from typing import List, Optional, Union
 import plugins.commands
 import plugins.privileges
 import plugins.reactions

@@ -2,6 +2,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import discord
+import discord.ext.commands
 import sqlalchemy
 import sqlalchemy.dialects.postgresql
 import sqlalchemy.ext.asyncio
@@ -84,8 +85,8 @@ async def save_attachment(attm: discord.Attachment) -> None:
 
 async def register_messages(msgs: Iterable[discord.Message]) -> None:
     async with sessionmaker() as session:
+        filepaths = set()
         try:
-            filepaths = set()
             for msg in msgs:
                 if not msg.author.bot:
                     session.add(SavedMessage(id=msg.id, channel_id=msg.channel.id, author_id=msg.author.id,
@@ -178,7 +179,7 @@ async def process_message_edit(update: discord.RawMessageUpdateEvent) -> None:
     async with sessionmaker() as session:
         if (msg := await session.get(SavedMessage, update.message_id)) is not None:
             old_content = msg.content.decode("utf8")
-            if "content" in update.data and (new_content := update.data["content"]) != old_content: # type: ignore
+            if "content" in update.data and (new_content := update.data["content"]) != old_content:
                 msg.content = new_content.encode("utf8")
                 await session.commit()
                 await util.discord.ChannelById(discord_client.client, conf.temp_channel).send(
@@ -201,11 +202,12 @@ async def process_message_delete(delete: discord.RawMessageDeleteEvent) -> None:
                     msg.author_id, user_nick(msg.username, msg.nick), msg.content.decode("utf8"), att_list)[:2000],
                     allowed_mentions=discord.AllowedMentions.none())
 
-async def process_message_bulk_delete( deletes: discord.RawBulkMessageDeleteEvent) -> None:
+async def process_message_bulk_delete(deletes: discord.RawBulkMessageDeleteEvent) -> None:
+    deleted_ids = list(deletes.message_ids)
     async with sessionmaker() as session:
         attms: Dict[int, List[str]] = {}
         stmt = (sqlalchemy.select(SavedFile.message_id, SavedFile.url)
-            .where(SavedFile.message_id.in_(deletes.message_ids)))
+            .where(SavedFile.message_id.in_(deleted_ids)))
         for message_id, url in await session.execute(stmt):
             if message_id not in attms:
                 attms[message_id] = []
@@ -214,7 +216,7 @@ async def process_message_bulk_delete( deletes: discord.RawBulkMessageDeleteEven
         users: Set[int] = set()
         log = []
         stmt = (sqlalchemy.select(SavedMessage)
-            .where(SavedMessage.id.in_(deletes.message_ids))
+            .where(SavedMessage.id.in_(deleted_ids))
             .order_by(SavedMessage.id))
         for msg in (await session.execute(stmt)).scalars():
             users.add(msg.author_id)

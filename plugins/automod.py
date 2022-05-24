@@ -1,20 +1,22 @@
-import aiohttp
 import asyncio
 import logging
 import re
 import discord
+import discord.ext.commands
 import discord.utils
 from typing import List, Dict, Tuple, Optional, Union, Literal, Iterable, Awaitable, Protocol, overload, cast
 import util.db.kv
 import util.discord
 import util.frozen_list
 import discord_client
+import plugins
 import plugins.commands
 import plugins.tickets
 import plugins.phish
+import plugins.privileges
 import plugins.message_tracker
 
-class AutomodConf(Protocol, Awaitable[None]):
+class AutomodConf(Awaitable[None], Protocol):
     active: util.frozen_list.FrozenList[int]
     index: int
     mute_role: int
@@ -291,7 +293,9 @@ async def automod_add(ctx: discord.ext.commands.Context, kind: Literal["substrin
 @automod_command.command("remove")
 async def automod_remove(ctx: discord.ext.commands.Context, number: int) -> None:
     """Remove an automod pattern by ID."""
-    if (keywords := conf[number, "keyword"]) is not None and (kind := conf[number, "type"]) is not None:
+    keywords = conf[number, "keyword"]
+    kind = conf[number, "type"]
+    if keywords is not None and kind is not None:
         conf[number, "action"] = None
     active = set(conf.active)
     active.discard(number)

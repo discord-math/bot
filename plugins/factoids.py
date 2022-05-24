@@ -1,4 +1,3 @@
-import asyncio
 import sqlalchemy
 import sqlalchemy.schema
 import sqlalchemy.orm
@@ -8,7 +7,8 @@ import datetime
 import json
 import discord
 import discord.ext.commands
-from typing import Optional, Union, Any, Protocol, cast
+from typing import Optional, Union, Any, Protocol, cast, TYPE_CHECKING, overload
+import util.discord
 import util.db
 import util.db.kv
 import plugins
@@ -104,13 +104,23 @@ class Factoids(discord.ext.commands.Cog):
                 .limit(1))
             if (alias := (await session.execute(stmt)).scalar()) is None: return
             embed = discord.Embed.from_dict(alias.factoid.embed_data) if alias.factoid.embed_data is not None else None
-            reference = None
             if msg.reference is not None and msg.reference.message_id is not None:
                 reference = discord.MessageReference(guild_id=msg.reference.guild_id,
                     channel_id=msg.reference.channel_id, message_id=msg.reference.message_id,
                     fail_if_not_exists=False)
-            await msg.channel.send(alias.factoid.message_text, embed=embed, reference=reference,
-                allowed_mentions=discord.AllowedMentions.none())
+                if embed is not None:
+                    await msg.channel.send(alias.factoid.message_text, embed=embed, reference=reference,
+                        allowed_mentions=discord.AllowedMentions.none())
+                else:
+                    await msg.channel.send(alias.factoid.message_text, reference=reference,
+                        allowed_mentions=discord.AllowedMentions.none())
+            else:
+                if embed is not None:
+                    await msg.channel.send(alias.factoid.message_text, embed=embed,
+                        allowed_mentions=discord.AllowedMentions.none())
+                else:
+                    await msg.channel.send(alias.factoid.message_text,
+                        allowed_mentions=discord.AllowedMentions.none())
 
             alias.factoid.uses += 1
             alias.factoid.used_at = datetime.datetime.utcnow()
@@ -143,7 +153,7 @@ class Factoids(discord.ext.commands.Cog):
                 uses=0,
                 factoid=Factoid(
                     message_text=content if isinstance(content, str) else None,
-                    embed_data=content.to_dict() if not isinstance(content, str) else None, # type: ignore
+                    embed_data=content.to_dict() if not isinstance(content, str) else None,
                     author_id=ctx.author.id,
                     created_at=datetime.datetime.utcnow(),
                     uses=0)))
@@ -191,7 +201,7 @@ class Factoids(discord.ext.commands.Cog):
             if content is None: return
 
             alias.factoid.message_text = content if isinstance(content, str) else None
-            alias.factoid.embed_data = content.to_dict() if not isinstance(content, str) else None # type: ignore
+            alias.factoid.embed_data = content.to_dict() if not isinstance(content, str) else None
             alias.factoid.author_id = ctx.author.id
             await session.commit()
         await ctx.send(util.discord.format("Factoid updated, use with {!i}", conf.prefix + name))

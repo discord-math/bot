@@ -18,7 +18,7 @@ import inspect
 import types
 import sys
 import atexit
-from typing import Any, List, Dict, Set, Optional, Union, Callable, Iterator, Awaitable, Sequence, TypeVar, cast
+from typing import Any, List, Dict, Set, Optional, Union, Callable, Iterator, Awaitable, Sequence, TypeVar
 import util.digraph
 
 # Allow importing plugins from other directories on the path
@@ -81,15 +81,16 @@ def init(init: T) -> T:
     so far will be called.
     """
     if inspect.iscoroutinefunction(init):
-        async_init = cast(Callable[[], Awaitable[None]], init)
+        ainit = init
     else:
         async def async_init() -> None:
             init()
+        ainit = async_init
 
     current = current_plugin()
     if current not in initializers:
         initializers[current] = []
-    initializers[current].append(async_init)
+    initializers[current].append(ainit)
     return init
 
 finalizers: Dict[str, List[Callable[[], Awaitable[None]]]] = {}
@@ -107,15 +108,16 @@ def finalizer(fin: T) -> T:
     can be an async function.
     """
     if inspect.iscoroutinefunction(fin):
-        async_fin = cast(Callable[[], Awaitable[None]], fin)
+        afin = fin
     else:
         async def async_fin() -> None:
             fin()
+        afin = async_fin
 
     current = current_plugin()
     if current not in finalizers:
         finalizers[current] = []
-    finalizers[current].append(async_fin)
+    finalizers[current].append(afin)
     return fin
 
 async def initialize_module(name: str) -> None:
@@ -165,9 +167,8 @@ class PluginLoader(importlib.machinery.SourceFileLoader):
 class PluginFinder(importlib.machinery.PathFinder):
     __slots__ = ()
     @classmethod
-    def find_spec(self, name: str, path: Optional[Sequence[Union[bytes, str]]] = None,
+    def find_spec(cls, name: str, path: Optional[Sequence[Union[bytes, str]]] = None,
         target: Optional[types.ModuleType] = None) -> Optional[importlib.machinery.ModuleSpec]:
-        name_parts = name.split(".")
         if not is_plugin(name):
             return None
         spec = super().find_spec(name, path, target)
@@ -178,7 +179,7 @@ class PluginFinder(importlib.machinery.PathFinder):
 
 for i in range(len(sys.meta_path)):
     # typeshed for sys.meta_path is incorrect
-    if sys.meta_path[i] == importlib.machinery.PathFinder: # type: ignore
+    if sys.meta_path[i] == importlib.machinery.PathFinder:
         sys.meta_path.insert(i, PluginFinder) # type: ignore
 
 async def do_unload(name: str, is_dirty: bool = False) -> None:

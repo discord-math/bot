@@ -39,7 +39,7 @@ def get_ddl(*cbs: Union[sqlalchemy.schema.DDLElement, Callable[[sqlalchemy.Conne
     # By default sqlalchemy treats asyncpg as if it had paramstyle="format", which means it tries to escape percent
     # signs. We don't want that so we have to override the paramstyle. Ideally "numeric" would be the right choice here
     # but that doesn't work.
-    dialect = sqlalchemy.dialects.postgresql.dialect(paramstyle="qmark") # type: ignore
+    dialect = sqlalchemy.dialects.postgresql.dialect(paramstyle="qmark")
     ddls = []
 
     def executor(sql: sqlalchemy.schema.ExecutableDDLElement, *args: Any, **kwargs: Any) -> None:

@@ -1,4 +1,3 @@
-import asyncio
 import discord
 import discord.ext.commands
 from typing import Optional, Awaitable, Protocol, cast
@@ -9,7 +8,7 @@ import util.discord
 import util.db.kv
 import util.asyncio
 
-class KeepvanityConf(Protocol, Awaitable[None]):
+class KeepvanityConf(Awaitable[None], Protocol):
     guild: int
     vanity: Optional[str]
 

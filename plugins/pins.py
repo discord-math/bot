@@ -1,8 +1,7 @@
 import asyncio
-import re
 import discord
 import discord.ext.commands
-from typing import Dict, Pattern, Optional
+from typing import Dict, Optional
 import plugins.commands
 import plugins.privileges
 import plugins.locations
@@ -29,14 +28,13 @@ async def pin_command(ctx: discord.ext.commands.Context, message: Optional[util.
         raise util.discord.UserError("Can only be used in a guild")
     guild = ctx.guild
 
+    pin_msg_task = asyncio.create_task(
+        discord_client.client.wait_for("message",
+            check=lambda m: m.guild is not None and m.guild.id == guild.id
+            and m.channel.id == ctx.channel.id
+            and m.type == discord.MessageType.pins_add
+            and m.reference is not None and m.reference.message_id == to_pin.id))
     try:
-        pin_msg_task = asyncio.create_task(
-            discord_client.client.wait_for("message",
-                check=lambda m: m.guild is not None and m.guild.id == guild.id
-                and m.channel.id == ctx.channel.id
-                and m.type == discord.MessageType.pins_add
-                and m.reference is not None and m.reference.message_id == to_pin.id))
-
         while True:
             try:
                 await to_pin.pin(reason=util.discord.format("Requested by {!m}", ctx.author))
@@ -94,7 +92,6 @@ async def unpin_command(ctx: discord.ext.commands.Context, message: Optional[uti
     to_unpin = util.discord.partial_from_reply(message, ctx)
     if ctx.guild is None:
         raise util.discord.UserError("Can only be used in a guild")
-    guild = ctx.guild
 
     try:
         await to_unpin.unpin(reason=util.discord.format("Requested by {!m}", ctx.author))

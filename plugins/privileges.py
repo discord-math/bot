@@ -1,5 +1,5 @@
 import logging
-from typing import List, Optional, Union, Tuple, Iterator, Coroutine, Literal, Callable, Awaitable, Protocol, Any, cast
+from typing import List, Optional, Union, Tuple, Coroutine, Literal, Callable, Awaitable, Protocol, Any, cast
 import discord
 import discord.ext.commands
 import discord.utils
@@ -10,7 +10,7 @@ import util.discord
 import plugins
 import plugins.commands
 
-class PrivilegesConf(Protocol, Awaitable[None]):
+class PrivilegesConf(Awaitable[None], Protocol):
     def __getitem__(self, key: Tuple[str, Literal["users", "roles"]]) -> Optional[FrozenList[int]]: ...
     def __setitem__(self, key: Tuple[str, Literal["users", "roles"]],
         value: Optional[Union[List[int], FrozenList[int]]]) -> None: ...

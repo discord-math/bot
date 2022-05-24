@@ -1,6 +1,5 @@
 from __future__ import annotations
 import re
-import itertools
 import datetime
 import asyncio
 import logging
@@ -11,7 +10,7 @@ import sqlalchemy
 import sqlalchemy.orm
 import sqlalchemy.ext.asyncio
 from typing import (List, Dict, Set, Tuple, Optional, Iterator, AsyncIterator, Sequence, Type, Union, Any, Callable,
-    Awaitable, Iterable, Protocol, TypeVar, cast, overload, TYPE_CHECKING)
+    Awaitable, Iterable, Protocol, TypeVar, cast, TYPE_CHECKING)
 import discord
 import discord.abc
 import discord.ext.commands
@@ -59,7 +58,7 @@ time_expansion = {
     'y': 60 * 60 * 24 * 365}
 
 # ----------- Config -----------
-class TicketsConf(Protocol, Awaitable[None]):
+class TicketsConf(Awaitable[None], Protocol):
     guild: int # ID of the guild the ticket system is managing
     tracked_roles: util.frozen_list.FrozenList[int] # List of roleids of tracked roles
     last_auditid: Optional[int] # ID of last audit event processed
@@ -558,7 +557,7 @@ class TicketHistory:
         """Get history of a ticket by id, in chronological order"""
         stmt = sqlalchemy.select(TicketHistory).where(TicketHistory.id == id
             ).order_by(TicketHistory.version)
-        return (await session.execute(stmt)).scalars().all()
+        return list((await session.execute(stmt)).scalars())
 
 
 # Map of audit actions to the associated handler methods.
@@ -580,7 +579,7 @@ def register_action(cls: Type[T]) -> Type[T]:
 @registry.mapped
 @register_action
 class NoteTicket(Ticket):
-    __mapper_args__ = {"polymorphic_identity": TicketType.NOTE} # type: ignore
+    __mapper_args__ = {"polymorphic_identity": TicketType.NOTE}
 
     if TYPE_CHECKING:
         def __init__(self, *, mod: TicketMod, targetid: int, id: int = ..., stage: TicketStage = ...,
@@ -636,7 +635,7 @@ async def audit_ticket_data(session: sqlalchemy.ext.asyncio.AsyncSession, audit:
 @registry.mapped
 @register_action
 class KickTicket(Ticket):
-    __mapper_args__ = {"polymorphic_identity": TicketType.KICK} # type: ignore
+    __mapper_args__ = {"polymorphic_identity": TicketType.KICK}
 
     if TYPE_CHECKING:
         def __init__(self, *, mod: TicketMod, targetid: int, id: int = ..., stage: TicketStage = ...,
@@ -667,7 +666,7 @@ class KickTicket(Ticket):
 @registry.mapped
 @register_action
 class BanTicket(Ticket):
-    __mapper_args__ = {"polymorphic_identity": TicketType.BAN} # type: ignore
+    __mapper_args__ = {"polymorphic_identity": TicketType.BAN}
 
     if TYPE_CHECKING:
         def __init__(self, *, mod: TicketMod, targetid: int, id: int = ..., stage: TicketStage = ...,
@@ -711,7 +710,7 @@ class BanTicket(Ticket):
 @registry.mapped
 @register_action
 class VCMuteTicket(Ticket):
-    __mapper_args__ = {"polymorphic_identity": TicketType.VC_MUTE} # type: ignore
+    __mapper_args__ = {"polymorphic_identity": TicketType.VC_MUTE}
 
     if TYPE_CHECKING:
         def __init__(self, *, mod: TicketMod, targetid: int, id: int = ..., stage: TicketStage = ...,
@@ -770,7 +769,7 @@ class VCMuteTicket(Ticket):
 @registry.mapped
 @register_action
 class VCDeafenTicket(Ticket):
-    __mapper_args__ = {"polymorphic_identity": TicketType.VC_DEAFEN} # type: ignore
+    __mapper_args__ = {"polymorphic_identity": TicketType.VC_DEAFEN}
 
     if TYPE_CHECKING:
         def __init__(self, *, mod: TicketMod, targetid: int, id: int = ..., stage: TicketStage = ...,
@@ -830,7 +829,7 @@ class VCDeafenTicket(Ticket):
 @register_action
 class AddRoleTicket(Ticket):
     roleid: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger, nullable=True)
-    __mapper_args__ = {"polymorphic_identity": TicketType.ADD_ROLE, "polymorphic_load": "inline"} # type: ignore
+    __mapper_args__ = {"polymorphic_identity": TicketType.ADD_ROLE, "polymorphic_load": "inline"}
 
     if TYPE_CHECKING:
         def __init__(self, *, mod: TicketMod, targetid: int, roleid: int, id: int = ..., stage: TicketStage = ...,
@@ -1001,7 +1000,7 @@ async def poll_audit_log() -> None:
             # audit_logs(after) is currently broken so we read the entire audit
             # log in reverse chronological order and reverse it
             entries = []
-            async for entry in guild.audit_logs(limit=None if last else 1, oldest_first=False): # type: ignore
+            async for entry in guild.audit_logs(limit=None if last else 1, oldest_first=False):
                 if last and entry.id <= last:
                     break
                 entries.append(entry)
@@ -1628,7 +1627,7 @@ async def find_notes_prefix(session: sqlalchemy.ext.asyncio.AsyncSession, prefix
     ) -> List[NoteTicket]:
     stmt = sqlalchemy.select(NoteTicket).where(NoteTicket.modid == modid, NoteTicket.targetid == targetid,
         NoteTicket.comment.startswith(prefix)).order_by(NoteTicket.id)
-    return (await session.execute(stmt)).scalars().all()
+    return list((await session.execute(stmt)).scalars())
 
 async def create_note(session: sqlalchemy.ext.asyncio.AsyncSession, note: str, *, modid: int, targetid: int
     ) -> NoteTicket:

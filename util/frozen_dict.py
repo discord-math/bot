@@ -1,8 +1,8 @@
 from __future__ import annotations
-from typing import Any, Dict, Tuple, Iterator, Optional, Callable, Iterable, Union, Generic, TypeVar, overload
+from typing import Any, Dict, Tuple, Iterator, Optional, Iterable, Union, Generic, TypeVar, overload
 
 K = TypeVar("K")
-V = TypeVar("V")
+V = TypeVar("V", covariant=True)
 T = TypeVar("T")
 
 class FrozenDict(Generic[K, V]):
@@ -11,65 +11,63 @@ class FrozenDict(Generic[K, V]):
     underlying dict object.
     """
 
-    __slots__ = ("___iter__", "___getitem__", "___len__", "___str__", "___repr__", "___eq__", "___ne__", "___or__",
-        "___ror__", "___contains__", "_copy", "_get", "_items", "_keys", "_values")
+    __slots__ = ("___iter__", "__getitem__", "__len__", "__str__", "__repr__", "__eq__", "__ne__", "__or__", "__ror__",
+        "__contains__", "__reversed__", "copy", "get", "items", "keys", "values")
 
     def __init__(self, *args: Any, **kwargs: Any):
         dct: Dict[K, V] = dict(*args, **kwargs)
-        self.___iter__: Callable[[], Iterator[K]]
-        self.___getitem__: Callable[[K], V]
-        self.___len__: Callable[[], int]
-        self.___str__: Callable[[], str]
-        self.___repr__: Callable[[], str]
-        self.___iter__ = lambda: dct.__iter__()
-        self.___getitem__ = lambda index: dct.__getitem__(index)
-        self.___len__ = lambda: dct.__len__()
-        self.___str__ = lambda: "FrozenDict(" + dct.__str__() + ")"
-        self.___repr__ = lambda: "FrozenDict(" + dct.__repr__() + ")"
+        def __iter__() -> Iterator[K]:
+            return dct.__iter__()
+        self.___iter__ = __iter__
+        def __getitem__(key: K, /) -> V:
+            return dct.__getitem__(key)
+        self.__getitem__ = __getitem__
+        def __len__() -> int:
+            return dct.__len__()
+        self.__len__ = __len__
+        def __str__() -> str:
+            return "FrozenDict({})".format(dct.__str__())
+        self.__str__ = __str__
+        def __repr__() -> str:
+            return "FrozenDict({})".format(dct.__repr__())
+        self.__repr__ = __repr__
+        def __eq__(other: Any, /) -> bool:
+            return other.__eq__(dct) if isinstance(other, FrozenDict) else dct.__eq__(other)
+        self.__eq__ = __eq__
+        def __ne__(other: Any, /) -> bool:
+            return other.__ne__(dct) if isinstance(other, FrozenDict) else dct.__ne__(other)
+        self.__ne__ = __ne__
+        def __or__(other: Union[Dict[K, T], FrozenDict[K, T]], /) -> FrozenDict[K, Union[V, T]]:
+            return other.__ror__(dct) if isinstance(other, FrozenDict) else FrozenDict(dct.__or__(other))
+        self.__or__ = __or__
+        def __ror__(other: Union[Dict[K, T], FrozenDict[K, T]], /) -> FrozenDict[K, Union[V, T]]:
+            return other.__or__(dct) if isinstance(other, FrozenDict) else FrozenDict(dct.__ror__(other))
+        self.__ror__ = __ror__
+        def __contains__(key: Any, /) -> bool:
+            return dct.__contains__(key)
+        self.__contains__ = __contains__
+        def __reversed__() -> Iterator[K]:
+            return dct.__reversed__()
+        self.__reversed__ = __reversed__
+        def copy() -> Dict[K, V]:
+            return dct.copy()
+        self.copy = copy
+        @overload
+        def get(key: K, /) -> Optional[V]: ...
+        @overload
+        def get(key: K, default: T, /) -> Union[V, T]: ...
+        def get(key: K, default: Optional[T] = None) -> Union[V, T]:
+            return dct.get(key, default)
+        self.get = get
+        def items() -> Iterable[Tuple[K, V]]:
+            return dct.items()
+        self.items = items
+        def keys() -> Iterable[K]:
+            return dct.keys()
+        self.keys = keys
+        def values() -> Iterable[V]:
+            return dct.values()
+        self.values = values
 
-        self.___eq__: Callable[[Any], bool]
-        self.___ne__: Callable[[Any], bool]
-        self.___eq__ = lambda other: other.___eq__(dct) if isinstance(other, FrozenDict) else dct.__eq__(other)
-        self.___ne__ = lambda other: other.___ne__(dct) if isinstance(other, FrozenDict) else dct.__ne__(other)
-
-        self.___or__: Callable[[Union[Dict[K, V], FrozenDict[K, V]]], FrozenDict[K, V]]
-        self.___ror__: Callable[[Union[Dict[K, V], FrozenDict[K, V]]], FrozenDict[K, V]]
-        self.___or__ = lambda other: FrozenDict(
-            other.___ror__(dct) if isinstance(other, FrozenDict) else dct.__or__(other))
-        self.___ror__ = lambda other: FrozenDict(
-            other.___or__(dct) if isinstance(other, FrozenDict) else other.__ror__(dct))
-
-        self.___contains__: Callable[[K], bool]
-        self._copy: Callable[[], Dict[K, V]]
-        self._get: Callable[[K, T], Union[V, T]]
-        self._items: Callable[[], Iterable[Tuple[K, V]]]
-        self._keys: Callable[[], Iterable[K]]
-        self._values: Callable[[], Iterable[V]]
-        self.___contains__ = lambda other: dct.__contains__(other)
-        self._copy = lambda: dct.copy()
-        self._get = lambda key, default: dct.get(key, default)
-        self._items = lambda: dct.items()
-        self._keys = lambda: dct.keys()
-        self._values = lambda: dct.values()
-
-    def __iter__(self) -> Iterator[K]: return self.___iter__()
-    def __getitem__(self, index: K) -> V: return self.___getitem__(index)
-    def __len__(self) -> int: return self.___len__()
-    def __str__(self) -> str: return self.___str__()
-    def __repr__(self) -> str: return self.___repr__()
-    def __eq__(self, other: Any) -> bool: return self.___eq__(other)
-    def __ne__(self, other: Any) -> bool: return self.___ne__(other)
-    def __or__(self, other: Union[Dict[K, V], FrozenDict[K, V]]) -> FrozenDict[K, V]: return self.___or__(other)
-    def __ror__(self, other: Union[Dict[K, V], FrozenDict[K, V]]) -> FrozenDict[K, V]: return self.___ror__(other)
-    def __contains__(self, other: K) -> bool: return self.___contains__(other)
-    def copy(self) -> Dict[K, V]: return self._copy()
-
-    @overload
-    def get(self, key: K, default: None = None, /) -> Optional[V]: ...
-    @overload
-    def get(self, key: K, default: T, /) -> Union[V, T]: ...
-    def get(self, key: K, default: Any = None, /) -> Any: return self._get(key, default)
-
-    def items(self) -> Iterable[Tuple[K, V]]: return self._items()
-    def keys(self) -> Iterable[K]: return self._keys()
-    def values(self) -> Iterable[V]: return self._values()
+    def __iter__(self) -> Iterator[K]:
+        return self.___iter__()
