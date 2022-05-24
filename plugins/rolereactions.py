@@ -133,12 +133,12 @@ class RoleReactions(discord.ext.commands.Cog):
     @plugins.commands.cleanup
     @discord.ext.commands.group("rolereact")
     @plugins.privileges.priv("admin")
-    async def rolereact_command(self, ctx: discord.ext.commands.Context) -> None:
+    async def rolereact_command(self, ctx: plugins.commands.Context) -> None:
         """Manage role reactions."""
         pass
 
     @rolereact_command.command("new")
-    async def rolereact_new(self, ctx: discord.ext.commands.Context, message: Optional[util.discord.ReplyConverter]
+    async def rolereact_new(self, ctx: plugins.commands.Context, message: Optional[util.discord.ReplyConverter]
         ) -> None:
         """Make the given message a role react message."""
         msg = util.discord.partial_from_reply(message, ctx)
@@ -152,7 +152,7 @@ class RoleReactions(discord.ext.commands.Cog):
         await ctx.send("Created role reactions on {}".format(format_partial_msg(msg)))
 
     @rolereact_command.command("delete")
-    async def rolereact_delete(self, ctx: discord.ext.commands.Context, message: Optional[util.discord.ReplyConverter]
+    async def rolereact_delete(self, ctx: plugins.commands.Context, message: Optional[util.discord.ReplyConverter]
         ) -> None:
         """Make the given message not a role react message."""
         msg = util.discord.partial_from_reply(message, ctx)
@@ -163,12 +163,12 @@ class RoleReactions(discord.ext.commands.Cog):
         await ctx.send("Removed role reactions on {}".format(format_partial_msg(msg)))
 
     @rolereact_command.command("list")
-    async def rolereact_list(self, ctx: discord.ext.commands.Context) -> None:
+    async def rolereact_list(self, ctx: plugins.commands.Context) -> None:
         """List role react messages."""
         await ctx.send("Role reactions exist on:\n{}".format("\n".join(retrieve_msg_link(int(id)) for id, in conf)))
 
     @rolereact_command.command("show")
-    async def rolereact_show(self, ctx: discord.ext.commands.Context, message: Optional[util.discord.ReplyConverter]
+    async def rolereact_show(self, ctx: plugins.commands.Context, message: Optional[util.discord.ReplyConverter]
         ) -> None:
         """List roles on a role react message."""
         msg = util.discord.partial_from_reply(message, ctx)
@@ -180,7 +180,7 @@ class RoleReactions(discord.ext.commands.Cog):
             allowed_mentions=discord.AllowedMentions.none())
 
     @rolereact_command.command("add")
-    async def rolereact_add(self, ctx: discord.ext.commands.Context, message: util.discord.ReplyConverter,
+    async def rolereact_add(self, ctx: plugins.commands.Context, message: util.discord.ReplyConverter,
         emoji: Union[discord.PartialEmoji, str], role: util.discord.PartialRoleConverter) -> None:
         """Add an emoji/role to a role react message."""
         if (obj := conf[message.id]) is None:
@@ -201,7 +201,7 @@ class RoleReactions(discord.ext.commands.Cog):
             allowed_mentions=discord.AllowedMentions.none())
 
     @rolereact_command.command("remove")
-    async def rolereact_remove(self, ctx: discord.ext.commands.Context, message: util.discord.ReplyConverter,
+    async def rolereact_remove(self, ctx: plugins.commands.Context, message: util.discord.ReplyConverter,
         emoji: Union[discord.PartialEmoji, str]) -> None:
         """Remove an emoji from a role react message."""
         if (obj := conf[message.id]) is None:

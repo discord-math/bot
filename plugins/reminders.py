@@ -57,7 +57,7 @@ class DurationConverter(int):
         "years": 60 * 60 * 24 * 365
     }
     @classmethod
-    async def convert(cls, ctx: discord.ext.commands.Context, arg: str) -> int:
+    async def convert(cls, ctx: plugins.commands.Context, arg: str) -> int:
         pos = util.discord.undo_get_quoted_word(ctx.view, arg)
         seconds = 0
         while (match := cls.time_re.match(ctx.view.buffer, pos=pos)) is not None:
@@ -164,7 +164,7 @@ async def init() -> None:
 @plugins.commands.cleanup
 @plugins.commands.command("remindme", aliases=["remind"])
 @plugins.privileges.priv("remind")
-async def remindme_command(ctx: discord.ext.commands.Context, interval: DurationConverter, *, text: Optional[str]
+async def remindme_command(ctx: plugins.commands.Context, interval: DurationConverter, *, text: Optional[str]
     ) -> None:
     """Set a reminder with a given message."""
     if ctx.guild is None:
@@ -187,7 +187,7 @@ async def remindme_command(ctx: discord.ext.commands.Context, interval: Duration
 @plugins.commands.cleanup
 @plugins.commands.group("reminder", aliases=["reminders"], invoke_without_command=True)
 @plugins.privileges.priv("remind")
-async def reminder_command(ctx: discord.ext.commands.Context) -> None:
+async def reminder_command(ctx: plugins.commands.Context) -> None:
     """Display your reminders."""
     reminders = conf[ctx.author.id] or FrozenList()
     reminder_list_md = "Your reminders include:\n{}".format("\n".join(
@@ -204,7 +204,7 @@ async def reminder_command(ctx: discord.ext.commands.Context) -> None:
 
 @reminder_command.command("remove")
 @plugins.privileges.priv("remind")
-async def reminder_remove(ctx: discord.ext.commands.Context, index: int) -> None:
+async def reminder_remove(ctx: plugins.commands.Context, index: int) -> None:
     """Delete a reminder."""
     reminders_optional = conf[ctx.author.id]
     reminders = reminders_optional.copy() if reminders_optional is not None else []

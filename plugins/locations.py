@@ -37,17 +37,17 @@ def in_location(loc: str, channel: Union[discord.abc.GuildChannel, discord.Threa
 
 def location(name: str) -> Callable[[Callable[..., Coroutine[Any, Any, None]]], Callable[
     ..., Coroutine[Any, Any, None]]]:
-    def command_location_check(ctx: discord.ext.commands.Context) -> bool:
+    def command_location_check(ctx: plugins.commands.Context) -> bool:
         return isinstance(ctx.channel, (discord.abc.GuildChannel, discord.Thread)) and in_location(name, ctx.channel)
     return discord.ext.commands.check(command_location_check)
 
-class LocContext(discord.ext.commands.Context):
+class LocContext(plugins.commands.Context):
     loc: str
 
 @plugins.commands.cleanup
 @plugins.commands.group("location")
 @plugins.privileges.priv("shell")
-async def location_command(ctx: discord.ext.commands.Context) -> None:
+async def location_command(ctx: plugins.commands.Context) -> None:
     """Manage locations where a command can be invoked."""
     pass
 
@@ -59,7 +59,7 @@ def validate_location(loc: str) -> None:
         raise util.discord.UserError(util.discord.format("Location {!i} does not exist", loc))
 
 @location_command.command("new")
-async def location_new(ctx: discord.ext.commands.Context, loc: str) -> None:
+async def location_new(ctx: plugins.commands.Context, loc: str) -> None:
     """Create a new location."""
     if location_exists(loc):
         raise util.discord.UserError(util.discord.format("Location {!i} already exists", loc))
@@ -71,7 +71,7 @@ async def location_new(ctx: discord.ext.commands.Context, loc: str) -> None:
     await ctx.send(util.discord.format("Created location {!i}", loc))
 
 @location_command.command("delete")
-async def location_delete(ctx: discord.ext.commands.Context, loc: str) -> None:
+async def location_delete(ctx: plugins.commands.Context, loc: str) -> None:
     """Delete a location."""
     validate_location(loc)
 
@@ -82,7 +82,7 @@ async def location_delete(ctx: discord.ext.commands.Context, loc: str) -> None:
     await ctx.send(util.discord.format("Removed location {!i}", loc))
 
 @location_command.command("show")
-async def location_show(ctx: discord.ext.commands.Context, loc: str) -> None:
+async def location_show(ctx: plugins.commands.Context, loc: str) -> None:
     """Show the channels and categories in a location."""
     validate_location(loc)
     chans = conf[loc, "channels"]

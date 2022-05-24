@@ -35,7 +35,7 @@ def disambiguated_name(channel: discord.abc.GuildChannel) -> str:
 
 @plugins.privileges.priv("mod")
 @plugins.commands.command("exportperms")
-async def exportperms(ctx: discord.ext.commands.Context) -> None:
+async def exportperms(ctx: plugins.commands.Context) -> None:
     """Export all role and channel permission settings into CSV."""
     if ctx.guild is None:
         raise util.discord.InvocationError("This can only be used in a guild.")
@@ -110,7 +110,7 @@ def sync_channel(channel: SubChannel) -> Callable[[], Awaitable[Any]]:
 
 @plugins.privileges.priv("admin")
 @plugins.commands.command("importperms")
-async def importperms(ctx: discord.ext.commands.Context) -> None:
+async def importperms(ctx: plugins.commands.Context) -> None:
     """Import all role and channel permission settings from an attached CSV file."""
     if ctx.guild is None:
         raise util.discord.InvocationError("This can only be used in a guild.")

@@ -1,14 +1,12 @@
 import asyncio.subprocess
-import discord
 import plugins.commands
 import plugins.privileges
 import util.discord
-import discord.ext.commands
 
 @plugins.commands.cleanup
 @plugins.commands.command("version")
 @plugins.privileges.priv("mod")
-async def version_command(ctx: discord.ext.commands.Context) -> None:
+async def version_command(ctx: plugins.commands.Context) -> None:
     """Display running bot version including any local changes."""
     git_log = await asyncio.subprocess.create_subprocess_exec(
         "git", "log", "--max-count=1", "--format=format:%H%d", "HEAD",

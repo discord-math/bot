@@ -4,13 +4,12 @@ import datetime
 import asyncio
 import logging
 import contextlib
-import collections
 import enum
 import sqlalchemy
 import sqlalchemy.orm
 import sqlalchemy.ext.asyncio
-from typing import (List, Dict, Set, Tuple, Optional, Iterator, AsyncIterator, Sequence, Type, Union, Any, Callable,
-    Awaitable, Iterable, Protocol, TypeVar, cast, TYPE_CHECKING)
+from typing import (List, Dict, Set, Tuple, NamedTuple, Optional, Iterator, AsyncIterator, Sequence, Type, Union, Any,
+    Callable, Awaitable, Iterable, Protocol, TypeVar, cast, TYPE_CHECKING)
 import discord
 import discord.abc
 import discord.ext.commands
@@ -1215,7 +1214,9 @@ def summarise_tickets(tickets: Sequence[Ticket], title: str, *, dm: bool = False
         embeds = (embed.set_footer(text="Page {}/{}".format(i+1, page_count)) for i, embed in enumerate(embeds))
     return embeds
 
-Page = collections.namedtuple('Page', ('content', 'embed'), defaults=(None, None))
+class Page(NamedTuple):
+    content: Optional[str] = None
+    embed: Optional[discord.Embed] = None
 
 async def pager(dest: discord.abc.Messageable, pages: List[Page]) -> None:
     """
@@ -1285,7 +1286,7 @@ class Tickets(discord.ext.commands.Cog):
     @plugins.commands.cleanup
     @discord.ext.commands.command("note")
     @plugins.privileges.priv("mod")
-    async def note_command(self, ctx: discord.ext.commands.Context, target: util.discord.PartialUserConverter, *,
+    async def note_command(self, ctx: plugins.commands.Context, target: util.discord.PartialUserConverter, *,
         note: Optional[str]) -> None:
         """Create a note on the target user."""
         if note is None:
@@ -1306,13 +1307,13 @@ class Tickets(discord.ext.commands.Cog):
 
     @discord.ext.commands.group("ticket", aliases=["tickets"])
     @plugins.privileges.priv("mod")
-    async def ticket_command(self, ctx: discord.ext.commands.Context) -> None:
+    async def ticket_command(self, ctx: plugins.commands.Context) -> None:
         """Manage tickets."""
         pass
 
     @plugins.commands.cleanup
     @ticket_command.command("top")
-    async def ticket_top(self, ctx: discord.ext.commands.Context) -> None:
+    async def ticket_top(self, ctx: plugins.commands.Context) -> None:
         """Re-deliver the ticket at the top of your queue to your DMs."""
         async with sessionmaker() as session:
             mod = await session.get(TicketMod, ctx.author.id,
@@ -1329,7 +1330,7 @@ class Tickets(discord.ext.commands.Cog):
 
     @plugins.commands.cleanup
     @ticket_command.command("queue")
-    async def ticket_queue(self, ctx: discord.ext.commands.Context, mod: Optional[util.discord.PartialUserConverter]
+    async def ticket_queue(self, ctx: plugins.commands.Context, mod: Optional[util.discord.PartialUserConverter]
         ) -> None:
         """Show the specified moderator's (or your own) ticket queue."""
         user = ctx.author if mod is None else mod
@@ -1348,7 +1349,7 @@ class Tickets(discord.ext.commands.Cog):
                 allowed_mentions=discord.AllowedMentions.none())
 
     @ticket_command.command("take")
-    async def ticket_take(self, ctx: discord.ext.commands.Context, ticket: Optional[Union[discord.PartialMessage, int]]
+    async def ticket_take(self, ctx: plugins.commands.Context, ticket: Optional[Union[discord.PartialMessage, int]]
         ) -> None:
         """Assign the specified ticket to yourself."""
         async with sessionmaker() as session:
@@ -1363,7 +1364,7 @@ class Tickets(discord.ext.commands.Cog):
                 await ctx.send("You have claimed Ticket #{}.".format(tkt.id))
 
     @ticket_command.command("assign")
-    async def ticket_assign(self, ctx: discord.ext.commands.Context,
+    async def ticket_assign(self, ctx: plugins.commands.Context,
         ticket: Optional[Union[discord.PartialMessage, int]], mod: util.discord.PartialUserConverter) -> None:
         """Assign the specified ticket to the specified moderator."""
         async with sessionmaker() as session:
@@ -1380,7 +1381,7 @@ class Tickets(discord.ext.commands.Cog):
                     allowed_mentions=discord.AllowedMentions.none())
 
     @ticket_command.command("set")
-    async def ticket_set(self, ctx: discord.ext.commands.Context,
+    async def ticket_set(self, ctx: plugins.commands.Context,
         ticket: Optional[Union[discord.PartialMessage, int]], *, duration_comment: str) -> None:
         """Set the duration and comment for a ticket."""
         async with sessionmaker() as session:
@@ -1397,7 +1398,7 @@ class Tickets(discord.ext.commands.Cog):
                 tkt.id, tkt.jump_link, message)))
 
     @ticket_command.command("append")
-    async def ticket_append(self, ctx: discord.ext.commands.Context,
+    async def ticket_append(self, ctx: plugins.commands.Context,
         ticket: Optional[Union[discord.PartialMessage, int]], *, comment: str) -> None:
         """Append to a ticket's comment."""
         async with sessionmaker() as session:
@@ -1414,7 +1415,7 @@ class Tickets(discord.ext.commands.Cog):
                 tkt.id, tkt.jump_link)))
 
     @ticket_command.command("revert")
-    async def ticket_revert(self, ctx: discord.ext.commands.Context,
+    async def ticket_revert(self, ctx: plugins.commands.Context,
         ticket: Optional[Union[discord.PartialMessage, int]]) -> None:
         """Manually revert a ticket."""
         async with sessionmaker() as session:
@@ -1435,7 +1436,7 @@ class Tickets(discord.ext.commands.Cog):
                 description="[#{}]({}): Ticket reverted.".format(tkt.id, tkt.jump_link)))
 
     @ticket_command.command("hide")
-    async def ticket_hide(self, ctx: discord.ext.commands.Context,
+    async def ticket_hide(self, ctx: plugins.commands.Context,
         ticket: Optional[Union[discord.PartialMessage, int]], *, comment: Optional[str]) -> None:
         """Hide (and revert) a ticket."""
         async with sessionmaker() as session:
@@ -1452,7 +1453,7 @@ class Tickets(discord.ext.commands.Cog):
 
     @plugins.commands.cleanup
     @ticket_command.command("show")
-    async def ticket_show(self, ctx: discord.ext.commands.Context, *,
+    async def ticket_show(self, ctx: plugins.commands.Context, *,
         user_or_id: Union[util.discord.PartialUserConverter, discord.PartialMessage, int]
         ) -> None:
         """Show tickets affecting given user, or a ticket with a specific ID."""
@@ -1488,7 +1489,7 @@ class Tickets(discord.ext.commands.Cog):
 
     @plugins.commands.cleanup
     @ticket_command.command("showhidden")
-    async def ticket_showhidden(self, ctx: discord.ext.commands.Context, *,
+    async def ticket_showhidden(self, ctx: plugins.commands.Context, *,
         user_or_id: Union[util.discord.PartialUserConverter, discord.PartialMessage, int]
         ) -> None:
         """Show hidden tickets affecting given user, or a ticket with a specific ID."""
@@ -1511,7 +1512,7 @@ class Tickets(discord.ext.commands.Cog):
 
     @plugins.commands.cleanup
     @ticket_command.command("history")
-    async def ticket_history(self, ctx: discord.ext.commands.Context, *,
+    async def ticket_history(self, ctx: plugins.commands.Context, *,
         ticket: Optional[Union[discord.PartialMessage, int]]) -> None:
         """Show revision history for a ticket."""
         async with sessionmaker() as session:

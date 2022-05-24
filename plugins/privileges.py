@@ -43,7 +43,7 @@ class PrivCheck:
     def __init__(self, priv: str):
         self.priv = priv
 
-    def __call__(self, ctx: discord.ext.commands.Context) -> bool:
+    def __call__(self, ctx: plugins.commands.Context) -> bool:
         if has_privilege(self.priv, ctx.author):
             return True
         else:
@@ -53,13 +53,13 @@ class PrivCheck:
 def priv(name: str) -> Callable[[Callable[..., Coroutine[Any, Any, None]]], Callable[ ..., Coroutine[Any, Any, None]]]:
     return discord.ext.commands.check(PrivCheck(name))
 
-class PrivContext(discord.ext.commands.Context):
+class PrivContext(plugins.commands.Context):
     priv: str
 
 @plugins.commands.cleanup
 @plugins.commands.group("priv")
 @priv("shell")
-async def priv_command(ctx: discord.ext.commands.Context) -> None:
+async def priv_command(ctx: plugins.commands.Context) -> None:
     """Manage privilege sets."""
     pass
 
@@ -71,7 +71,7 @@ def validate_priv(priv: str) -> None:
         raise util.discord.UserError(util.discord.format("Priv {!i} does not exist", priv))
 
 @priv_command.command("new")
-async def priv_new(ctx: discord.ext.commands.Context, priv: str) -> None:
+async def priv_new(ctx: plugins.commands.Context, priv: str) -> None:
     """Create a new priv."""
     if priv_exists(priv):
         raise util.discord.UserError(util.discord.format("Priv {!i} already exists", priv))
@@ -83,7 +83,7 @@ async def priv_new(ctx: discord.ext.commands.Context, priv: str) -> None:
     await ctx.send(util.discord.format("Created priv {!i}", priv))
 
 @priv_command.command("delete")
-async def priv_delete(ctx: discord.ext.commands.Context, priv: str) -> None:
+async def priv_delete(ctx: plugins.commands.Context, priv: str) -> None:
     """Delete a priv."""
     validate_priv(priv)
 
@@ -94,7 +94,7 @@ async def priv_delete(ctx: discord.ext.commands.Context, priv: str) -> None:
     await ctx.send(util.discord.format("Removed priv {!i}", priv))
 
 @priv_command.command("show")
-async def priv_show(ctx: discord.ext.commands.Context, priv: str) -> None:
+async def priv_show(ctx: plugins.commands.Context, priv: str) -> None:
     """Show the users and roles in a priv."""
     validate_priv(priv)
     users = conf[priv, "users"]

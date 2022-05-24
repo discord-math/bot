@@ -114,7 +114,7 @@ class ReactionMonitor(ContextManager['ReactionMonitor[T]'], Generic[T]):
         reaction_queues.add(self.queue)
         return self
 
-    def __exit__(self, exc_type, exc_val, tb) -> None:
+    def __exit__(self, exc_type, exc_val, tb) -> None: # type: ignore
         reaction_queues.discard(self.queue)
 
     @util.asyncio.__await__

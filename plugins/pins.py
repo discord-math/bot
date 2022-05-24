@@ -21,7 +21,7 @@ unpin_requests: Dict[int, plugins.reactions.ReactionMonitor[discord.RawReactionA
 @plugins.commands.command("pin")
 @plugins.privileges.priv("pin")
 @plugins.locations.location("pin")
-async def pin_command(ctx: discord.ext.commands.Context, message: Optional[util.discord.ReplyConverter]) -> None:
+async def pin_command(ctx: plugins.commands.Context, message: Optional[util.discord.ReplyConverter]) -> None:
     """Pin a message."""
     to_pin = util.discord.partial_from_reply(message, ctx)
     if ctx.guild is None:
@@ -87,7 +87,7 @@ async def pin_command(ctx: discord.ext.commands.Context, message: Optional[util.
 @plugins.commands.command("unpin")
 @plugins.privileges.priv("pin")
 @plugins.locations.location("pin")
-async def unpin_command(ctx: discord.ext.commands.Context, message: Optional[util.discord.ReplyConverter]) -> None:
+async def unpin_command(ctx: plugins.commands.Context, message: Optional[util.discord.ReplyConverter]) -> None:
     """Unpin a message."""
     to_unpin = util.discord.partial_from_reply(message, ctx)
     if ctx.guild is None:

@@ -55,15 +55,16 @@ def fmt_table(name: str, schema: Optional[str]) -> str:
 
 def LoggingConnection(logger: logging.Logger) -> Type[asyncpg.connection.Connection]:
 
-    def log_message(conn: asyncpg.connection.Connection, msg: asyncpg.exceptions.PostgresLogMessage) -> None:
+    def log_message(conn: asyncpg.connection.Connection, msg: asyncpg.exceptions.PostgresLogMessage # type: ignore
+        ) -> None:
         severity = getattr(msg, "severity_en") or getattr(msg, "severity")
         logger.log(severity_map.get(severity, logging.INFO), "{} {}".format(id(conn), msg))
 
-    def log_termination(conn: asyncpg.connection.Connection) -> None:
+    def log_termination(conn: asyncpg.connection.Connection) -> None: # type: ignore
         logger.debug("{} closed".format(id(conn)))
 
     the_logger = logger
-    class LoggingConnection(asyncpg.connection.Connection):
+    class LoggingConnection(asyncpg.connection.Connection): # type: ignore
         logger: logging.Logger = the_logger
 
         def __init__(self, proto: Any, transport: Any, *args: Any, **kwargs: Any):

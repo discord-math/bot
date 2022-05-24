@@ -408,7 +408,7 @@ class ClopenCog(discord.ext.commands.Cog):
                     conf[payload.channel_id, "owner"] = None
 
     @discord.ext.commands.command("close")
-    async def close_command(self, ctx: discord.ext.commands.Context) -> None:
+    async def close_command(self, ctx: plugins.commands.Context) -> None:
         """For use in help channels. Close a channel."""
         if ctx.channel.id not in conf.channels:
             return
@@ -419,7 +419,7 @@ class ClopenCog(discord.ext.commands.Cog):
                 await close(ctx.channel.id, util.discord.format("Closed by {!m}", ctx.author))
 
     @discord.ext.commands.command("reopen")
-    async def reopen_command(self, ctx: discord.ext.commands.Context) -> None:
+    async def reopen_command(self, ctx: plugins.commands.Context) -> None:
         """For use in help channels. Reopen a recently closed channel."""
         if ctx.channel.id not in conf.channels:
             return

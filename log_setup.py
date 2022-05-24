@@ -2,7 +2,7 @@ import logging
 import logging.handlers
 import time
 import warnings
-from typing import List, Tuple, Any, Optional, Callable
+from typing import List, Tuple, TextIO, Any, Union, Optional, Callable, Type
 import static_config
 
 logging.basicConfig(handlers=[], force=True)
@@ -10,9 +10,10 @@ logging.basicConfig(handlers=[], force=True)
 def closure() -> None:
     old_showwarning = warnings.showwarning
 
-    def showwarning(message, category, filename, lineno, file=None, line=None) -> None:
+    def showwarning(message: Union[Warning, str], category: Type[Warning], filename: str, lineno: int,
+        file: Optional[TextIO] = None, line: Optional[str] = None) -> None:
         if file is not None:
-            old_showwarning(message, category, filename, lineno, line)
+            old_showwarning(message, category, filename, lineno, file, line)
         else:
             text = warnings.formatwarning(message, category, filename, lineno, line)
             logging.getLogger("__builtins__").error(text)
@@ -46,7 +47,7 @@ class Formatter(logging.Formatter):
 
         lines = list(filter(bool, lines))
 
-        output = []
+        output: List[str] = []
         for i in range(len(lines)):
             record.message = lines[i]
             if len(lines) == 1:

@@ -130,13 +130,13 @@ class Factoids(discord.ext.commands.Cog):
 
     @plugins.commands.cleanup
     @discord.ext.commands.group("tag")
-    async def tag_command(self, ctx: discord.ext.commands.Context) -> None:
+    async def tag_command(self, ctx: plugins.commands.Context) -> None:
         """Manage factoids."""
         pass
 
     @plugins.privileges.priv("factoids")
     @tag_command.command("add")
-    async def tag_add(self, ctx: discord.ext.commands.Context, *, name: str) -> None:
+    async def tag_add(self, ctx: plugins.commands.Context, *, name: str) -> None:
         """Add a factoid. You will be prompted to enter the contents as a separate message."""
         name = validate_name(name)
         async with sessionmaker() as session:
@@ -162,7 +162,7 @@ class Factoids(discord.ext.commands.Cog):
 
     @plugins.privileges.priv("factoids")
     @tag_command.command("alias")
-    async def tag_alias(self, ctx: discord.ext.commands.Context, name: str, *, newname: str) -> None:
+    async def tag_alias(self, ctx: plugins.commands.Context, name: str, *, newname: str) -> None:
         """
         Alias a factoid. Both names will lead to the same output.
         If the original factoid contains spaces, it would need to be quoted.
@@ -187,7 +187,7 @@ class Factoids(discord.ext.commands.Cog):
 
     @plugins.privileges.priv("factoids")
     @tag_command.command("edit")
-    async def tag_edit(self, ctx: discord.ext.commands.Context, *, name: str) -> None:
+    async def tag_edit(self, ctx: plugins.commands.Context, *, name: str) -> None:
         """
         Edit a factoid (and all factoids aliased to it).
         You will be prompted to enter the contents as a separate message.
@@ -208,7 +208,7 @@ class Factoids(discord.ext.commands.Cog):
 
     @plugins.privileges.priv("factoids")
     @tag_command.command("unalias")
-    async def tag_unalias(self, ctx: discord.ext.commands.Context, *, name: str) -> None:
+    async def tag_unalias(self, ctx: plugins.commands.Context, *, name: str) -> None:
         """
         Remove an alias for a factoid. The last name for a factoid cannot be removed (use delete instead).
         """
@@ -228,7 +228,7 @@ class Factoids(discord.ext.commands.Cog):
 
     @plugins.privileges.priv("factoids")
     @tag_command.command("delete")
-    async def tag_delete(self, ctx: discord.ext.commands.Context, *, name: str) -> None:
+    async def tag_delete(self, ctx: plugins.commands.Context, *, name: str) -> None:
         """Delete a factoid and all its aliases."""
         name = validate_name(name)
         async with sessionmaker() as session:
@@ -245,7 +245,7 @@ class Factoids(discord.ext.commands.Cog):
         await ctx.send(util.discord.format("Factoid deleted"))
 
     @tag_command.command("info")
-    async def tag_info(self, ctx: discord.ext.commands.Context, *, name: str) -> None:
+    async def tag_info(self, ctx: plugins.commands.Context, *, name: str) -> None:
         """Show information about a factoid."""
         name = validate_name(name)
         async with sessionmaker() as session:
@@ -270,7 +270,7 @@ class Factoids(discord.ext.commands.Cog):
                 allowed_mentions=discord.AllowedMentions.none())
 
     @tag_command.command("top")
-    async def tag_top(sef, ctx: discord.ext.commands.Context) -> None:
+    async def tag_top(sef, ctx: plugins.commands.Context) -> None:
         """Show most used factoids."""
         async with sessionmaker() as session:
             aliases = sqlalchemy.orm.aliased(Alias)
@@ -287,7 +287,7 @@ class Factoids(discord.ext.commands.Cog):
             await ctx.send("\n".join(util.discord.format("{!i}: {} uses", conf.prefix + name, uses)
                 for name, uses in results))
 
-async def prompt_contents(ctx: discord.ext.commands.Context) -> Optional[Union[str, discord.Embed]]:
+async def prompt_contents(ctx: plugins.commands.Context) -> Optional[Union[str, discord.Embed]]:
     prompt = await ctx.send("Please enter the factoid contents:")
     response = await plugins.reactions.get_input(prompt, ctx.author, {"\u274C": None}, timeout=300)
     if response is None: return None

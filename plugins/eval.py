@@ -19,7 +19,7 @@ T = TypeVar("T")
 @plugins.commands.cleanup
 @plugins.commands.command("exec", aliases=["eval"])
 @plugins.privileges.priv("shell")
-async def exec_command(ctx: discord.ext.commands.Context,
+async def exec_command(ctx: plugins.commands.Context,
     args: discord.ext.commands.Greedy[Union[util.discord.CodeBlock, util.discord.Inline, str]]) -> None:
     """
     Execute all code blocks in the command line as python code.
@@ -34,7 +34,7 @@ async def exec_command(ctx: discord.ext.commands.Context,
     code_scope["ctx"] = ctx
     code_scope["client"] = discord_client.client
     def mk_code_print(fp: io.StringIO) -> Callable[..., None]:
-        def code_print(*args, sep=" ", end="\n", file=fp, flush=False):
+        def code_print(*args: Any, sep: str = " ", end: str = "\n", file: Any = fp, flush: bool = False):
             return print(*args, sep=sep, end=end, file=file, flush=flush)
         return code_print
     fp = io.StringIO()

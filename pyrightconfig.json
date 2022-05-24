@@ -8,5 +8,14 @@
 	"reportUnusedFunction": "warning",
 	"reportUnusedVariable": "warning",
 	"reportDuplicateImport": "warning",
-	"reportUnknownLambdaType": "error"
+	"reportUntypedFunctionDecorator": "error",
+	"reportUntypedClassDecorator": "error",
+	"reportUntypedBaseClass": "error",
+	"reportUntypedNamedTuple": "error",
+	"reportUnknownParameterType": "error",
+	"reportUnknownLambdaType": "error",
+	"reportMissingParameterType": "error",
+	"reportMissingTypeArgument": "error",
+	"reportUnnecessaryIsInstance": "warning",
+	"reportUnnecessaryCast": "warning"
 }

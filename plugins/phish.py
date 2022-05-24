@@ -3,7 +3,6 @@ import aiohttp
 import json
 import re
 import logging
-import discord.ext.commands
 from typing import List, Set, Optional, Union, Iterable, Awaitable, Protocol, cast
 import util.db.kv
 import util.discord
@@ -121,7 +120,7 @@ async def resolve_link(link: str) -> Optional[str]:
 
 @plugins.commands.group("phish")
 @plugins.privileges.priv("mod")
-async def phish_command(ctx: discord.ext.commands.Context) -> None:
+async def phish_command(ctx: plugins.commands.Context) -> None:
     """Manage the phishing domain list."""
     pass
 
@@ -132,7 +131,7 @@ def link_to_domain(link: str) -> str:
         return link.strip()
 
 @phish_command.command("check")
-async def phish_check(ctx: discord.ext.commands.Context, *,
+async def phish_check(ctx: plugins.commands.Context, *,
     link: Union[util.discord.CodeBlock, util.discord.Inline, util.discord.Quoted]) -> None:
     """Check a link against the domain list."""
     domain = link_to_domain(link.text)
@@ -152,7 +151,7 @@ async def phish_check(ctx: discord.ext.commands.Context, *,
     await ctx.send("\n".join(output))
 
 @phish_command.command("add")
-async def phish_add(ctx: discord.ext.commands.Context, *,
+async def phish_add(ctx: plugins.commands.Context, *,
     link: Union[util.discord.CodeBlock, util.discord.Inline, util.discord.Quoted]) -> None:
     """Locally mark a domain as malicious."""
     domain = link_to_domain(link.text)
@@ -188,7 +187,7 @@ async def phish_add(ctx: discord.ext.commands.Context, *,
             await ctx.send(util.discord.format("{!i}", result))
 
 @phish_command.command("remove")
-async def phish_remove(ctx: discord.ext.commands.Context, *,
+async def phish_remove(ctx: plugins.commands.Context, *,
     link: Union[util.discord.CodeBlock, util.discord.Inline, util.discord.Quoted]) -> None:
     """Locally mark a domain as safe."""
     domain = link_to_domain(link.text)

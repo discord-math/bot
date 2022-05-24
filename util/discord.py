@@ -31,7 +31,7 @@ class Quoted:
         return "Quoted({!r})".format(self.text)
 
     @classmethod
-    async def convert(cls, ctx: discord.ext.commands.Context, arg: str) -> Quoted:
+    async def convert(cls, ctx: discord.ext.commands.Context[Any], arg: str) -> Quoted:
         return cls(arg)
 
 def undo_get_quoted_word(view: discord.ext.commands.view.StringView, arg: str) -> int:
@@ -69,7 +69,7 @@ class CodeBlock(Quoted):
     codeblock_re: re.Pattern[str] = re.compile(r"```(?:(?P<language>\S*)\n(?!```))?(?P<block>(?:(?!```).)+)```", re.S)
 
     @classmethod
-    async def convert(cls, ctx: discord.ext.commands.Context, arg: str) -> CodeBlock:
+    async def convert(cls, ctx: discord.ext.commands.Context[Any], arg: str) -> CodeBlock:
         if (match := cls.codeblock_re.match(ctx.view.buffer, pos=undo_get_quoted_word(ctx.view, arg))) is not None:
             ctx.view.index = match.end()
             return cls(match["block"], match["language"] or None)
@@ -100,7 +100,7 @@ class Inline(Quoted):
     inline_re: re.Pattern[str] = re.compile(r"``((?:(?!``).)+)``|`([^`]+)`", re.S)
 
     @classmethod
-    async def convert(cls, ctx: discord.ext.commands.Context, arg: str) -> Inline:
+    async def convert(cls, ctx: discord.ext.commands.Context[Any], arg: str) -> Inline:
         if (match := cls.inline_re.match(ctx.view.buffer, pos=undo_get_quoted_word(ctx.view, arg))) is not None:
             ctx.view.index = match.end()
             return cls(match[1] or match[2])
@@ -255,7 +255,7 @@ class TempMessage(AsyncContextManager[discord.Message]):
         self.message = await self.sendable.send(*self.args, **self.kwargs)
         return self.message
 
-    async def __aexit__(self, exc_type, exc_val, tb) -> None:
+    async def __aexit__(self, exc_type, exc_val, tb) -> None: # type: ignore
         try:
             if self.message is not None:
                 await self.message.delete()
@@ -318,7 +318,7 @@ class PartialUserConverter(discord.abc.Snowflake):
     discrim_re: re.Pattern[str] = re.compile(r"(.*)#(\d{4})")
 
     @classmethod
-    async def convert(cls, ctx: discord.ext.commands.Context, arg: str) -> discord.abc.Snowflake:
+    async def convert(cls, ctx: discord.ext.commands.Context[Any], arg: str) -> discord.abc.Snowflake:
         if match := cls.mention_re.fullmatch(arg):
             return discord.Object(int(match[1]))
         elif match := cls.id_re.fullmatch(arg):
@@ -347,7 +347,7 @@ class PartialUserConverter(discord.abc.Snowflake):
 
 class MemberConverter(discord.User):
     @classmethod
-    async def convert(cls, ctx: discord.ext.commands.Context, arg: str) -> Optional[discord.Member]:
+    async def convert(cls, ctx: discord.ext.commands.Context[Any], arg: str) -> Optional[discord.Member]:
         if ctx.guild is None:
             raise discord.ext.commands.NoPrivateMessage(format("Cannot obtain member outside guild"))
 
@@ -366,7 +366,7 @@ class MemberConverter(discord.User):
 
 class UserConverter(discord.User):
     @classmethod
-    async def convert(cls, ctx: discord.ext.commands.Context, arg: str) -> Optional[discord.User]:
+    async def convert(cls, ctx: discord.ext.commands.Context[Any], arg: str) -> Optional[discord.User]:
         obj = await PartialUserConverter.convert(ctx, arg)
         if isinstance(obj, discord.User):
             return obj
@@ -384,7 +384,7 @@ class PartialRoleConverter(discord.abc.Snowflake):
     id_re: re.Pattern[str] = re.compile(r"\d{15,}")
 
     @classmethod
-    async def convert(cls, ctx: discord.ext.commands.Context, arg: str) -> discord.abc.Snowflake:
+    async def convert(cls, ctx: discord.ext.commands.Context[Any], arg: str) -> discord.abc.Snowflake:
         if match := cls.mention_re.fullmatch(arg):
             return discord.Object(int(match[1]))
         elif match := cls.id_re.fullmatch(arg):
@@ -403,7 +403,7 @@ class PartialRoleConverter(discord.abc.Snowflake):
 
 class RoleConverter(discord.Role):
     @classmethod
-    async def convert(cls, ctx: discord.ext.commands.Context, arg: str) -> discord.Role:
+    async def convert(cls, ctx: discord.ext.commands.Context[Any], arg: str) -> discord.Role:
         obj = await PartialRoleConverter.convert(ctx, arg)
         if isinstance(obj, discord.Role):
             return obj
@@ -425,7 +425,7 @@ class PCConv(Generic[C]):
     id_re: re.Pattern[str] = re.compile(r"\d{15,}")
 
     @classmethod
-    async def partial_convert(cls, ctx: discord.ext.commands.Context, arg: str, ty: Type[C]) -> discord.abc.Snowflake:
+    async def partial_convert(cls, ctx: discord.ext.commands.Context[Any], arg: str, ty: Type[C]) -> discord.abc.Snowflake:
         if match := cls.mention_re.fullmatch(arg):
             return discord.Object(int(match[1]))
         elif match := cls.id_re.fullmatch(arg):
@@ -453,7 +453,7 @@ class PCConv(Generic[C]):
             raise discord.ext.commands.BadArgument(format("No results {}", arg))
 
     @classmethod
-    async def convert(cls, ctx: discord.ext.commands.Context, arg: str, ty: Type[C]) -> C:
+    async def convert(cls, ctx: discord.ext.commands.Context[Any], arg: str, ty: Type[C]) -> C:
         obj = await cls.partial_convert(ctx, arg, ty)
         if isinstance(obj, ty):
             return obj
@@ -474,28 +474,28 @@ class PCConv(Generic[C]):
 
 class PartialChannelConverter(discord.abc.GuildChannel):
     @classmethod
-    async def convert(cls, ctx: discord.ext.commands.Context, arg: str) -> discord.abc.Snowflake:
+    async def convert(cls, ctx: discord.ext.commands.Context[Any], arg: str) -> discord.abc.Snowflake:
         return await PCConv.partial_convert(ctx, arg, discord.abc.GuildChannel)
 
 class PartialTextChannelConverter(discord.abc.GuildChannel):
     @classmethod
-    async def convert(cls, ctx: discord.ext.commands.Context, arg: str) -> discord.abc.Snowflake:
+    async def convert(cls, ctx: discord.ext.commands.Context[Any], arg: str) -> discord.abc.Snowflake:
         return await PCConv.partial_convert(ctx, arg, discord.TextChannel)
 
 class PartialCategoryChannelConverter(discord.abc.GuildChannel):
     @classmethod
-    async def convert(cls, ctx: discord.ext.commands.Context, arg: str) -> discord.abc.Snowflake:
+    async def convert(cls, ctx: discord.ext.commands.Context[Any], arg: str) -> discord.abc.Snowflake:
         return await PCConv.partial_convert(ctx, arg, discord.CategoryChannel)
 
 class ChannelConverter(discord.abc.GuildChannel):
     @classmethod
-    async def convert(cls, ctx: discord.ext.commands.Context, arg: str) -> discord.abc.GuildChannel:
+    async def convert(cls, ctx: discord.ext.commands.Context[Any], arg: str) -> discord.abc.GuildChannel:
         return await PCConv.convert(ctx, arg, discord.abc.GuildChannel)
 
 def partial_message(channel: discord.abc.Snowflake, id: int) -> discord.PartialMessage:
     return discord.PartialMessage(channel=discord_client.client.get_partial_messageable(channel.id), id=id)
 
-def partial_from_reply(pmsg: Optional[discord.PartialMessage], ctx: discord.ext.commands.Context
+def partial_from_reply(pmsg: Optional[discord.PartialMessage], ctx: discord.ext.commands.Context[Any]
     ) -> discord.PartialMessage:
     if pmsg is not None:
         return pmsg
@@ -516,7 +516,7 @@ class ReplyConverter(discord.PartialMessage):
     this is the last non-optional parameter, wrap it in Optional, and pass the result via partial_from_reply.
     """
     @classmethod
-    async def convert(cls, ctx: discord.ext.commands.Context, arg: str) -> discord.PartialMessage:
+    async def convert(cls, ctx: discord.ext.commands.Context[Any], arg: str) -> discord.PartialMessage:
         pos = undo_get_quoted_word(ctx.view, arg)
         if ctx.message.reference is not None:
             ctx.view.index = pos

@@ -14,7 +14,7 @@ import util.asyncio
 @plugins.commands.cleanup
 @plugins.commands.group("config", invoke_without_command=True)
 @plugins.privileges.priv("shell")
-async def config_command(ctx: discord.ext.commands.Context, namespace: Optional[str], key: Optional[str],
+async def config_command(ctx: plugins.commands.Context, namespace: Optional[str], key: Optional[str],
     value: Optional[Union[util.discord.CodeBlock, util.discord.Inline, util.discord.Quoted]]) -> None:
     """Edit the key-value configs."""
     if namespace is None:
@@ -39,7 +39,7 @@ async def config_command(ctx: discord.ext.commands.Context, namespace: Optional[
 
 @config_command.command("--delete")
 @plugins.privileges.priv("shell")
-async def config_delete(ctx: discord.ext.commands.Context, namespace: str, key: str) -> None:
+async def config_delete(ctx: plugins.commands.Context, namespace: str, key: str) -> None:
     """Delete the provided key from the config."""
     conf = await util.db.kv.load(namespace)
     keys = key.split(",")
@@ -50,7 +50,7 @@ async def config_delete(ctx: discord.ext.commands.Context, namespace: str, key: 
 @plugins.commands.cleanup
 @plugins.commands.command("sql")
 @plugins.privileges.priv("shell")
-async def sql_command(ctx: discord.ext.commands.Context,
+async def sql_command(ctx: plugins.commands.Context,
     args: discord.ext.commands.Greedy[Union[util.discord.CodeBlock, util.discord.Inline, str]]) -> None:
     """Execute arbitrary SQL statements in the database."""
     data_outputs: List[List[str]] = []

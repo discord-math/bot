@@ -4,7 +4,7 @@ import re
 import discord
 import discord.ext.commands
 import discord.utils
-from typing import List, Dict, Tuple, Optional, Union, Literal, Iterable, Awaitable, Protocol, overload, cast
+from typing import List, Dict, Tuple, Set, Optional, Union, Literal, Iterable, Awaitable, Protocol, overload, cast
 import util.db.kv
 import util.discord
 import util.frozen_list
@@ -121,7 +121,7 @@ async def process_messages(msgs: Iterable[discord.Message]) -> None:
 
         try:
             match: Optional[re.Match[str]]
-            resolve_links = set()
+            resolve_links: Set[str] = set()
             for match in URL_regex.finditer(msg.content):
                 if plugins.phish.is_bad_domain(match.group(1).lower()):
                     await phish_match(msg, util.discord.format("{!i}", match.group(1)))
@@ -193,12 +193,12 @@ async def init() -> None:
 @plugins.commands.cleanup
 @plugins.commands.group("automod")
 @plugins.privileges.priv("mod")
-async def automod_command(ctx: discord.ext.commands.Context) -> None:
+async def automod_command(ctx: plugins.commands.Context) -> None:
     """Manage automod."""
     pass
 
 @automod_command.group("exempt", invoke_without_command=True)
-async def automod_exempt(ctx: discord.ext.commands.Context) -> None:
+async def automod_exempt(ctx: plugins.commands.Context) -> None:
     """Manage roles exempt from automod."""
     output = []
     for id in conf.exempt_roles:
@@ -211,7 +211,7 @@ async def automod_exempt(ctx: discord.ext.commands.Context) -> None:
         allowed_mentions=discord.AllowedMentions.none())
 
 @automod_exempt.command("add")
-async def automod_exempt_add(ctx: discord.ext.commands.Context, role: util.discord.PartialRoleConverter) -> None:
+async def automod_exempt_add(ctx: plugins.commands.Context, role: util.discord.PartialRoleConverter) -> None:
     """Make a role exempt from automod."""
     roles = set(conf.exempt_roles)
     roles.add(role.id)
@@ -221,7 +221,7 @@ async def automod_exempt_add(ctx: discord.ext.commands.Context, role: util.disco
         allowed_mentions=discord.AllowedMentions.none())
 
 @automod_exempt.command("remove")
-async def automod_exempt_remove(ctx: discord.ext.commands.Context, role: util.discord.PartialRoleConverter) -> None:
+async def automod_exempt_remove(ctx: plugins.commands.Context, role: util.discord.PartialRoleConverter) -> None:
     """Make a role not exempt from automod."""
     roles = set(conf.exempt_roles)
     roles.discard(role.id)
@@ -231,7 +231,7 @@ async def automod_exempt_remove(ctx: discord.ext.commands.Context, role: util.di
         allowed_mentions=discord.AllowedMentions.none())
 
 @automod_command.command("list")
-async def automod_list(ctx: discord.ext.commands.Context) -> None:
+async def automod_list(ctx: plugins.commands.Context) -> None:
     """List all automod patterns (CW)."""
     output = "**Automod patterns**:\n"
     for i in conf.active:
@@ -250,7 +250,7 @@ async def automod_list(ctx: discord.ext.commands.Context) -> None:
         await ctx.send(output)
 
 @automod_command.command("add")
-async def automod_add(ctx: discord.ext.commands.Context, kind: Literal["substring", "word", "regex"],
+async def automod_add(ctx: plugins.commands.Context, kind: Literal["substring", "word", "regex"],
     patterns: discord.ext.commands.Greedy[Union[util.discord.CodeBlock, util.discord.Inline, str]]) -> None:
     """
         Add an automod pattern with one or more keywords.
@@ -291,7 +291,7 @@ async def automod_add(ctx: discord.ext.commands.Context, kind: Literal["substrin
     await ctx.send("Added as pattern **{}** with no action".format(i))
 
 @automod_command.command("remove")
-async def automod_remove(ctx: discord.ext.commands.Context, number: int) -> None:
+async def automod_remove(ctx: plugins.commands.Context, number: int) -> None:
     """Remove an automod pattern by ID."""
     keywords = conf[number, "keyword"]
     kind = conf[number, "type"]
@@ -309,7 +309,7 @@ async def automod_remove(ctx: discord.ext.commands.Context, number: int) -> None
         await ctx.send("No such pattern")
 
 @automod_command.command("action")
-async def automod_action(ctx: discord.ext.commands.Context, number: int,
+async def automod_action(ctx: plugins.commands.Context, number: int,
     action: Literal["delete", "note", "mute", "kick", "ban"]) -> None:
     """Assign an action to an automod pattern. (All actions imply deletion)."""
     if conf[number, "keyword"] is None or conf[number, "type"] is None:

@@ -1,7 +1,5 @@
 import asyncio
 import asyncio.subprocess
-import discord
-import discord.ext.commands
 from typing import Optional, Protocol, cast
 import plugins
 import plugins.commands
@@ -22,7 +20,7 @@ async def init() -> None:
 @plugins.commands.cleanup
 @plugins.commands.command("update")
 @plugins.privileges.priv("admin")
-async def update_command(ctx: discord.ext.commands.Context, bot_directory: Optional[str]) -> None:
+async def update_command(ctx: plugins.commands.Context, bot_directory: Optional[str]) -> None:
     """Pull changes from git remote."""
     cwd = conf[bot_directory] if bot_directory is not None else None
     git_pull = await asyncio.create_subprocess_exec("git", "pull", "--ff-only", "--recurse-submodules", cwd=cwd,

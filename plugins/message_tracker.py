@@ -287,7 +287,7 @@ async def fetch_thread_archive(session: sqlalchemy.ext.asyncio.AsyncSession, cha
     max_archival_ts = max(cast(datetime.datetime, state.earliest_thread_archive_ts) for state in states)
 
     try:
-        threads = []
+        threads: List[discord.Thread] = []
         async for thread in channel.archived_threads(limit=50, before=max_archival_ts):
             threads.append(thread)
     except (discord.NotFound, discord.Forbidden):
@@ -703,7 +703,7 @@ async def process_message(msg: discord.Message) -> None:
             subscribers[sub] = cb
     requests_added = False
     async with sessionmaker() as session:
-        stmt: Union[sqlalchemy.sql.expression.Select, sqlalchemy.sql.expression.Update]
+        stmt: Union[sqlalchemy.sql.expression.Select[Any], sqlalchemy.sql.expression.Update]
         subscriber_order = list(subscribers)
         results = await asyncio.gather(*(subscribers[sub]((msg,)) for sub in subscriber_order), return_exceptions=True)
         for sub, result in zip(subscriber_order, results):
