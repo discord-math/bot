@@ -8,7 +8,6 @@ from typing import (Tuple, Dict, Union, Optional, Literal, AsyncIterator, Callab
 import discord_client
 import plugins
 import plugins.cogs
-import plugins.reactions
 import util.asyncio
 import util.discord
 
@@ -186,7 +185,7 @@ async def get_reaction(msg: discord.Message, user: discord.abc.Snowflake,
     timeout: Optional[float] = None, unreact: bool = True) -> Optional[T]:
     assert discord_client.client.user is not None
     reacts = {emoji_key(key): value for key, value in reactions.items()}
-    with plugins.reactions.ReactionMonitor(channel_id=msg.channel.id, message_id=msg.id, author_id=user.id,
+    with ReactionMonitor(channel_id=msg.channel.id, message_id=msg.id, author_id=user.id,
         event="add", filter=lambda _, p: emoji_key(p.emoji) in reacts, timeout_each=timeout) as mon:
         try:
             await asyncio.gather(*(msg.add_reaction(key) for key in reactions))
@@ -209,7 +208,7 @@ async def get_input(msg: discord.Message, user: discord.abc.Snowflake,
     timeout: Optional[float] = None, unreact: bool = True) -> Optional[Union[T, discord.Message]]:
     assert discord_client.client.user is not None
     reacts = {emoji_key(key): value for key, value in reactions.items()}
-    with plugins.reactions.ReactionMonitor(channel_id=msg.channel.id, message_id=msg.id, author_id=user.id,
+    with ReactionMonitor(channel_id=msg.channel.id, message_id=msg.id, author_id=user.id,
         event="add", filter=lambda _, p: emoji_key(p.emoji) in reacts, timeout_each=timeout) as mon:
         try:
             await asyncio.gather(*(msg.add_reaction(key) for key in reactions))

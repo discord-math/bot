@@ -309,10 +309,7 @@ Commands:
 The bot requires:
  - Python 3.9+ (!)
  - PostgreSQL 10+
- - aiohttp
- - asyncpg
- - sqlalchemy
- - sqlalchemy-orm
+ - Libraries listed in `requirements.txt`
 
 You will need to create a static config file called `bot.conf` in the working
 directory of the bot, see `bot.conf.example`.

@@ -9,7 +9,6 @@ import util.discord
 import util.frozen_list
 import plugins
 import plugins.commands
-import plugins.phish
 import plugins.privileges
 import plugins.reactions
 
@@ -110,7 +109,7 @@ def is_bad_domain(domain: str) -> bool:
 async def resolve_link(link: str) -> Optional[str]:
     try:
         logger.debug("Looking up {!r}".format(link))
-        async with plugins.phish.session.head(link, allow_redirects=False, timeout=5.0) as response:
+        async with session.head(link, allow_redirects=False, timeout=5.0) as response:
             logger.debug("Link {!r} got {}, {!r}".format(link, response.status, response.headers.get("location")))
             if response.status in [301, 302] and "location" in response.headers:
                 return response.headers["location"]

@@ -1,0 +1,4 @@
+aiohttp
+asyncpg
+git+https://github.com/sqlalchemy/sqlalchemy@main
+typing_extensions
