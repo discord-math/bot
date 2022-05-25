@@ -37,7 +37,7 @@ registry: sqlalchemy.orm.registry = sqlalchemy.orm.registry()
 engine = util.db.create_async_engine()
 plugins.finalizer(engine.dispose)
 
-sessionmaker = sqlalchemy.ext.asyncio.async_sessionmaker(engine, future=True)
+sessionmaker = sqlalchemy.ext.asyncio.async_sessionmaker(engine, future=True, expire_on_commit=False)
 
 @registry.mapped
 class SavedMessage:
