@@ -812,13 +812,16 @@ async def process_subscription(subscriber: str, event_dict: Dict[str, Callback],
             .where(Channel.reachable, ChannelState.subscriber == subscriber))
         states = [state for state in (await session.execute(stmt)).scalars() if state.channel_id in last_msgs]
 
+        old_last_msgs = {state.channel_id: state.last_message_id for state in states}
         archived_threads: Dict[int, List[discord.Thread]] = {channel_id: [] for channel_id in last_msgs}
         for channel_id in last_msgs:
             channel = discord_client.client.get_channel(channel_id)
             if not isinstance(channel, discord.TextChannel): continue
             async for thread in channel.archived_threads(limit=None):
                 assert thread.archive_timestamp is not None
-                if thread.archive_timestamp < discord.Object(last_msgs[channel_id]).created_at: break
+                if channel_id in old_last_msgs:
+                    if thread.archive_timestamp < discord.Object(old_last_msgs[channel_id]).created_at:
+                        break
                 if channel_id in thread_last_msgs and thread.id in thread_last_msgs[channel_id]: continue
                 archived_threads[channel_id].append(thread)
             logger.debug("Found archived threads in {}: {}".format(channel_id,
