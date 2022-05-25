@@ -6,8 +6,9 @@ import asyncio
 import logging
 import discord
 import discord.ext.commands
-from typing import (Set, Optional, Callable, Coroutine, Any, Type, TypeVar, ParamSpec, Concatenate, Protocol, cast,
-    overload)
+from typing import Set, Optional, Callable, Coroutine, Any, Type, TypeVar, Protocol, cast, overload, TYPE_CHECKING
+if TYPE_CHECKING:
+    from typing_extensions import ParamSpec, Concatenate
 import util.discord
 import discord_client
 import util.db.kv
