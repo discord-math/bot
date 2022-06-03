@@ -123,15 +123,18 @@ events_channel: Dict[int, Dict[str, Callback]] = {}
 
 last_archival_times: Dict[int, datetime.datetime] = {}
 
-def approx_last_msg(channel: Union[discord.TextChannel, discord.Thread]) -> int:
+def approx_last_msg(channel: Union[discord.TextChannel, discord.VoiceChannel, discord.Thread]) -> int:
     return channel.last_message_id if channel.last_message_id is not None else channel.id
 
-def take_snapshot(channels: List[discord.TextChannel]) -> Tuple[Dict[int, int], Dict[int, Dict[int, int]]]:
+def take_snapshot(channels: List[Union[discord.TextChannel, discord.VoiceChannel]]
+    ) -> Tuple[Dict[int, int], Dict[int, Dict[int, int]]]:
     return ({channel.id: approx_last_msg(channel) for channel in channels},
         {channel.id: {thread.id: approx_last_msg(thread) for thread in channel.threads}
-            for channel in channels if len(channel.threads)})
+            for channel in channels if isinstance(channel, discord.TextChannel) and len(channel.threads)})
 
-async def approx_archival_ts(channel: discord.TextChannel) -> Optional[datetime.datetime]:
+async def approx_archival_ts(channel: Union[discord.TextChannel, discord.VoiceChannel]) -> Optional[datetime.datetime]:
+    if isinstance(channel, discord.VoiceChannel):
+        return None
     if channel.id in last_archival_times:
         return last_archival_times[channel.id] + datetime.timedelta(milliseconds=1)
     async for thread in channel.archived_threads(limit=None):
@@ -321,8 +324,8 @@ async def fetch_thread_archive(session: sqlalchemy.ext.asyncio.AsyncSession, cha
         if threads[-1].archive_timestamp < state.earliest_thread_archive_ts:
             state.earliest_thread_archive_ts = threads[-1].archive_timestamp
 
-async def fetch_channel_messages(session: sqlalchemy.ext.asyncio.AsyncSession, channel: discord.TextChannel,
-    before_snowflake: int) -> None:
+async def fetch_channel_messages(session: sqlalchemy.ext.asyncio.AsyncSession,
+    channel: Union[discord.TextChannel, discord.VoiceChannel], before_snowflake: int) -> None:
     requests = list(await select_channel_requests_overlapping(session, fetch_map.keys(), channel.id, before_snowflake))
     logger.debug("Loading channel messages in {}: {}".format(channel.id,
         ", ".join("{!r}: {}-{}".format(request.subscriber, request.before_snowflake, request.after_snowflake)
@@ -458,7 +461,8 @@ async def background_fetch() -> None:
                     await mark_guild_unreachable(session, guild_id)
                     await session.commit()
                     continue
-                if not isinstance(channel := guild.get_channel(channel_id), discord.TextChannel):
+                channel = guild.get_channel(channel_id)
+                if not isinstance(channel, (discord.TextChannel, discord.VoiceChannel)):
                     logger.warning("Channel {} not found in {}, marking unreachable".format(channel_id, guild_id))
                     await mark_channel_unreachable(session, channel_id)
                     await session.commit()
@@ -466,7 +470,8 @@ async def background_fetch() -> None:
 
                 try:
                     if before_snowflake is None:
-                        await fetch_thread_archive(session, channel)
+                        if isinstance(channel, discord.TextChannel):
+                            await fetch_thread_archive(session, channel)
                     elif thread_id is None:
                         await fetch_channel_messages(session, channel, before_snowflake)
                     else:
@@ -545,7 +550,8 @@ async def init_executor() -> None:
     fetch_task = asyncio.create_task(background_fetch())
     plugins.finalizer(fetch_task.cancel)
     if discord_client.client.is_ready():
-        chans = [channel for guild in discord_client.client.guilds for channel in guild.text_channels]
+        chans = [channel for guild in discord_client.client.guilds
+            for channel in guild.channels if isinstance(channel, (discord.TextChannel, discord.VoiceChannel))]
         last_msgs, thread_last_msgs = take_snapshot(chans)
         schedule(process_ready(last_msgs, thread_last_msgs))
 
@@ -566,7 +572,7 @@ async def process_ready(last_msgs: Dict[int, int], thread_last_msgs: Dict[int, D
         for channel_id in last_msgs:
             if channel_id not in have_chans:
                 channel = discord_client.client.get_channel(channel_id)
-                if not isinstance(channel, discord.TextChannel): continue
+                if not isinstance(channel, (discord.TextChannel, discord.VoiceChannel)): continue
                 subscribers = set()
                 for sub in events:
                     subscribers.add(sub)
@@ -733,13 +739,14 @@ async def process_message(msg: discord.Message) -> None:
 class MessageTracker(discord.ext.commands.Cog):
     @discord.ext.commands.Cog.listener()
     async def on_ready(self) -> None:
-        chans = [channel for guild in discord_client.client.guilds for channel in guild.text_channels]
+        chans = [channel for guild in discord_client.client.guilds
+            for channel in guild.channels if isinstance(channel, (discord.TextChannel, discord.VoiceChannel))]
         last_msgs, thread_last_msgs = take_snapshot(chans)
         schedule(process_ready(last_msgs, thread_last_msgs))
 
     @discord.ext.commands.Cog.listener()
     async def on_message(self, msg: discord.Message) -> None:
-        if isinstance(msg.channel, (discord.TextChannel, discord.Thread)):
+        if isinstance(msg.channel, (discord.TextChannel, discord.VoiceChannel, discord.Thread)):
             schedule(process_message(msg))
 
     @discord.ext.commands.Cog.listener()
@@ -757,17 +764,17 @@ class MessageTracker(discord.ext.commands.Cog):
 
     @discord.ext.commands.Cog.listener()
     async def on_guild_channel_update(self, before: discord.abc.GuildChannel, after: discord.abc.GuildChannel) -> None:
-        if isinstance(after, discord.TextChannel) and before.overwrites != after.overwrites:
+        if isinstance(after, (discord.TextChannel, discord.VoiceChannel)) and before.overwrites != after.overwrites:
             schedule(process_permission_update(after.id))
 
     @discord.ext.commands.Cog.listener()
     async def on_guild_channel_create(self, channel: discord.abc.GuildChannel) -> None:
-        if isinstance(channel, discord.TextChannel):
+        if isinstance(channel, (discord.TextChannel, discord.VoiceChannel)):
             schedule(process_channel_creation(channel.id, channel.guild.id))
 
     @discord.ext.commands.Cog.listener()
     async def on_guild_channel_delete(self, channel: discord.abc.GuildChannel) -> None:
-        if isinstance(channel, discord.TextChannel):
+        if isinstance(channel, (discord.TextChannel, discord.VoiceChannel)):
             schedule(process_channel_deletion(channel.id))
 
 async def process_subscription(subscriber: str, event_dict: Dict[str, Callback], cb: Callback,
@@ -783,7 +790,7 @@ async def process_subscription(subscriber: str, event_dict: Dict[str, Callback],
         for channel_id in last_msgs:
             if channel_id not in have_chans:
                 channel = discord_client.client.get_channel(channel_id)
-                if not isinstance(channel, discord.TextChannel): continue
+                if not isinstance(channel, (discord.TextChannel, discord.VoiceChannel)): continue
                 logger.debug("Channel {} is now subscibed for {!r}".format(channel_id, subscriber))
                 stmt = (sqlalchemy.dialects.postgresql.insert(Channel)
                     .values(guild_id=channel.guild.id, id=channel_id, reachable=True)
@@ -863,7 +870,7 @@ async def process_subscription(subscriber: str, event_dict: Dict[str, Callback],
         update_fetch()
         event_dict[subscriber] = cb
 
-async def subscribe(name: str, channels: Optional[Union[discord.Guild, discord.TextChannel]],
+async def subscribe(name: str, channels: Optional[Union[discord.Guild, discord.TextChannel, discord.VoiceChannel]],
     cb: Callback, *, missing: bool, retroactive: bool) -> None:
     """
     Subscribe the callback to be called for all messages in given channel, given guild, or all guilds. If missing is
@@ -881,9 +888,11 @@ async def subscribe(name: str, channels: Optional[Union[discord.Guild, discord.T
         event_dict = events_channel.setdefault(channels.id, {})
     if missing or retroactive:
         if channels is None:
-            chans = [channel for guild in discord_client.client.guilds for channel in guild.text_channels]
+            chans = [channel for guild in discord_client.client.guilds
+                for channel in guild.channels if isinstance(channel, (discord.TextChannel, discord.VoiceChannel))]
         elif isinstance(channels, discord.Guild):
-            chans = [channel for channel in channels.text_channels]
+            chans = [channel
+                for channel in channels.channels if isinstance(channel, (discord.TextChannel, discord.VoiceChannel))]
         else:
             chans = [channels]
         last_msgs, thread_last_msgs = take_snapshot(chans)
@@ -898,7 +907,8 @@ async def process_unsubscription(subscriber: str, event_dict: Dict[str, Callback
     fetch_map.pop(subscriber, None)
     event_dict.pop(subscriber, None)
 
-async def unsubscribe(name: str, channels: Optional[Union[discord.Guild, discord.TextChannel]]) -> None:
+async def unsubscribe(name: str, channels: Optional[Union[discord.Guild, discord.TextChannel, discord.VoiceChannel]]
+    ) -> None:
     if channels is None:
         event_dict = events
     elif isinstance(channels, discord.Guild):
