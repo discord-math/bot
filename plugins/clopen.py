@@ -34,6 +34,9 @@ def available_embed() -> discord.Embed:
 def closed_embed(reason: str, reopen: bool) -> discord.Embed:
     if reopen:
         reason += util.discord.format("\n\nUse {!i} if this was a mistake.", plugins.commands.conf.prefix + "reopen")
+    reason += ("\n\nPlease take a minute to participate in "
+        "[our survey](https://discord.com/channels/268882317391429632/488084340807565332/984264815876907098) "
+        "if you haven't already!")
     return discord.Embed(color=0x000000, title="Channel closed", description=reason)
 
 def limit_embed() -> discord.Embed:
