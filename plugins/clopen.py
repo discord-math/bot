@@ -4,7 +4,7 @@ import collections
 import logging
 import discord
 import discord.ext.commands
-from typing import Dict, Tuple, Optional, Union, Any, Literal, Awaitable, Protocol, overload, cast
+from typing import Dict, List, Tuple, Optional, Union, Any, Literal, Awaitable, Protocol, overload, cast
 import util.discord
 import util.frozen_list
 import util.db.kv
@@ -204,24 +204,29 @@ async def occupy(id: int, msg_id: int, author: Union[discord.User, discord.Membe
     conf[id, "op_id"] = msg_id
     conf[id, "extension"] = 1
     conf[id, "expiry"] = time.time() + conf.owner_timeout
-    reached_limit = await update_owner_limit(author.id)
+    await enact_occupied(channel, author, op_id=msg_id, old_op_id=old_op_id)
+    await conf
+    scheduler_updated()
+
+async def enact_occupied(channel: discord.TextChannel, owner: Union[discord.User, discord.Member], *,
+    op_id: Optional[int], old_op_id: Optional[int]) -> None:
+    reached_limit = await update_owner_limit(owner.id)
     try:
         if old_op_id is not None:
             await discord.PartialMessage(channel=channel, id=old_op_id).unpin()
     except (discord.NotFound, discord.Forbidden, discord.HTTPException):
         pass
     try:
-        await discord.PartialMessage(channel=channel, id=msg_id).pin()
+        if op_id is not None:
+            await discord.PartialMessage(channel=channel, id=op_id).pin()
     except (discord.NotFound, discord.Forbidden):
         pass
     try:
         await insert_chan(conf.used_category, channel, beginning=True)
         prefix = channel.name.split("\uFF5C", 1)[0]
-        request_rename(channel, prefix + "\uFF5C" + author.display_name)
+        request_rename(channel, prefix + "\uFF5C" + owner.display_name)
     except discord.Forbidden:
         pass
-    await conf
-    scheduler_updated()
     if reached_limit:
         await channel.send(embed=limit_embed(), allowed_mentions=discord.AllowedMentions.none())
 
@@ -272,16 +277,18 @@ async def make_available(id: int) -> None:
     assert conf[id, "state"] in ["closed", "hidden", None]
     conf[id, "state"] = "available"
     conf[id, "expiry"] = None
+    conf[id, "prompt_id"] = await enact_available(channel)
+    await conf
+    scheduler_updated()
+
+async def enact_available(channel: discord.TextChannel) -> int:
     try:
         await insert_chan(conf.available_category, channel)
         prefix = channel.name.split("\uFF5C", 1)[0]
         request_rename(channel, prefix)
     except discord.Forbidden:
         pass
-    prompt = await channel.send(embed=available_embed(), allowed_mentions=discord.AllowedMentions.none())
-    conf[id, "prompt_id"] = prompt.id
-    await conf
-    scheduler_updated()
+    return (await channel.send(embed=available_embed(), allowed_mentions=discord.AllowedMentions.none())).id
 
 async def make_hidden(id: int) -> None:
     logger.debug("Making {} hidden".format(id))
@@ -290,14 +297,17 @@ async def make_hidden(id: int) -> None:
     conf[id, "state"] = "hidden"
     conf[id, "expiry"] = None
     conf[id, "prompt_id"] = None
+    await enact_hidden(channel)
+    await conf
+    scheduler_updated()
+
+async def enact_hidden(channel: discord.TextChannel) -> None:
     try:
         await insert_chan(conf.hidden_category, channel)
         prefix = channel.name.split("\uFF5C", 1)[0]
         request_rename(channel, prefix)
     except discord.Forbidden:
         pass
-    await conf
-    scheduler_updated()
 
 async def create_channel() -> Optional[int]:
     if len(conf.channels) >= conf.max_channels:
@@ -378,8 +388,84 @@ async def reopen(id: int) -> None:
     await conf
     scheduler_updated()
 
+async def synchronize_channels() -> List[str]:
+    output = []
+    available_category = conf.available_category
+    used_category = conf.used_category
+    hidden_category = conf.hidden_category
+    assert isinstance(cat := discord_client.client.get_channel(used_category), discord.abc.GuildChannel)
+    for id in conf.channels:
+        channel = discord_client.client.get_channel(id)
+        if not isinstance(channel, discord.TextChannel):
+            output.append(util.discord.format("{!c} is not a text channel", id))
+            continue
+        state = conf[id, "state"]
+        if state == "available":
+            if channel.category is None or channel.category.id != available_category:
+                output.append(util.discord.format("{!c} moved to the available category", id))
+                await enact_available(channel)
+            else:
+                valid_prompt = conf[id, "prompt_id"]
+                if valid_prompt is not None:
+                    try:
+                        if not (await channel.fetch_message(valid_prompt)).embeds:
+                            valid_prompt = None
+                    except (discord.NotFound, discord.Forbidden):
+                        valid_prompt = None
+                if valid_prompt is None:
+                    output.append(util.discord.format("Posted available message in {!c}", id))
+                    msg = await channel.send(embed=available_embed(), allowed_mentions=discord.AllowedMentions.none())
+                    conf[id, "prompt_id"] = msg.id
+                    await conf
+                else:
+                    async for msg in channel.history(limit=None, after=discord.Object(valid_prompt)):
+                        if not msg.author.bot:
+                            output.append(util.discord.format("{!c} assigned to {!m}", id, msg.author))
+                            await occupy(id, msg.id, msg.author)
+                            break
+        elif state == "used" or state == "pending":
+            op_id = conf[id, "op_id"]
+            owner_id = conf[id, "owner"]
+            owner = cat.guild.get_member(owner_id) if owner_id is not None else None
+            if owner is None:
+                output.append(util.discord.format("{!c} has no owner, closed", id))
+                await close(id, "The owner is missing!", reopen=False)
+            elif op_id is None:
+                output.append(util.discord.format("{!c} has no OP message, closed", id))
+                await close(id, "The original message is missing!", reopen=False)
+            elif channel.category is None or channel.category.id != used_category:
+                output.append(util.discord.format("{!c} moved to the used category", id))
+                await enact_occupied(channel, owner, op_id=op_id, old_op_id=None)
+        elif state == "closed":
+            if channel.category is None or channel.category.id != used_category:
+                output.append(util.discord.format("{!c} moved to the used category", id))
+                await insert_chan(used_category, channel, beginning=True)
+        elif state == "hidden":
+            if channel.category is None or channel.category.id != hidden_category:
+                output.append(util.discord.format("{!c} moved to the hidden category", id))
+                await insert_chan(hidden_category, channel, beginning=True)
+    if (role := cat.guild.get_role(conf.limit_role)) is not None:
+        for user in role.members:
+            if not await update_owner_limit(user.id):
+                output.append(util.discord.format("Removed limiting role from {!m}", user))
+    for id in conf.channels:
+        channel = discord_client.client.get_channel(id)
+        if not isinstance(channel, discord.TextChannel):
+            continue
+        for msg in await channel.pins():
+            if conf[id, "state"] not in ["available", "used", "pending", "closed"] or msg.id != conf[id, "op_id"]:
+                output.append(util.discord.format("Removed extraneous pin from {!c}", id))
+                await msg.unpin()
+    return output
+
 @plugins.cogs.cog
 class ClopenCog(discord.ext.commands.Cog):
+    @discord.ext.commands.Cog.listener()
+    async def on_ready(self) -> None:
+        output = await synchronize_channels()
+        if output:
+            logger.error("\n".join(output))
+
     @discord.ext.commands.Cog.listener()
     async def on_message(self, msg: discord.Message) -> None:
         if not msg.author.bot and msg.channel.id in conf.channels:
@@ -432,3 +518,17 @@ class ClopenCog(discord.ext.commands.Cog):
             if conf[ctx.channel.id, "state"] in ["closed", "available"] and conf[ctx.channel.id, "owner"] is not None:
                 await reopen(ctx.channel.id)
                 await ctx.send("\u2705")
+
+    @plugins.privileges.priv("mod")
+    @discord.ext.commands.command("clopen_sync")
+    async def clopen_sync_command(self, ctx: plugins.commands.Context) -> None:
+        """Try and synchronize the state of clopen channels with Discord in case of errors or outages."""
+        output = await synchronize_channels()
+        text = ""
+        for out in output:
+            if len(text) + 1 + len(out) > 2000:
+                await ctx.send(text, allowed_mentions=discord.AllowedMentions.none())
+                text = out
+            else:
+                text += "\n" + out
+        await ctx.send(text or "\u2705", allowed_mentions=discord.AllowedMentions.none())
