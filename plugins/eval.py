@@ -54,7 +54,7 @@ async def exec_command(ctx: plugins.commands.Context,
                 ret = fun()
                 if inspect.iscoroutine(ret):
                     ret = await ret
-                if ret != None:
+                if ret is not None:
                     mk_code_print(fp)(repr(ret))
     except:
         _, exc, tb = sys.exc_info()
