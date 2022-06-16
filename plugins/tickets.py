@@ -1053,7 +1053,7 @@ async def expire_tickets() -> None:
             async with sessionmaker() as session:
                 min_expiry = None
                 now = datetime.datetime.utcnow()
-                stmt = sqlalchemy.select(Ticket).where(Ticket.status == TicketStatus.IN_EFFECT, Ticket.duration is not None)
+                stmt = sqlalchemy.select(Ticket).where(Ticket.status == TicketStatus.IN_EFFECT, Ticket.duration != None)
                 for ticket, in await session.execute(stmt):
                     if (expiry := ticket.expiry) is None:
                         continue
@@ -1101,7 +1101,7 @@ async def deliver_tickets() -> None:
         try:
             async with sessionmaker() as session:
                 stmt = sqlalchemy.select(TicketMod).options(sqlalchemy.orm.joinedload(TicketMod.queue_top)).where(
-                    TicketMod.queue_top is not None)
+                    TicketMod.queue_top != None)
                 mods = (await session.execute(stmt)).scalars().all()
 
                 queued_mods = set(mod.modid for mod in mods)
