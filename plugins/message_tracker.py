@@ -267,7 +267,7 @@ async def select_thread_requests_overlapping(session: sqlalchemy.ext.asyncio.Asy
 async def select_archive_ts(session:sqlalchemy.ext.asyncio.AsyncSession, subscribers: Iterable[str],
     channel_id: int) -> Iterable[ChannelState]:
     stmt = (sqlalchemy.select(ChannelState)
-        .where(ChannelState.earliest_thread_archive_ts is not None))
+        .where(ChannelState.earliest_thread_archive_ts != None))
     return (await session.execute(stmt)).scalars()
 
 async def mark_channel_unreachable(session: sqlalchemy.ext.asyncio.AsyncSession, channel_id: int) -> None:
