@@ -26,6 +26,7 @@ class FrozenList(Generic[T]):
                 return FrozenList(lst.__getitem__(index))
             else:
                 return lst.__getitem__(index)
+        self.__getitem__ = __getitem__
         def __len__() -> int:
             return lst.__len__()
         self.__len__ = __len__
