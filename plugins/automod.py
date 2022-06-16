@@ -279,7 +279,7 @@ async def automod_add(ctx: plugins.commands.Context, kind: Literal["substring", 
         keywords.append(pattern)
 
     for i in range(conf.index):
-        if conf[i, "keyword"] == keywords and conf[i, "type"] == kind and conf[i, "action"] == None:
+        if conf[i, "keyword"] == keywords and conf[i, "type"] == kind and conf[i, "action"] is None:
             break
     else:
         i = conf.index
