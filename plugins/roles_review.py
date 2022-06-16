@@ -154,7 +154,7 @@ class VetoModal(discord.ui.Modal):
         if self.decision.values == ["Approve"]:
             await cast_vote(interaction, self.msg_id, True, veto=str(self.reason))
         elif self.decision.values == ["Deny"]:
-            await cast_vote(interaction, self.msg_id, True, veto=str(self.reason))
+            await cast_vote(interaction, self.msg_id, False, veto=str(self.reason))
 
 @plugins.cogs.cog
 class RolesReviewCog(discord.ext.commands.Cog):
