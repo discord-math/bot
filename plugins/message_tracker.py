@@ -186,7 +186,7 @@ async def select_fetch_task(session: sqlalchemy.ext.asyncio.AsyncSession, subscr
                     sqlalchemy.null().label("before_snowflake"))
                 .join(ChannelState.channel)
                 .where(Channel.reachable, ChannelState.subscriber.in_(subs),
-                    ChannelState.earliest_thread_archive_ts is not None)
+                    ChannelState.earliest_thread_archive_ts != None)
                 .order_by(ChannelState.earliest_thread_archive_ts.desc())
                 .limit(1),
             sqlalchemy.select(
