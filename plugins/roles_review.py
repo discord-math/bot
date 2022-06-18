@@ -217,7 +217,8 @@ async def apply(member: discord.Member, role: discord.Role, inputs: List[Tuple[s
         channel = member.guild.get_channel(conf.review_channel)
         assert isinstance(channel, discord.TextChannel)
 
-        msg = await channel.send(util.discord.format("{!m} requested {!M}:\n\n{}", member, role,
+        msg = await channel.send(util.discord.format("{!m} ({}#{} {}) requested {!M}:\n\n{}", member, member.name,
+                member.discriminator, member.id, role,
                 "\n\n".join("**{}**: {}".format(question, answer) for question, answer in inputs)),
             allowed_mentions=discord.AllowedMentions.none())
         session.add(Application(listing_id=msg.id, user_id=member.id, role_id=role.id, resolved=False))
