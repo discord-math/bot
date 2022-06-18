@@ -153,9 +153,9 @@ class ManageRolesView(discord.ui.View):
 
 plugins.interactions.persistent_view(ManageRolesView())
 
-#@plugins.interactions.command("roles", description="Manage self-assigned roles.")
-#async def roles_command(interaction: discord.Interaction) -> None:
-#    await send_roles_view(interaction)
+@plugins.interactions.command("roles", description="Manage self-assigned roles.")
+async def roles_command(interaction: discord.Interaction) -> None:
+    await send_roles_view(interaction)
 
 async def setup(target: discord.abc.Messageable) -> None:
     await target.send(view=ManageRolesView())
