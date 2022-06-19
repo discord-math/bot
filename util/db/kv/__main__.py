@@ -27,7 +27,7 @@ async def main() -> None:
         nsp = sys.argv[1]
         key = sys.argv[2].split(",")
         value = await util.db.kv.get_raw_value(nsp, key)
-        if value is None:
+        if value is not None:
             print(value)
     elif len(sys.argv) == 4:
         nsp = sys.argv[1]
