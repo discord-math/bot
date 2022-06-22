@@ -80,12 +80,31 @@ class ApproveRoleView(discord.ui.View):
             custom_id="{}:{}:Approve".format(__name__, msg_id)))
         self.add_item(discord.ui.Button(style=discord.ButtonStyle.danger, label="Deny",
             custom_id="{}:{}:Deny".format(__name__, msg_id)))
+        self.add_item(discord.ui.Button(style=discord.ButtonStyle.secondary, label="Retract",
+            custom_id="{}:{}:Retract".format(__name__, msg_id)))
         self.add_item(discord.ui.Button(style=discord.ButtonStyle.secondary, label="Veto",
             custom_id="{}:{}:Veto".format(__name__, msg_id)))
 
-async def cast_vote(interaction: discord.Interaction, msg_id: int, dir: bool, veto: Optional[str] = None) -> None:
+def voting_decision(votes: List[Vote]) -> Optional[bool]:
+    up_total = 0
+    down_total = 0
+    for vote in votes:
+        if vote.veto:
+            return vote.vote
+        if vote.vote:
+            up_total += 1
+        else:
+            down_total += 1
+        if up_total >= conf.vote_limit:
+            return True
+        elif down_total >= conf.vote_limit:
+            return False
+    return None
+
+async def cast_vote(interaction: discord.Interaction, msg_id: int, dir: Optional[bool], veto: Optional[str] = None) -> None:
     assert interaction.message
     assert interaction.guild
+    assert dir is not None or veto is None
     async with sessionmaker() as session:
         stmt = sqlalchemy.select(Application).where(Application.listing_id == msg_id).limit(1)
         app = (await session.execute(stmt)).scalars().first()
@@ -101,23 +120,33 @@ async def cast_vote(interaction: discord.Interaction, msg_id: int, dir: bool, ve
         stmt = sqlalchemy.select(Vote).where(Vote.application_id == app.id)
         votes = list((await session.execute(stmt)).scalars())
 
-        if veto is None and any(vote.voter_id == interaction.user.id for vote in votes):
-            await interaction.response.send_message("You have already voted on this application.", ephemeral=True)
-            return
-
-        vote = Vote(application_id=app.id, voter_id=interaction.user.id, vote=dir, veto=veto is not None)
-        session.add(vote)
-        await session.commit()
-        votes.append(vote)
-
-        if (dir and veto is not None) or sum(vote.vote for vote in votes) >= conf.vote_limit:
-            decision = True
-        elif (not dir and veto is not None) or sum(not vote.vote for vote in votes) >= conf.vote_limit:
-            decision = False
+        if dir is None:
+            for vote in votes:
+                if vote.voter_id == interaction.user.id:
+                    await session.delete(vote)
+                    break
+            else:
+                await interaction.response.send_message("You have not voted on this application.", ephemeral=True)
+                return
         else:
-            decision = None
+            if veto is None and any(vote.voter_id == interaction.user.id for vote in votes):
+                await interaction.response.send_message("You have already voted on this application.", ephemeral=True)
+                return
 
-        comment = "\u2705" if dir else "\u274C"
+            vote = Vote(application_id=app.id, voter_id=interaction.user.id, vote=dir, veto=veto is not None)
+            session.add(vote)
+            votes.append(vote)
+
+        await session.commit()
+
+        decision = voting_decision(votes)
+
+        if dir is None:
+            comment = "\u21A9"
+        elif dir:
+            comment = "\u2705"
+        else:
+            comment = "\u274C"
         if veto is not None:
             comment = "veto {}: {}".format(comment, veto)
         await interaction.message.edit(
@@ -179,6 +208,8 @@ class RolesReviewCog(discord.ext.commands.Cog):
             await cast_vote(interaction, msg_id, True)
         elif action == "Deny":
             await cast_vote(interaction, msg_id, False)
+        elif action == "Retract":
+            await cast_vote(interaction, msg_id, None)
         elif action == "Veto":
             if (isinstance(interaction.user, discord.Member)
                 and any(role.id == conf.veto_role for role in interaction.user.roles)):

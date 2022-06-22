@@ -39,7 +39,7 @@ class RolePromptModal(discord.ui.Modal):
                 else:
                     placeholder = None
                 prompt = prompt[:45]
-                input = discord.ui.TextInput(label=prompt, style=discord.TextStyle.paragraph, max_length=1000,
+                input = discord.ui.TextInput(label=prompt, style=discord.TextStyle.paragraph, max_length=600,
                     placeholder=placeholder)
                 self.inputs[role].append(input)
                 self.add_item(input)
