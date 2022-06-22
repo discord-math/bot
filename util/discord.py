@@ -129,18 +129,22 @@ class Formatter(string.Formatter):
         elif conversion == "m":
             if isinstance(value, discord.Role):
                 return "<@&{}>".format(value.id)
-            elif isinstance(value, discord.abc.User):
+            elif isinstance(value, discord.abc.Snowflake):
                 return "<@{}>".format(value.id)
             elif isinstance(value, int):
                 return "<@{}>".format(value)
         elif conversion == "M":
             if isinstance(value, discord.Role):
                 return "<@&{}>".format(value.id)
+            elif isinstance(value, discord.abc.Snowflake):
+                return "<@&{}>".format(value.id)
             elif isinstance(value, int):
                 return "<@&{}>".format(value)
         elif conversion == "c":
             if isinstance(value, discord.abc.GuildChannel):
                 return "<#{}>".format(value.id)
+            elif isinstance(value, discord.abc.Snowflake):
+                return "<@{}>".format(value.id)
             elif isinstance(value, int):
                 return "<#{}>".format(value)
         return super().convert_field(value, conversion)
