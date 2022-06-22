@@ -23,7 +23,7 @@ class RolesReviewConf(Protocol):
     vote_limit: int
     veto_role: int
 
-    def __getitem__(self, index: Tuple[int, Literal["replace"]]) -> Optional[int]: ...
+    def __getitem__(self, index: Tuple[int, Literal["role", "replace"]]) -> Optional[int]: ...
 
 conf: RolesReviewConf
 
@@ -116,6 +116,11 @@ async def cast_vote(interaction: discord.Interaction, msg_id: int, dir: Optional
         if app.resolved:
             await interaction.response.send_message("This application is already resolved.", ephemeral=True)
             return
+
+        if (role_id := conf[app.role_id, "role"]) is not None:
+            if not isinstance(interaction.user, discord.Member) or not any(role.id == role_id for role in interaction.user.roles):
+                await interaction.response.send_message("You are not allowed to vote on this application.", ephemeral=True)
+                return
 
         stmt = sqlalchemy.select(Vote).where(Vote.application_id == app.id)
         votes = list((await session.execute(stmt)).scalars())
