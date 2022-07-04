@@ -20,7 +20,8 @@ if TYPE_CHECKING:
 
 class RolesReviewConf(Protocol):
     review_channel: int
-    vote_limit: int
+    upvote_limit: int
+    downvote_limit: int
     veto_role: int
 
     def __getitem__(self, index: Tuple[int, Literal["role", "replace"]]) -> Optional[int]: ...
@@ -95,9 +96,9 @@ def voting_decision(votes: List[Vote]) -> Optional[bool]:
             up_total += 1
         else:
             down_total += 1
-        if up_total >= conf.vote_limit:
+        if up_total >= conf.upvote_limit:
             return True
-        elif down_total >= conf.vote_limit:
+        elif down_total >= conf.downvote_limit:
             return False
     return None
 
