@@ -80,6 +80,7 @@ def init(init: T) -> T:
     called in order, and if the initializer fails, subsequent initializers will not be called, and finalizers registered
     so far will be called.
     """
+    ret = init
     if inspect.iscoroutinefunction(init):
         ainit = init
     else:
@@ -91,7 +92,7 @@ def init(init: T) -> T:
     if current not in initializers:
         initializers[current] = []
     initializers[current].append(ainit)
-    return init
+    return ret
 
 finalizers: Dict[str, List[Callable[[], Awaitable[None]]]] = {}
 
@@ -107,6 +108,7 @@ def finalizer(fin: T) -> T:
     If a module initialization fails to complete, the finalizers that managed to register will be called. A finalizer
     can be an async function.
     """
+    ret = fin
     if inspect.iscoroutinefunction(fin):
         afin = fin
     else:
@@ -118,7 +120,7 @@ def finalizer(fin: T) -> T:
     if current not in finalizers:
         finalizers[current] = []
     finalizers[current].append(afin)
-    return fin
+    return ret
 
 async def initialize_module(name: str) -> None:
     logger.debug("Initializing {}".format(name))

@@ -1,4 +1,3 @@
-import re
 import discord
 import discord.ext.commands
 import discord.utils
@@ -36,8 +35,6 @@ async def init() -> None:
             "rolereacts": util.frozen_dict.FrozenDict(
                 {emoji: int(role_id_str) for emoji, role_id_str in obj["rolereacts"].items()})}
     await conf
-
-msg_id_re = re.compile(r"https?://(?:\w*\.)?(?:discord.com|discordapp.com)/channels/(\d+)/(\d+)/(\d+)")
 
 async def find_message(channel_id: int, msg_id: int) -> Optional[discord.Message]:
     channel = discord_client.client.get_partial_messageable(channel_id)
