@@ -33,42 +33,6 @@ class RemindersConf(Awaitable[None], Protocol):
 conf: RemindersConf
 logger = logging.getLogger(__name__)
 
-class DurationConverter(int):
-    time_re = re.compile(
-        r"""
-        \s*(-?\d+)\s*(?:
-        (?P<seconds> s(?:ec(?:ond)?s?)?) |
-        (?P<minutes> min(?:ute)?s? | (?!mo)(?-i:m)) |
-        (?P<hours> h(?:(?:ou)?rs?)?) |
-        (?P<days> d(?:ays?)?) |
-        (?P<weeks> w(?:(?:ee)?ks?)?) |
-        (?P<months> months? | (?-i:M)) |
-        (?P<years> y(?:(?:ea)?rs?)?))\W*
-        """,
-        re.VERBOSE | re.IGNORECASE
-    )
-    time_expansion = {
-        "seconds": 1,
-        "minutes": 60,
-        "hours": 60 * 60,
-        "days": 60 * 60 * 24,
-        "weeks": 60 * 60 * 24 * 7,
-        "months": 60 * 60 * 24 * 30,
-        "years": 60 * 60 * 24 * 365
-    }
-    @classmethod
-    async def convert(cls, ctx: plugins.commands.Context, arg: str) -> int:
-        pos = util.discord.undo_get_quoted_word(ctx.view, arg)
-        seconds = 0
-        while (match := cls.time_re.match(ctx.view.buffer, pos=pos)) is not None:
-            pos = match.end()
-            assert match.lastgroup is not None
-            seconds += int(match[1]) * cls.time_expansion[match.lastgroup]
-        if pos == util.discord.undo_get_quoted_word(ctx.view, arg):
-            raise discord.ext.commands.BadArgument("Expected a duration")
-        ctx.view.index = pos
-        return seconds
-
 def format_msg(guild_id: int, channel_id: int, msg_id: int) -> str:
     return "https://discord.com/channels/{}/{}/{}".format(guild_id, channel_id, msg_id)
 
@@ -164,15 +128,15 @@ async def init() -> None:
 @plugins.commands.cleanup
 @plugins.commands.command("remindme", aliases=["remind"])
 @plugins.privileges.priv("remind")
-async def remindme_command(ctx: plugins.commands.Context, interval: DurationConverter, *, text: Optional[str]
-    ) -> None:
+async def remindme_command(ctx: plugins.commands.Context, interval: util.discord.DurationConverter, *,
+    text: Optional[str]) -> None:
     """Set a reminder with a given message."""
     if ctx.guild is None:
         raise util.discord.UserError("Only usable in a guild")
 
     reminders_optional = conf[ctx.author.id]
     reminders = reminders_optional.copy() if reminders_optional is not None else []
-    reminder_time = int(datetime.now(timezone.utc).timestamp()) + interval
+    reminder_time = int((datetime.now(timezone.utc) + interval).timestamp())
     reminder = Reminder(guild=ctx.guild.id, channel=ctx.channel.id, msg=ctx.message.id, time=reminder_time,
         contents=text or "")
     reminders.append(reminder)

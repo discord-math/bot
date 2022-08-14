@@ -4,6 +4,7 @@ Some common utilities for interacting with discord.
 from __future__ import annotations
 import re
 import math
+import datetime
 import discord
 import discord.abc
 import discord.ext.commands
@@ -526,3 +527,39 @@ class ReplyConverter(discord.PartialMessage):
             ctx.view.index = pos
             return partial_from_reply(None, ctx)
         return await discord.ext.commands.PartialMessageConverter().convert(ctx, arg)
+
+class DurationConverter(datetime.timedelta):
+    time_re = re.compile(
+        r"""
+        \s*(-?\d+)\s*(?:
+        (?P<seconds> s(?:ec(?:ond)?s?)?) |
+        (?P<minutes> min(?:ute)?s? | (?!mo)(?-i:m)) |
+        (?P<hours> h(?:(?:ou)?rs?)?) |
+        (?P<days> d(?:ays?)?) |
+        (?P<weeks> w(?:(?:ee)?ks?)?) |
+        (?P<months> months? | (?-i:M)) |
+        (?P<years> y(?:(?:ea)?rs?)?))\W*
+        """,
+        re.VERBOSE | re.IGNORECASE
+    )
+    time_expansion = {
+        "seconds": datetime.timedelta(seconds=1),
+        "minutes": datetime.timedelta(minutes=1),
+        "hours": datetime.timedelta(hours=1),
+        "days": datetime.timedelta(days=1),
+        "weeks": datetime.timedelta(days=7),
+        "months": datetime.timedelta(days=30),
+        "years": datetime.timedelta(days=365)
+    }
+    @classmethod
+    async def convert(cls, ctx: discord.ext.commands.Context[Any], arg: str) -> datetime.timedelta:
+        pos = undo_get_quoted_word(ctx.view, arg)
+        td = datetime.timedelta()
+        while (match := cls.time_re.match(ctx.view.buffer, pos=pos)) is not None:
+            pos = match.end()
+            assert match.lastgroup is not None
+            td += int(match[1]) * cls.time_expansion[match.lastgroup]
+        if pos == undo_get_quoted_word(ctx.view, arg):
+            raise discord.ext.commands.BadArgument("Expected a duration")
+        ctx.view.index = pos
+        return td
