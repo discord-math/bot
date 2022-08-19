@@ -307,11 +307,20 @@ class VoteModal(discord.ui.Modal):
             self.add_item(discord.ui.TextInput(style=discord.TextStyle.paragraph, required=False,
                 label="Concerns raised since your last vote", default="\n\n".join(concerns)[:4000]))
 
-        self.vote = discord.ui.Select(placeholder="Vote", min_values=1, max_values=1, options=[
-            discord.SelectOption(label="Upvote", emoji="\u2705", default=vote==VoteType.UPVOTE),
-            discord.SelectOption(label="Neutral", emoji="\U0001F518", default=vote==VoteType.NEUTRAL),
-            discord.SelectOption(label="Downvote", emoji="\u274C", default=vote==VoteType.DOWNVOTE),
-            discord.SelectOption(label="None (retract vote)")])
+        # Selects not allowed in modals for now
+        #self.vote = discord.ui.Select(placeholder="Vote", min_values=1, max_values=1, options=[
+        #    discord.SelectOption(label="Upvote", emoji="\u2705", default=vote==VoteType.UPVOTE),
+        #    discord.SelectOption(label="Neutral", emoji="\U0001F518", default=vote==VoteType.NEUTRAL),
+        #    discord.SelectOption(label="Downvote", emoji="\u274C", default=vote==VoteType.DOWNVOTE),
+        #    discord.SelectOption(label="None (retract vote)")])
+        self.vote = discord.ui.TextInput(required=False, max_length=1,
+            label="[Y]es\u2705 / [N]o\u274C / [A]bstain \U0001F518 / [R]etract \u21A9")
+        if vote == VoteType.UPVOTE:
+            self.vote.default = "Y"
+        elif vote == VoteType.NEUTRAL:
+            self.vote.default = "A"
+        elif vote == VoteType.DOWNVOTE:
+            self.vote.default = "N"
         self.add_item(self.vote)
 
         self.comment = discord.ui.TextInput(style=discord.TextStyle.paragraph, required=False, max_length=300,
@@ -319,11 +328,20 @@ class VoteModal(discord.ui.Modal):
         self.add_item(self.comment)
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
-        if self.vote.values == ["Upvote"]:
+        #if self.vote.values == ["Upvote"]:
+        #    vote = VoteType.UPVOTE
+        #elif self.vote.values == ["Neutral"]:
+        #    vote = VoteType.NEUTRAL
+        #elif self.vote.values == ["Downvote"]:
+        #    vote = VoteType.DOWNVOTE
+        #else:
+        #    vote = None
+        vote_char = str(self.vote)[:1].upper()
+        if vote_char == "Y":
             vote = VoteType.UPVOTE
-        elif self.vote.values == ["Neutral"]:
+        elif vote_char == "A":
             vote = VoteType.NEUTRAL
-        elif self.vote.values == ["Downvote"]:
+        elif vote_char == "N":
             vote = VoteType.DOWNVOTE
         else:
             vote = None
