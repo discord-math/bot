@@ -72,4 +72,4 @@ async def init(schema: str) -> None:
     """
     Request database initialization for the current plugin.
     """
-    await init_for(plugins.current_plugin(), schema)
+    await init_for(plugins.current_plugin().name, schema)

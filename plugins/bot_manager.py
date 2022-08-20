@@ -1,12 +1,16 @@
 import sys
 import traceback
 import importlib
+import collections
 import plugins
 import plugins.autoload
 import plugins.commands
 import plugins.privileges
 import util.discord
 import util.restart
+
+manager = plugins.PluginManager.of(__name__)
+assert manager
 
 @plugins.commands.command("restart")
 @plugins.privileges.priv("admin")
@@ -18,13 +22,14 @@ async def restart_command(ctx: plugins.commands.Context) -> None:
 class PluginConverter(str):
     @classmethod
     async def convert(cls, ctx: plugins.commands.Context, arg: str) -> str:
-        if not arg.startswith(plugins.plugins_namespace + "."):
-            arg = plugins.plugins_namespace + "." + arg
+        assert manager
+        if not any(arg.startswith(namespace + ".") for namespace in manager.namespaces):
+            arg = manager.namespaces[0] + "." + arg
         return arg
 
 async def reply_exception(ctx: plugins.commands.Context) -> None:
     _, exc, tb = sys.exc_info()
-    text = util.discord.format("{!b:py}", "{}\n{}".format("".join(traceback.format_tb(tb)), repr(exc)))
+    text = util.discord.format("{!b:py}", "".join(traceback.format_exception(exc)))
     del tb
     await ctx.send(text)
 
@@ -34,7 +39,7 @@ async def reply_exception(ctx: plugins.commands.Context) -> None:
 async def load_command(ctx: plugins.commands.Context, plugin: PluginConverter) -> None:
     """Load a plugin."""
     try:
-        await plugins.load(plugin)
+        await manager.load(plugin)
     except:
         await reply_exception(ctx)
     else:
@@ -46,7 +51,7 @@ async def load_command(ctx: plugins.commands.Context, plugin: PluginConverter) -
 async def reload_command(ctx: plugins.commands.Context, plugin: PluginConverter) -> None:
     """Reload a plugin."""
     try:
-        await plugins.reload(plugin)
+        await manager.reload(plugin)
     except:
         await reply_exception(ctx)
     else:
@@ -58,7 +63,7 @@ async def reload_command(ctx: plugins.commands.Context, plugin: PluginConverter)
 async def unsafe_reload_command(ctx: plugins.commands.Context, plugin: PluginConverter) -> None:
     """Reload a plugin without its dependents."""
     try:
-        await plugins.unsafe_reload(plugin)
+        await manager.unsafe_reload(plugin)
     except:
         await reply_exception(ctx)
     else:
@@ -70,7 +75,7 @@ async def unsafe_reload_command(ctx: plugins.commands.Context, plugin: PluginCon
 async def unload_command(ctx: plugins.commands.Context, plugin: PluginConverter) -> None:
     """Unload a plugin."""
     try:
-        await plugins.unload(plugin)
+        await manager.unload(plugin)
     except:
         await reply_exception(ctx)
     else:
@@ -82,7 +87,7 @@ async def unload_command(ctx: plugins.commands.Context, plugin: PluginConverter)
 async def unsafe_unload_command(ctx: plugins.commands.Context, plugin: PluginConverter) -> None:
     """Unload a plugin without its dependents."""
     try:
-        await plugins.unsafe_unload(plugin)
+        await manager.unsafe_unload(plugin)
     except:
         await reply_exception(ctx)
     else:
@@ -126,5 +131,14 @@ async def autoload_remove(ctx: plugins.commands.Context, plugin: PluginConverter
 @plugins.privileges.priv("mod")
 async def plugins_command(ctx: plugins.commands.Context) -> None:
     """List loaded plugins."""
-    await ctx.send(", ".join(util.discord.format("{!i}", name)
-        for name in sys.modules if plugins.is_plugin(name)))
+    output = collections.defaultdict(list)
+    for name in sys.modules:
+        if manager.is_plugin(name):
+            try:
+                key = manager.plugins[name].state.name
+            except KeyError:
+                key = "???"
+            output[key].append(name)
+    await ctx.send("\n".join(
+        util.discord.format("{!i}: {}", key, ", ".join(util.discord.format("{!i}", name) for name in plugins))
+        for key, plugins in output.items()))

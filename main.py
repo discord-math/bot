@@ -10,15 +10,18 @@ try:
     import plugins
     import discord_client
 
+    manager = plugins.PluginManager(["plugins"])
+    manager.register()
+
     async def async_main() -> None:
         try:
-            await plugins.load("plugins.autoload")
+            await manager.load("plugins.autoload")
             await discord_client.main_task()
         except:
             logger.critical("Exception during main event loop", exc_info=True)
         finally:
             logger.info("Unloading all plugins")
-            await plugins.unload_all()
+            await manager.unload_all()
             logger.info("Exiting main loop")
 
     asyncio.run(async_main())

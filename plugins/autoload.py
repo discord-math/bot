@@ -23,10 +23,13 @@ async def init() -> None:
     conf = cast(AutoloadConf, await util.db.kv.load(__name__))
 
     async def autoload() -> None:
+        if (manager := plugins.PluginManager.of(__name__)) is None:
+            logger.error("No plugin manager")
+            return
         for name, in conf:
             try:
                 # Sidestep plugin dependency tracking
-                await plugins.load(name)
+                await manager.load(name)
             except:
                 logger.critical("Exception during autoload of {}".format(name), exc_info=True)
     asyncio.create_task(autoload())
