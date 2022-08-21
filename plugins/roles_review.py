@@ -178,17 +178,21 @@ async def cast_vote(interaction: discord.Interaction, msg_id: int, dir: Optional
 
 class VetoModal(discord.ui.Modal):
     reason = discord.ui.TextInput(style=discord.TextStyle.paragraph, required=False, label="Reason for the veto")
-    decision = discord.ui.Select(placeholder="Decision", options=[
-        discord.SelectOption(label="Approve", emoji="\u2705"), discord.SelectOption(label="Deny", emoji="\u274C")])
+    # Selects disallowed in modals for now:
+    # decision = discord.ui.Select(placeholder="Decision", options=[
+    #    discord.SelectOption(label="Approve", emoji="\u2705"), discord.SelectOption(label="Deny", emoji="\u274C")])
+    decision = discord.ui.TextInput(max_length=1, label="[Y]es\u2705 / [N]o\u274C")
 
     def __init__(self, msg_id: int) -> None:
         self.msg_id = msg_id
         super().__init__(title="Veto", timeout=600)
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
-        if self.decision.values == ["Approve"]:
+        #if self.decision.values == ["Approve"]:
+        if str(self.decision)[:1].upper() == "Y":
             await cast_vote(interaction, self.msg_id, True, veto=str(self.reason))
-        elif self.decision.values == ["Deny"]:
+        #elif self.decision.values == ["Deny"]:
+        elif str(self.decision)[:1].upper() == "N":
             await cast_vote(interaction, self.msg_id, False, veto=str(self.reason))
 
 @plugins.cogs.cog

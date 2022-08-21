@@ -363,17 +363,28 @@ class RetractConcernModal(discord.ui.Modal):
     def __init__(self, poll_id: int, concerns: Dict[int, str]) -> None:
         self.poll_id = poll_id
         super().__init__(title="Raise concern", timeout=600)
-        self.concern = discord.ui.Select(placeholder="Select the concern to retract", min_values=1, max_values=1,
-            options=[discord.SelectOption(label=concern[:300], value=str(key)) for key, concern in concerns.items()])
+        # Selects not available in modals for now:
+        # self.concern = discord.ui.Select(placeholder="Select the concern to retract", min_values=1, max_values=1,
+        #    options=[discord.SelectOption(label=concern[:300], value=str(key)) for key, concern in concerns.items()])
+        self.keys = list(concerns)
+        self.concern = discord.ui.TextInput(required=True,
+            label="Which concern to retract? {}...{}".format(1, len(concerns)))
         self.add_item(self.concern)
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
-        if self.concern.values:
-            try:
-                key = int(self.concern.values[0])
-            except ValueError:
-                return
-            await retract_concern(interaction, self.poll_id, key)
+        #if self.concern.values:
+        #    try:
+        #        key = int(self.concern.values[0])
+        #    except ValueError:
+        #        return
+        try:
+            index = int(str(self.concern))
+            if index <= 0 or index > len(self.keys):
+                raise IndexError()
+            key = self.keys[index - 1]
+        except (ValueError, IndexError):
+            return
+        await retract_concern(interaction, self.poll_id, key)
 
 async def prompt_vote(interaction: discord.Interaction, poll_id: int) -> None:
     async with sessionmaker() as session:
