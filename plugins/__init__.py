@@ -23,7 +23,7 @@ from typing import Any, List, Dict, Optional, Union, Callable, Iterator, Iterabl
 import util.digraph
 
 # Allow importing plugins from other directories on the path
-__path__ = pkgutil.extend_path(__path__, __name__)
+__spec__.submodule_search_locations = __path__ = pkgutil.extend_path(__path__, __name__)
 
 class PluginException(Exception):
     """
@@ -112,6 +112,8 @@ class PluginManager:
 
     @staticmethod
     def find_spec(name: str, path: List[str]) -> Optional[importlib.machinery.ModuleSpec]:
+        if name in sys.modules:
+            return sys.modules[name].__spec__
         for finder in sys.meta_path:
             if (spec := finder.find_spec(name, path)) is not None:
                 return spec
