@@ -29,7 +29,7 @@ class PluginConverter(str):
 
 async def reply_exception(ctx: plugins.commands.Context) -> None:
     _, exc, tb = sys.exc_info()
-    text = util.discord.format("{!b:py}", "".join(traceback.format_exception(exc)))
+    text = util.discord.format("{!b:py}", "".join(traceback.format_exception(None, exc, tb)))
     del tb
     await ctx.send(text)
 
