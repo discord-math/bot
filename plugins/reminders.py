@@ -5,7 +5,6 @@ import discord.ext.commands
 from operator import itemgetter
 import io
 from itertools import count
-import re
 import time
 from typing import Iterator, Optional, Tuple, Protocol, TypedDict, Awaitable, cast
 import discord_client

@@ -17,7 +17,8 @@ def channel_sort_key(channel: discord.abc.GuildChannel) -> Tuple[int, bool, int]
             isinstance(channel, (discord.VoiceChannel, discord.StageChannel)),
             channel.position)
 
-def overwrite_sort_key(pair: Tuple[Union[discord.Role, discord.Member], discord.PermissionOverwrite]) -> int:
+def overwrite_sort_key(pair: Tuple[Union[discord.Role, discord.Member, discord.Object], discord.PermissionOverwrite]
+    ) -> int:
     if isinstance(pair[0], discord.Role):
         try:
             return pair[0].guild.roles.index(pair[0])
@@ -58,8 +59,12 @@ async def exportperms(ctx: plugins.commands.Context) -> None:
         for target, overwrite in sorted(channel.overwrites.items(), key=overwrite_sort_key):
             if isinstance(target, discord.Role):
                 name = "Role {}".format(target.name)
-            else:
+            elif isinstance(target, discord.Member):
                 name = "User {} {}".format(target.id, target.name)
+            elif target.type == discord.Role:
+                name = "Role {}".format(target.id)
+            else:
+                name = "User {}".format(target.id)
             writer.writerow(header + [name] + ["+" if allow else "-" if deny else "/"
                 for (_, allow), (_, deny) in zip(*overwrite.pair())])
 
@@ -200,7 +205,6 @@ async def importperms(ctx: plugins.commands.Context) -> None:
             if row[2] == "(synced)" and not isinstance(channel, discord.CategoryChannel):
                 want_sync.add(channel)
             elif row[2] != "":
-                target: Union[discord.Role, discord.Member]
                 if row[2].startswith("Role "):
                     role_name = row[2].removeprefix("Role ")
                     if role_name not in roles:
