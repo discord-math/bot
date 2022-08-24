@@ -7,7 +7,8 @@ import datetime
 import json
 import discord
 import discord.ext.commands
-from typing import Optional, Union, Any, Protocol, cast, TYPE_CHECKING, overload
+from typing import Optional, Union, Any, Protocol, cast, TypedDict, TYPE_CHECKING, overload
+from typing_extensions import NotRequired
 import util.discord
 import util.db
 import util.db.kv
@@ -25,6 +26,11 @@ plugins.finalizer(engine.dispose)
 
 sessionmaker = sqlalchemy.ext.asyncio.async_sessionmaker(engine, future=True)
 
+class Flags(TypedDict):
+    mentions: NotRequired[bool]
+    priv: NotRequired[str]
+    location: NotRequired[str]
+
 @registry.mapped
 class Factoid:
     __tablename__ = "factoids"
@@ -39,11 +45,12 @@ class Factoid:
         nullable=False)
     uses: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger, nullable=False)
     used_at: sqlalchemy.orm.Mapped[Optional[datetime.datetime]] = sqlalchemy.orm.mapped_column(sqlalchemy.TIMESTAMP)
+    flags: sqlalchemy.orm.Mapped[Optional[Flags]] = sqlalchemy.orm.mapped_column(sqlalchemy.dialects.postgresql.JSONB)
 
     if TYPE_CHECKING:
         def __init__(self, /, author_id: int, created_at: datetime.datetime, uses: int, id: Optional[int] = ...,
             message_text: Optional[str] = ..., embed_data: Optional[Any] = ...,
-            used_at: Optional[datetime.datetime] = ...) -> None: ...
+            used_at: Optional[datetime.datetime] = ..., flags: Optional[Any] = ...) -> None: ...
 
 @registry.mapped
 class Alias:
@@ -103,6 +110,16 @@ class Factoids(discord.ext.commands.Cog):
                 .order_by(sqlalchemy.func.length(Alias.name).desc())
                 .limit(1))
             if (alias := (await session.execute(stmt)).scalar()) is None: return
+
+            mentions = discord.AllowedMentions.none()
+            if (flags := alias.factoid.flags) is not None:
+                if "priv" in flags and not plugins.privileges.has_privilege(flags["priv"], msg.author):
+                    return
+                if "location" in flags and not plugins.locations.in_location(flags["location"], msg.channel):
+                    return
+                if "mentions" in flags and flags["mentions"]:
+                    mentions = discord.AllowedMentions(roles=True, users=True)
+
             embed = discord.Embed.from_dict(alias.factoid.embed_data) if alias.factoid.embed_data is not None else None
             if msg.reference is not None and msg.reference.message_id is not None:
                 reference = discord.MessageReference(guild_id=msg.reference.guild_id,
@@ -110,17 +127,17 @@ class Factoids(discord.ext.commands.Cog):
                     fail_if_not_exists=False)
                 if embed is not None:
                     await msg.channel.send(alias.factoid.message_text, embed=embed, reference=reference,
-                        allowed_mentions=discord.AllowedMentions.none())
+                        allowed_mentions=mentions)
                 else:
                     await msg.channel.send(alias.factoid.message_text, reference=reference,
-                        allowed_mentions=discord.AllowedMentions.none())
+                        allowed_mentions=mentions)
             else:
                 if embed is not None:
                     await msg.channel.send(alias.factoid.message_text, embed=embed,
-                        allowed_mentions=discord.AllowedMentions.none())
+                        allowed_mentions=mentions)
                 else:
                     await msg.channel.send(alias.factoid.message_text,
-                        allowed_mentions=discord.AllowedMentions.none())
+                        allowed_mentions=mentions)
 
             alias.factoid.uses += 1
             alias.factoid.used_at = datetime.datetime.utcnow()
@@ -197,6 +214,10 @@ class Factoids(discord.ext.commands.Cog):
             if (alias := await session.get(Alias, name)) is None:
                 raise util.discord.UserError(util.discord.format("The factoid {!i} does not exist", conf.prefix + name))
 
+            if alias.factoid.flags is not None and not plugins.privileges.PrivCheck("admin")(ctx):
+                raise util.discord.UserError(util.discord.format(
+                    "This factoid can only be edited by admins because it has special behaviors"))
+
             content = await prompt_contents(ctx)
             if content is None: return
 
@@ -262,15 +283,16 @@ class Factoids(discord.ext.commands.Cog):
             if alias.factoid.used_at is not None:
                 used_at = int(alias.factoid.used_at.replace(tzinfo=datetime.timezone.utc).timestamp())
             await ctx.send(util.discord.format(
-                    "Created by {!m} on <t:{}:F> (<t:{}:R>). Used {} times{}.\nAliases: {}",
+                    "Created by {!m} on <t:{}:F> (<t:{}:R>). Used {} times{}.{}\nAliases: {}",
                     alias.factoid.author_id, created_at, created_at, alias.factoid.uses,
                     "" if used_at is None else ", last on <t:{}:F> (<t:{}:R>)".format(used_at, used_at),
+                    "" if alias.factoid.flags is None else " Has flags.",
                     ", ".join(util.discord.format("{!i} ({} uses)",
                         conf.prefix + alias.name, alias.uses) for alias in aliases)),
                 allowed_mentions=discord.AllowedMentions.none())
 
     @tag_command.command("top")
-    async def tag_top(sef, ctx: plugins.commands.Context) -> None:
+    async def tag_top(self, ctx: plugins.commands.Context) -> None:
         """Show most used factoids."""
         async with sessionmaker() as session:
             aliases = sqlalchemy.orm.aliased(Alias)
@@ -286,6 +308,28 @@ class Factoids(discord.ext.commands.Cog):
             results = list(await session.execute(stmt))
             await ctx.send("\n".join(util.discord.format("{!i}: {} uses", conf.prefix + name, uses)
                 for name, uses in results))
+
+    @plugins.privileges.priv("admin")
+    @tag_command.command("flags")
+    async def tag_flags(self, ctx: plugins.commands.Context, name: str,
+        flags: Optional[Union[util.discord.CodeBlock, util.discord.Inline, util.discord.Quoted]]) -> None:
+        """
+        Configure admin-only flags for a factoid. The flags are a JSON dictionary with the following keys:
+        - "mentions": a boolean, if true, makes the factoid invocation ping the roles and users it involves
+        - "priv": a string referring to a priv (configurable with `priv`) required to use the factoid
+        - "location": a string referring to a location (configuratble with `location`) in which the factoid can be used
+        """
+        name = validate_name(name)
+        async with sessionmaker() as session:
+            if (alias := await session.get(Alias, name)) is None:
+                raise util.discord.UserError(util.discord.format("The factoid {!i} does not exist", conf.prefix + name))
+
+            if flags is None:
+                await ctx.send(util.discord.format("{!i}", json.dumps(alias.factoid.flags)))
+            else:
+                alias.factoid.flags = json.loads(flags.text)
+                await session.commit()
+                await ctx.send("\u2705")
 
 async def prompt_contents(ctx: plugins.commands.Context) -> Optional[Union[str, discord.Embed]]:
     prompt = await ctx.send("Please enter the factoid contents:")

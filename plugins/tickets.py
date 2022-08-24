@@ -304,6 +304,7 @@ class TicketMod:
 
 @registry.mapped
 class Ticket:
+    __allow_unmapped__ = True
     __tablename__ = "tickets"
     __table_args__ = {"schema": "tickets"}
     id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.Integer, primary_key=True)
