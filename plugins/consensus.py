@@ -13,6 +13,7 @@ from typing import List, Dict, Optional, Sequence, Iterable, Iterator, Union, ca
 import plugins
 import plugins.commands
 import plugins.locations
+import plugins.privileges
 import plugins.cogs
 import discord_client
 import util.db
@@ -21,6 +22,8 @@ if TYPE_CHECKING:
     import discord.types.interactions
 
 logger = logging.getLogger(__name__)
+
+user_mentions = discord.AllowedMentions(everyone=False, roles=False, users=True)
 
 registry: sqlalchemy.orm.registry = sqlalchemy.orm.registry()
 
@@ -53,7 +56,11 @@ class Poll:
 
     async def get_votes_message(self) -> Optional[discord.PartialMessage]:
         channel_id = self.channel_id if self.thread_id is None else self.thread_id
-        if not isinstance(channel := await discord_client.client.fetch_channel(channel_id), discord.abc.Messageable):
+        try:
+            if not isinstance(channel := await discord_client.client.fetch_channel(channel_id),
+                discord.abc.Messageable):
+                return None
+        except (discord.NotFound, discord.Forbidden):
             return None
         return channel.get_partial_message(self.votes_id)
 
@@ -110,17 +117,23 @@ async def handle_timeouts() -> None:
 
                 min_timeout = None
                 now = datetime.datetime.utcnow()
-                for poll in polls:
-                    if poll.timeout <= now:
-                        if (msg := await poll.get_votes_message()) is not None:
-                            await msg.channel.send(util.discord.format("Poll timed out {!m}", poll.author_id),
-                                allowed_mentions=discord.AllowedMentions(everyone=False, roles=False, users=True),
-                                reference=msg)
-                        poll.timeout_notified = True
-                    else:
-                        if min_timeout is None or poll.timeout < min_timeout:
-                            min_timeout = poll.timeout
-                await session.commit()
+                try:
+                    for poll in polls:
+                        if poll.timeout <= now:
+                            if (msg := await poll.get_votes_message()) is None:
+                                await session.delete(poll)
+                            else:
+                                try:
+                                    await msg.channel.send(util.discord.format("Poll timed out {!m}", poll.author_id),
+                                        allowed_mentions=user_mentions, reference=msg)
+                                except discord.HTTPException:
+                                    pass
+                            poll.timeout_notified = True
+                        else:
+                            if min_timeout is None or poll.timeout < min_timeout:
+                                min_timeout = poll.timeout
+                finally:
+                    await session.commit()
 
             delay = (min_timeout - datetime.datetime.utcnow()).total_seconds() if min_timeout is not None else 86400.0
             logger.debug("Waiting for upcoming timeout in {} seconds".format(delay))
@@ -212,7 +225,7 @@ def render_poll(votes: Sequence[Vote], concerns: Sequence[Concern]) -> str:
 async def edit_poll(poll_id: Optional[int], msg: discord.PartialMessage, votes: Sequence[Vote],
     concerns: Sequence[Concern]) -> None:
     await msg.edit(content=render_poll(votes, concerns)[:4000], view=PollView(poll_id) if poll_id is not None else None,
-        allowed_mentions=discord.AllowedMentions(everyone=False, roles=False, users=True))
+        allowed_mentions=user_mentions)
 
 async def sync_poll(session: sqlalchemy.ext.asyncio.AsyncSession, poll_id: int, msg: discord.PartialMessage):
     stmt = (sqlalchemy.select(Vote)
@@ -277,7 +290,7 @@ async def raise_concern(interaction: discord.Interaction, poll_id: int, comment:
         votes = (await session.execute(stmt)).scalars().all()
         if len(votes):
             await msg.channel.send(" ".join(util.discord.format("{!m}", vote.voter_id) for vote in votes),
-                allowed_mentions=discord.AllowedMentions(everyone=False, roles=False, users=True), reference=msg)
+                allowed_mentions=user_mentions, reference=msg)
         await interaction.response.send_message("Concern added.", ephemeral=True)
         timeouts_updated()
 
@@ -419,8 +432,6 @@ async def close_poll(interaction: discord.Interaction, poll_id: int) -> None:
             return
         if poll.author_id != interaction.user.id:
             return
-        if (msg := await poll.get_votes_message()) is None:
-            return
         stmt = (sqlalchemy.select(Vote)
             .where(Vote.poll_id == poll_id)
             .order_by(sqlalchemy.sql.expression.nullsfirst(Vote.after_concern), Vote.id))
@@ -430,7 +441,11 @@ async def close_poll(interaction: discord.Interaction, poll_id: int) -> None:
             .order_by(Concern.id))
         concerns = (await session.execute(stmt)).scalars().all()
         await session.delete(poll)
-        await edit_poll(None, msg, votes, concerns)
+        try:
+            if (msg := await poll.get_votes_message()) is not None:
+                await edit_poll(None, msg, votes, concerns)
+        except discord.HTTPException:
+            pass
         await session.commit()
 
 
@@ -478,7 +493,7 @@ class ConsensusCog(discord.ext.commands.Cog):
             msg = await ctx.channel.send(util.discord.format("Poll by {!m}:\n\n{}", ctx.author, comment[:3000]),
                 allowed_mentions=discord.AllowedMentions(everyone=False, roles=False, users=[ctx.author]))
             votes = await ctx.channel.send(render_poll([], []), view=PollView(msg.id),
-                allowed_mentions=discord.AllowedMentions.none())
+                allowed_mentions=user_mentions)
 
             if isinstance(ctx.channel, discord.Thread):
                 channel_id = ctx.channel.parent_id
@@ -491,3 +506,23 @@ class ConsensusCog(discord.ext.commands.Cog):
                 timeout=datetime.datetime.utcnow() + duration, timeout_notified=False))
             await session.commit()
             timeouts_updated()
+
+    @plugins.commands.cleanup
+    @discord.ext.commands.command("polls")
+    @plugins.privileges.priv("mod")
+    async def polls(self, ctx: plugins.commands.Context) -> None:
+        async with sessionmaker() as session:
+            output = ""
+            stmt = sqlalchemy.select(Poll)
+            for poll in (await session.execute(stmt)).scalars():
+                channel_id = poll.channel_id if poll.thread_id is None else poll.thread_id
+                channel = ctx.bot.get_partial_messageable(channel_id, guild_id=ctx.guild and ctx.guild.id)
+                link = channel.get_partial_message(poll.message_id).jump_url + "\n"
+
+                if len(output) + len(link) > 2000:
+                    await ctx.send(output)
+                    output = link
+                else:
+                    output += link
+            if output:
+                await ctx.send(output)
