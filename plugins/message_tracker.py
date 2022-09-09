@@ -896,7 +896,7 @@ async def subscribe(name: str, channels: Optional[Union[discord.Guild, discord.T
         else:
             chans = [channels]
         last_msgs, thread_last_msgs = take_snapshot(chans)
-        await schedule_and_wait(process_subscription(name, events, cb, last_msgs, thread_last_msgs, retroactive))
+        await schedule_and_wait(process_subscription(name, event_dict, cb, last_msgs, thread_last_msgs, retroactive))
         # TODO: If we have on_message -> subscribe, then this could get queued before the respective process_message,
         # which would be a problem, because last_msgs will contain that message, meaning it would be fetched, and at
         # the same time process_message will notify the subscriber
