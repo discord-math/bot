@@ -821,18 +821,24 @@ async def process_subscription(subscriber: str, event_dict: Dict[str, Callback],
 
         old_last_msgs = {state.channel_id: state.last_message_id for state in states}
         archived_threads: Dict[int, List[discord.Thread]] = {channel_id: [] for channel_id in last_msgs}
-        for channel_id in last_msgs:
+
+        async def find_archived_threads(channel_id: int) -> None:
             channel = discord_client.client.get_channel(channel_id)
-            if not isinstance(channel, discord.TextChannel): continue
-            async for thread in channel.archived_threads(limit=None):
-                assert thread.archive_timestamp is not None
-                if channel_id in old_last_msgs:
-                    if thread.archive_timestamp < discord.Object(old_last_msgs[channel_id]).created_at:
-                        break
-                if channel_id in thread_last_msgs and thread.id in thread_last_msgs[channel_id]: continue
-                archived_threads[channel_id].append(thread)
+            if not isinstance(channel, discord.TextChannel): return
+            try:
+                async for thread in channel.archived_threads(limit=None):
+                    assert thread.archive_timestamp is not None
+                    if channel_id in old_last_msgs:
+                        if thread.archive_timestamp < discord.Object(old_last_msgs[channel_id]).created_at:
+                            break
+                    if channel_id in thread_last_msgs and thread.id in thread_last_msgs[channel_id]: continue
+                    archived_threads[channel_id].append(thread)
+            except discord.Forbidden:
+                return
             logger.debug("Found archived threads in {}: {}".format(channel_id,
                 ", ".join(str(thread.id) for thread in archived_threads[channel_id])))
+
+        await asyncio.gather(*(find_archived_threads(channel_id) for channel_id in last_msgs))
 
         for state in states:
             if state.channel_id in last_msgs and state.last_message_id < last_msgs[state.channel_id]:
