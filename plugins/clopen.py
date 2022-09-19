@@ -4,7 +4,8 @@ import collections
 import logging
 import discord
 import discord.ext.commands
-from typing import Dict, List, Tuple, Optional, Union, Any, Literal, Awaitable, Protocol, overload, cast
+from typing import (Dict, List, Tuple, Optional, Union, Any, Literal, Awaitable, Iterable, Protocol, overload, cast,
+    TYPE_CHECKING)
 import util.discord
 import util.frozen_list
 import util.db.kv
@@ -13,6 +14,9 @@ import plugins
 import plugins.cogs
 import plugins.commands
 import plugins.privileges
+import plugins.message_tracker
+if TYPE_CHECKING:
+    import discord.types.interactions
 
 def available_embed() -> discord.Embed:
     checkmark_url = "https://cdn.discordapp.com/emojis/901284681633370153.png?size=256"
@@ -36,6 +40,20 @@ def closed_embed(reason: str, reopen: bool) -> discord.Embed:
         reason += util.discord.format("\n\nUse {!i} if this was a mistake.", plugins.commands.conf.prefix + "reopen")
     return discord.Embed(color=0x000000, title="Channel closed", description=reason)
 
+def solved_embed(reason: str) -> discord.Embed:
+    checkmark_url = "https://cdn.discordapp.com/emojis/1021392975449825322.webp?size=256&quality=lossless"
+    return discord.Embed(color=0x7CB342, description=util.discord.format(
+            "Post marked as solved {}.\n\nUse {!i} if this was a mistake.", reason,
+            plugins.commands.conf.prefix + "unsolved")
+        ).set_author(name="Solved", icon_url=checkmark_url)
+
+def unsolved_embed(reason: str) -> discord.Embed:
+    ping_url = "https://cdn.discordapp.com/emojis/1021392792783683655.webp?size=256&quality=lossless"
+    return discord.Embed(color=0x7CB342, description=util.discord.format(
+            "Post marked as unsolved {}.\n\nUse {!i} to mark as solved.", reason,
+            plugins.commands.conf.prefix + "solved")
+        ).set_author(name="Unsolved", icon_url=ping_url)
+
 def limit_embed() -> discord.Embed:
     return discord.Embed(color=0xB37C42, description="Please don't occupy multiple help channels.")
 
@@ -54,6 +72,10 @@ class ClopenConf(Awaitable[None], Protocol):
     max_channels: int
     limit: int
     limit_role: int
+    forum: int
+    pinned_posts: util.frozen_list.FrozenList[int]
+    solved_tag: int
+    unsolved_tag: int
 
     @overload
     def __getitem__(self, k: Tuple[int, Literal["state"]]
@@ -137,6 +159,11 @@ async def init() -> None:
     conf = cast(ClopenConf, await util.db.kv.load(__name__))
     scheduler_task = asyncio.create_task(scheduler())
     plugins.finalizer(scheduler_task.cancel)
+
+    await plugins.message_tracker.subscribe(__name__, None, process_messages, missing=True, retroactive=False)
+    @plugins.finalizer
+    async def unsubscribe() -> None:
+        await plugins.message_tracker.unsubscribe(__name__, None)
 
 rename_tasks: Dict[int, asyncio.Task[Any]] = {}
 last_rename: Dict[int, float] = {}
@@ -455,6 +482,76 @@ async def synchronize_channels() -> List[str]:
                 await msg.unpin()
     return output
 
+async def set_solved_tags(post: discord.Thread, new_tags: Iterable[int], reason: str) -> None:
+    solved_tags = [conf.solved_tag, conf.unsolved_tag]
+    tags = [tag for tag in post.applied_tags if tag.id not in solved_tags]
+    tags += [cast(discord.ForumTag, discord.Object(id)) for id in new_tags]
+    try:
+        await post.edit(applied_tags=tags, reason=reason)
+    except discord.HTTPException:
+        logger.error(util.discord.format("Could not set solved tags on {!c}", post), exc_info=True)
+
+async def solved(post: discord.Thread, reason: str) -> None:
+    if any(tag.id == conf.solved_tag for tag in post.applied_tags): return
+    await set_solved_tags(post, [conf.solved_tag], reason)
+    await post.send(embed=solved_embed(reason), allowed_mentions=discord.AllowedMentions.none())
+
+async def unsolved(post: discord.Thread, reason: str) -> None:
+    if not any(tag.id == conf.solved_tag for tag in post.applied_tags): return
+    await set_solved_tags(post, [conf.unsolved_tag], reason)
+    await post.send(embed=unsolved_embed(reason), allowed_mentions=discord.AllowedMentions.none())
+
+class PostTagsView(discord.ui.View):
+    def __init__(self, post: discord.Thread) -> None:
+        assert isinstance(post.parent, discord.ForumChannel)
+        super().__init__(timeout=None)
+
+        options = [discord.SelectOption(label=tag.name, value=str(tag.id), emoji=tag.emoji,
+            default=tag in post.applied_tags) for tag in post.parent.available_tags if not tag.moderated]
+
+        self.add_item(discord.ui.Select(placeholder="Select tags for this post...",
+            min_values=0, max_values=min(4, len(options)), # 5 sans 1 for solved/unsolved
+            options=options, custom_id="{}:tags:{}".format(__name__, post.id)))
+
+async def manage_tags(interaction: discord.Interaction, values: List[str]) -> None:
+    if not isinstance(interaction.channel, discord.Thread): return
+    if not isinstance(interaction.channel.parent, discord.ForumChannel): return
+    if not interaction.message: return
+
+    if interaction.channel.owner_id != interaction.user.id:
+        if not plugins.privileges.has_privilege("helper", interaction.user):
+            await interaction.response.send_message("You cannot edit tags on this post", ephemeral=True)
+            return
+
+    id_values = []
+    for v in values:
+        try:
+            id_values.append(int(v))
+        except ValueError:
+            continue
+    solved_tags = [conf.solved_tag, conf.unsolved_tag]
+    tags = [tag for tag in interaction.channel.applied_tags if tag.id in solved_tags]
+    tags += [tag for tag in interaction.channel.parent.available_tags if not tag.moderated and tag.id in id_values]
+
+    await interaction.channel.edit(applied_tags=tags)
+    await interaction.message.edit(view=PostTagsView(interaction.channel))
+    await interaction.response.send_message("\u2705", ephemeral=True)
+
+async def process_messages(msgs: Iterable[discord.Message]) -> None:
+    for msg in msgs:
+        if msg.author.bot: continue
+
+        if msg.channel.id in conf.pinned_posts:
+            try:
+                await msg.delete()
+            except discord.HTTPException:
+                pass
+
+        if isinstance(msg.channel, discord.Thread) and msg.channel.parent_id == conf.forum:
+            if msg.id == msg.channel.id: # starter post in a thread
+                await set_solved_tags(msg.channel, [conf.unsolved_tag], "new post")
+                await msg.channel.send(view=PostTagsView(msg.channel))
+
 @plugins.cogs.cog
 class ClopenCog(discord.ext.commands.Cog):
     @discord.ext.commands.Cog.listener()
@@ -493,28 +590,56 @@ class ClopenCog(discord.ext.commands.Cog):
                 else:
                     conf[payload.channel_id, "owner"] = None
 
+    @discord.ext.commands.Cog.listener()
+    async def on_interaction(self, interaction: discord.Interaction) -> None:
+        if interaction.type != discord.InteractionType.component or interaction.data is None:
+            return
+        data = cast("discord.types.interactions.MessageComponentInteractionData", interaction.data)
+        if data["component_type"] != 3:
+            return
+        if ":" not in data["custom_id"]:
+            return
+        mod, rest = data["custom_id"].split(":", 1)
+        if mod != __name__ or ":" not in rest:
+            return
+        action, thread_id = rest.split(":", 1)
+        try:
+            thread_id = int(thread_id)
+        except ValueError:
+            return
+        if action == "tags":
+            await manage_tags(interaction, data["values"])
+
     @discord.ext.commands.command("close")
     async def close_command(self, ctx: plugins.commands.Context) -> None:
-        """For use in help channels. Close a channel."""
-        if ctx.channel.id not in conf.channels:
-            return
-        if ctx.author.id != conf[ctx.channel.id, "owner"] and not plugins.privileges.PrivCheck("helper")(ctx):
-            return
-        async with channel_locks[ctx.channel.id]:
-            if conf[ctx.channel.id, "state"] in ["used", "pending"]:
-                await close(ctx.channel.id, util.discord.format("Closed by {!m}", ctx.author))
+        """For use in help channels and help forum posts. Close a channel and/or mark the post as solved."""
+        if ctx.channel.id in conf.channels:
+            if ctx.author.id != conf[ctx.channel.id, "owner"] and not plugins.privileges.PrivCheck("helper")(ctx):
+                return
+            async with channel_locks[ctx.channel.id]:
+                if conf[ctx.channel.id, "state"] in ["used", "pending"]:
+                    await close(ctx.channel.id, util.discord.format("Closed by {!m}", ctx.author))
+        elif isinstance(ctx.channel, discord.Thread) and ctx.channel.parent_id == conf.forum:
+            if ctx.author.id != ctx.channel.owner_id and not plugins.privileges.PrivCheck("helper")(ctx):
+                return
+            await solved(ctx.channel, util.discord.format("by {!m}", ctx.author))
 
     @discord.ext.commands.command("reopen")
     async def reopen_command(self, ctx: plugins.commands.Context) -> None:
-        """For use in help channels. Reopen a recently closed channel."""
-        if ctx.channel.id not in conf.channels:
-            return
-        if ctx.author.id != conf[ctx.channel.id, "owner"] and not plugins.privileges.PrivCheck("helper")(ctx):
-            return
-        async with channel_locks[ctx.channel.id]:
-            if conf[ctx.channel.id, "state"] in ["closed", "available"] and conf[ctx.channel.id, "owner"] is not None:
-                await reopen(ctx.channel.id)
-                await ctx.send("\u2705")
+        """For use in help channels and help forum posts. Reopen a recently closed channel and/or mark the post as
+        unsolved."""
+        if ctx.channel.id in conf.channels:
+            if ctx.author.id != conf[ctx.channel.id, "owner"] and not plugins.privileges.PrivCheck("helper")(ctx):
+                return
+            async with channel_locks[ctx.channel.id]:
+                if conf[ctx.channel.id, "state"] in ["closed", "available"]:
+                    if conf[ctx.channel.id, "owner"] is not None:
+                        await reopen(ctx.channel.id)
+                        await ctx.send("\u2705")
+        elif isinstance(ctx.channel, discord.Thread) and ctx.channel.parent_id == conf.forum:
+            if ctx.author.id != ctx.channel.owner_id and not plugins.privileges.PrivCheck("helper")(ctx):
+                return
+            await unsolved(ctx.channel, util.discord.format("by {!m}", ctx.author))
 
     @plugins.privileges.priv("mod")
     @discord.ext.commands.command("clopen_sync")
@@ -529,3 +654,19 @@ class ClopenCog(discord.ext.commands.Cog):
             else:
                 text += "\n" + out
         await ctx.send(text or "\u2705", allowed_mentions=discord.AllowedMentions.none())
+
+    @discord.ext.commands.command("solved")
+    async def solved_command(self, ctx: plugins.commands.Context) -> None:
+        """For use in help forum posts. Mark the post as solved."""
+        if isinstance(ctx.channel, discord.Thread) and ctx.channel.parent_id == conf.forum:
+            if ctx.author.id != ctx.channel.owner_id and not plugins.privileges.PrivCheck("helper")(ctx):
+                return
+            await solved(ctx.channel, util.discord.format("by {!m}", ctx.author))
+
+    @discord.ext.commands.command("unsolved")
+    async def unsolved_command(self, ctx: plugins.commands.Context) -> None:
+        """For use in help forum posts. Mark the post as unsolved."""
+        if isinstance(ctx.channel, discord.Thread) and ctx.channel.parent_id == conf.forum:
+            if ctx.author.id != ctx.channel.owner_id and not plugins.privileges.PrivCheck("helper")(ctx):
+                return
+            await unsolved(ctx.channel, util.discord.format("by {!m}", ctx.author))
