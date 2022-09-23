@@ -1631,6 +1631,11 @@ async def find_notes_prefix(session: sqlalchemy.ext.asyncio.AsyncSession, prefix
         NoteTicket.comment.startswith(prefix)).order_by(NoteTicket.id)
     return list((await session.execute(stmt)).scalars())
 
+async def any_visible_tickets(session: sqlalchemy.ext.asyncio.AsyncSession, targetid: int) -> bool:
+    stmt = sqlalchemy.select(sqlalchemy.func.count(Ticket.id)).where(
+        Ticket.targetid == targetid, Ticket.status != TicketStatus.HIDDEN)
+    return bool((await session.execute(stmt)).scalar())
+
 async def create_note(session: sqlalchemy.ext.asyncio.AsyncSession, note: str, *, modid: int, targetid: int
     ) -> NoteTicket:
     ticket = NoteTicket(
