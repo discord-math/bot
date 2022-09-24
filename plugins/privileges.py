@@ -168,6 +168,7 @@ async def priv_remove_user(ctx: PrivContext, user: util.discord.PartialUserConve
     musers = users.copy()
     musers.remove(user.id)
     conf[priv, "users"] = musers
+    await conf
 
     await ctx.send(util.discord.format("Removed user {!m} from priv {!i}", user.id, priv),
         allowed_mentions=discord.AllowedMentions.none())
@@ -183,6 +184,7 @@ async def priv_remove_role(ctx: PrivContext, role: util.discord.PartialRoleConve
     mroles = roles.copy()
     mroles.remove(role.id)
     conf[priv, "roles"] = mroles
+    await conf
 
     await ctx.send(util.discord.format("Removed role {!M} from priv {!i}", role.id, priv),
         allowed_mentions=discord.AllowedMentions.none())

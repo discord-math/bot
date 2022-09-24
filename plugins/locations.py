@@ -153,6 +153,7 @@ async def location_remove_channel(ctx: LocContext, chan: util.discord.PartialTex
     mchans = chans.copy()
     mchans.remove(chan.id)
     conf[loc, "channels"] = mchans
+    await conf
 
     await ctx.send(util.discord.format("Removed channel {!c} from location {!i}", chan.id, loc))
 
@@ -167,5 +168,6 @@ async def location_remove_category(ctx: LocContext, cat: util.discord.PartialCat
     mcats = cats.copy()
     mcats.remove(cat.id)
     conf[loc, "categories"] = mcats
+    await conf
 
     await ctx.send(util.discord.format("Added category {!c} to location {!i}", cat.id, loc))
