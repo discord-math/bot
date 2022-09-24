@@ -193,9 +193,14 @@ Config:
 
 Manage an Open/Closed help channels system. Channels can be "available", "occupied", "pending", "closed", or "hidden". If you post in an "available" channel, the bot pins your message and the channel becomes "occupied". As long as there is conversation in the channel, it remains "occupied". If a timeout is reached, you are prompted to close the channel and the channel becomes "pending". If you ignore the prompt, the channel will close automatically. If you decline the prompt, the channel goes back to "occupied", and the timeouts are doubled. Deleting the original post also closes the channel. A "closed" channel will remain in the "occupied" category for a while before moving back into either "occupied" or "hidden".
 
+This plugin currently also manages a help forum. Posts can be marked solved or unsolved, and a broader set of users are allowed to manage the post via a UI.
+
 Commands:
-- `close` - an "occupied" or "pending" channel can be closed at any time by either its owner or certain roles.
-- `reopen` - if the channel is "closed" or "available", it can be reopened by the previous owner or certain roles.
+- `close` -- an "occupied" or "pending" channel can be closed at any time by either its owner or certain roles. If used in the help forum, assume the user meant `solved`.
+- `reopen` -- if the channel is "closed" or "available", it can be reopened by the previous owner or certain roles. If used in the help form, assume the user meant `unsolved`.
+- `clopen_sync` -- synchronize the state of the channels.
+- `solved` -- mark a forum post as solved (can be done by the owner of the thread or certain roles).
+- `unsolved` -- mark a forum post as unsolved (can be done by the owner of the thread or certai roles).
 
 Config:
 - ``config plugins.clopen channels `[<channel id>, ...]` `` -- the list of channels in rotation.
@@ -209,10 +214,16 @@ Config:
 - ``config plugins.clopen max_channels <number>`` -- do not create channels past this point.
 - ``config plugins.clopen limit <number>`` -- limit on how many channels can be occupied by a person at once.
 - ``config plugins.clopen limit_role <role id>`` -- role that is assigned when the limit is reached.
+- ``config plugins.clopen forum <channel id>`` -- id of the forum channel.
+- ``config plugins.pinned_posts [<thread id>, ...]`` -- list of thread ids in which posts should be cleaned up.
+- ``config plugins.solved_tag <tag id>`` -- the tag for solved posts.
+- ``config plugins.unsolved_tag <tag id>`` -- the tag for unsolved posts.
 
 ### `factoids`
 
-Manage a collection of short recall-able posts. A factoid is a single message containing either some text or a rich embed. Factoids can have multiple names, and typing `<prefix><name>` followed by anything -- will output the factoid with the specified name. Names can contain spaces, and in case of conflicts the longest matching name will be used. Only privileged users can add rich embed factoids.
+Manage a collection of short recall-able posts. A factoid is a single message containing either some text or a rich embed. Factoids can have multiple names, and typing `<prefix><name>` followed by anything -- will output the factoid with the specified name. Names can contain spaces, and in case of conflicts the longest matching name will be used.
+
+Privileged users can add rich embed factoids, allow mentions inside factoids, restrict factoids to privs and locations.
 
 Commands:
 - `tag add <name>` -- add a factoid and assign a name to it. You will be prompted to input the factoid contents in a separate message.
@@ -222,6 +233,11 @@ Commands:
 - `tag unalias <name>` -- remove an alias. The last alias for a factoid cannot be removed -- use `tag delete` instead.
 - `tag info <name>` -- show info about a factoid.
 - `tag top` -- show factoid usage statistics.
+- ``tag flags <name> `<json>` `` -- set flags on a factoid. Factoids with flags can only be edited by admins. The flags are a JSON dictionary with the following keys:
+    - `"mentions"` -- if true, an invocation of the factoid will ping the roles and users in its contents.
+    - `"priv"` -- a string referring to a privilege set (configured with `priv`) that is required to use the factoid.
+    - `"location"` -- a string referring to a location (configured with `location`) where the factoid can be used.
+- `tag flags <name>` -- show flags on the given factoid.
 
 Config:
 - ``config plugins.factoids prefix `"<prefix>"` `` -- prefix for recalling factoids, could be distrinct from the bot prefix.
@@ -284,15 +300,6 @@ Ensure that certain roles are mutually exclusive, e.g. a mute role must exclude 
 Config:
 - ``config plugins.roleoverride <roleA> `[<roleB>, ...]` `` -- whenever roleA is added, roleB will be removed.
 
-### `talksrole`
-
-Manage a role that is only pingable in a specific channel. Posting a message with a specific keyword in that channel triggers the bot to mention the role.
-
-Config:
-- ``config plugins.talksrole channel <channel id>`` -- the channel.
-- ``config plugins.talksrole role <role id>`` -- the role.
-- ``config plugins.talksrole regex `"<regex>"` `` -- the regex for the keyword.
-
 ### `bulk_perms`
 
 Edit permissions in bulk, by exporting them into a CSV file and then importing back.
@@ -301,13 +308,45 @@ Commands:
 - `exportperms` -- sends a CSV file with all the permission settings in the current guild.
 - `importperms` -- you have to attach a CSV file in the same format as provided by `exportperms`, and the bot will load permissions from the CSV file. Channels not mentioned in the CSV file are unaffected.
 
+### `consensus`
+
+Set up polls. Users can vote yes/no/abstain on polls, and also raise concerns, in which case all previous votes are notified of the concern. The author of the poll gets notified when the poll times out if there haven't been any raised concerns.
+
+Commands:
+- `poll <duration> <comment>` -- set up a poll with the provided expiration duration.
+- `polls` -- list currently open polls.
+
+### `roles_dialog`
+
+A button and a `/roles` slash-command for managing self-assigned roles.
+
+Config:
+- ``config plugins.roles_dialog roles `[[<role id|text>, ...], ...]` `` -- the self-assignable roles. Lists with multiple elements correspond to choosing one of the roles. A string instead of a role ID corresponds to an option that doesn't assign any role (e.g. "None of the above"). Lists with one element are grouped together and correspond to choosing any subset of the roles.
+- ``config plugins.roles_dialog <role id>,desc `"<text>"` `` -- extended description for the role.
+- ``config plugins.roles_dialog <role id>,prompt `["<question>", ...]` `` -- instead of assigning the role, prompt the user to answer questions and put up the answers for review via `roles_review`.
+
+### `roles_review`
+
+A review system for role requests. When a role is requested via `roles_dialog`, the user is prompted to answer some questions, and the answers are posted in a review channel, where members of the channel can vote to approve or reject the application. A chosen role can veto-approve or veto-reject an application.
+
+Commands:
+- `review_reset <user> <role>` -- when a user's application is denied, they are not allowed to submit another until this command is invoked on them.
+
+Config:
+- `config plugins.roles_review review_channel <channel id>` -- where the applications for the roles will be posted.
+- `config plugins.roles_review upvote_limit <number>` -- how many upvotes are needed to accept an application.
+- `config plugins.roles_review downvote_limit <number>` -- how many downvotes are needed to deny an application.
+- `config plugins.roles_review veto_role <role id>` -- the role that is allowed to veto applicatios.
+- `config plugins.roles_review <roleA>,role <roleB>` -- roleB is requried to vote on applications for roleA.
+- `config plugins.roles_review <roleA>,replace <roleB>` -- users applying for roleA will temporarily receive roleB while their application is under review.
+
 ### Miscellaneous Configuration
 - ``config plugins.commands prefix `"<prefix>"` `` -- set the prefix for the bot's "ordinary" commands.
 
 ## Running
 
 The bot requires:
- - Python 3.9+ (!)
+ - Python 3.9+
  - PostgreSQL 10+
  - Libraries listed in `requirements.txt`
 
@@ -320,7 +359,7 @@ run the following (adjust `PYTHONPATH` so that the necessary modules are in
 scope):
 ```sh
 python -m util.db.kv plugins.commands prefix '"."'
-python -m util.db.kv plugins.autoload autoload,plugins.bot_manager 'true'
+python -m util.db.kv plugins.autoload plugins.bot_manager 'true'
 # Create the shell and admin roles.
 # Substitute your own discord user id.
 python -m util.db.kv plugins.privileges shell,users '[207092805644845057]'
