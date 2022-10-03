@@ -501,6 +501,10 @@ async def unsolved(post: discord.Thread, reason: str) -> None:
     await set_solved_tags(post, [conf.unsolved_tag], reason)
     await post.send(embed=unsolved_embed(reason), allowed_mentions=discord.AllowedMentions.none())
 
+async def wait_close_post(post: discord.Thread, reason: str) -> None:
+    await asyncio.sleep(300) # TODO: what if the post is reopened in the meantime?
+    await post.edit(archived=True, reason=reason)
+
 class PostTagsView(discord.ui.View):
     def __init__(self, post: discord.Thread) -> None:
         assert isinstance(post.parent, discord.ForumChannel)
@@ -525,7 +529,7 @@ class PostTitleModal(discord.ui.Modal):
         self.add_item(self.name)
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
-        await self.thread.edit(name=str(self.name), reason="By {}".format(interaction.user.id))
+        await self.thread.edit(name=str(self.name), reason=util.discord.format("By {!m}", interaction.user))
         await interaction.response.send_message("\u2705", ephemeral=True)
 
 async def manage_title(interaction: discord.Interaction, thread_id: int) -> None:
@@ -568,8 +572,8 @@ async def manage_tags(interaction: discord.Interaction, thread_id: int, values: 
     tags = [tag for tag in thread.applied_tags if tag.id in solved_tags]
     tags += [tag for tag in thread.parent.available_tags if not tag.moderated and tag.id in id_values]
 
-    await thread.edit(applied_tags=tags, reason="By {}".format(interaction.user.id))
-    await interaction.message.edit(view=PostTagsView(thread))
+    new_thread = await thread.edit(applied_tags=tags, reason=util.discord.format("By {!m}", interaction.user))
+    await interaction.message.edit(view=PostTagsView(new_thread))
     await interaction.response.send_message("\u2705", ephemeral=True)
 
 async def process_messages(msgs: Iterable[discord.Message]) -> None:
@@ -670,6 +674,7 @@ class ClopenCog(discord.ext.commands.Cog):
             if ctx.author.id != ctx.channel.owner_id and not plugins.privileges.PrivCheck("helper")(ctx):
                 return
             await solved(ctx.channel, util.discord.format("by {!m}", ctx.author))
+            asyncio.create_task(wait_close_post(ctx.channel, util.discord.format("Closed by {!m}", ctx.author)))
 
     @discord.ext.commands.command("reopen")
     async def reopen_command(self, ctx: plugins.commands.Context) -> None:
