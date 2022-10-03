@@ -513,12 +513,47 @@ class PostTagsView(discord.ui.View):
             min_values=0, max_values=min(4, len(options)), # 5 sans 1 for solved/unsolved
             options=options, custom_id="{}:tags:{}".format(__name__, post.id)))
 
-async def manage_tags(interaction: discord.Interaction, values: List[str]) -> None:
-    if not isinstance(interaction.channel, discord.Thread): return
-    if not isinstance(interaction.channel.parent, discord.ForumChannel): return
+        self.add_item(discord.ui.Button(style=discord.ButtonStyle.secondary, label="Rename post",
+            custom_id="{}:title:{}".format(__name__, post.id)))
+
+class PostTitleModal(discord.ui.Modal):
+    def __init__(self, post: discord.Thread) -> None:
+        super().__init__(title="Edit post title", timeout=600)
+        self.thread = post
+        self.name = discord.ui.TextInput(style=discord.TextStyle.short, placeholder="Enter post title...",
+            label="Post title", default=post.name, required=True)
+        self.add_item(self.name)
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        await self.thread.edit(name=str(self.name), reason="By {}".format(interaction.user.id))
+        await interaction.response.send_message("\u2705", ephemeral=True)
+
+async def manage_title(interaction: discord.Interaction, thread_id: int) -> None:
+    try:
+        thread = await interaction.client.fetch_channel(thread_id)
+    except (discord.NotFound, discord.Forbidden):
+        return
+    if not isinstance(thread, discord.Thread): return
+    if not isinstance(thread.parent, discord.ForumChannel): return
     if not interaction.message: return
 
-    if interaction.channel.owner_id != interaction.user.id:
+    if thread.owner_id != interaction.user.id:
+        if not plugins.privileges.has_privilege("helper", interaction.user):
+            await interaction.response.send_message("You cannot edit the title on this post", ephemeral=True)
+            return
+
+    await interaction.response.send_modal(PostTitleModal(thread))
+
+async def manage_tags(interaction: discord.Interaction, thread_id: int, values: List[str]) -> None:
+    try:
+        thread = await interaction.client.fetch_channel(thread_id)
+    except (discord.NotFound, discord.Forbidden):
+        return
+    if not isinstance(thread, discord.Thread): return
+    if not isinstance(thread.parent, discord.ForumChannel): return
+    if not interaction.message: return
+
+    if thread.owner_id != interaction.user.id:
         if not plugins.privileges.has_privilege("helper", interaction.user):
             await interaction.response.send_message("You cannot edit tags on this post", ephemeral=True)
             return
@@ -530,11 +565,11 @@ async def manage_tags(interaction: discord.Interaction, values: List[str]) -> No
         except ValueError:
             continue
     solved_tags = [conf.solved_tag, conf.unsolved_tag]
-    tags = [tag for tag in interaction.channel.applied_tags if tag.id in solved_tags]
-    tags += [tag for tag in interaction.channel.parent.available_tags if not tag.moderated and tag.id in id_values]
+    tags = [tag for tag in thread.applied_tags if tag.id in solved_tags]
+    tags += [tag for tag in thread.parent.available_tags if not tag.moderated and tag.id in id_values]
 
-    await interaction.channel.edit(applied_tags=tags)
-    await interaction.message.edit(view=PostTagsView(interaction.channel))
+    await thread.edit(applied_tags=tags, reason="By {}".format(interaction.user.id))
+    await interaction.message.edit(view=PostTagsView(thread))
     await interaction.response.send_message("\u2705", ephemeral=True)
 
 async def process_messages(msgs: Iterable[discord.Message]) -> None:
@@ -595,20 +630,32 @@ class ClopenCog(discord.ext.commands.Cog):
         if interaction.type != discord.InteractionType.component or interaction.data is None:
             return
         data = cast("discord.types.interactions.MessageComponentInteractionData", interaction.data)
-        if data["component_type"] != 3:
-            return
-        if ":" not in data["custom_id"]:
-            return
-        mod, rest = data["custom_id"].split(":", 1)
-        if mod != __name__ or ":" not in rest:
-            return
-        action, thread_id = rest.split(":", 1)
-        try:
-            thread_id = int(thread_id)
-        except ValueError:
-            return
-        if action == "tags":
-            await manage_tags(interaction, data["values"])
+        if data["component_type"] == 3:
+            if ":" not in data["custom_id"]:
+                return
+            mod, rest = data["custom_id"].split(":", 1)
+            if mod != __name__ or ":" not in rest:
+                return
+            action, thread_id = rest.split(":", 1)
+            try:
+                thread_id = int(thread_id)
+            except ValueError:
+                return
+            if action == "tags":
+                await manage_tags(interaction, thread_id, data["values"])
+        elif data["component_type"] == 2:
+            if ":" not in data["custom_id"]:
+                return
+            mod, rest = data["custom_id"].split(":", 1)
+            if mod != __name__ or ":" not in rest:
+                return
+            action, thread_id = rest.split(":", 1)
+            try:
+                thread_id = int(thread_id)
+            except ValueError:
+                return
+            if action == "title":
+                await manage_title(interaction, thread_id)
 
     @discord.ext.commands.command("close")
     async def close_command(self, ctx: plugins.commands.Context) -> None:
