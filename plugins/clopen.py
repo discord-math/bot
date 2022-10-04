@@ -189,7 +189,7 @@ async def insert_chan(cat_id: int, chan: discord.TextChannel, *, beginning: bool
     assert isinstance(cat, discord.CategoryChannel)
     max_chan = None
     if not beginning:
-        for other in cat.channels:
+        for other in sorted(cat.channels, key=lambda chan: chan.position):
             if other.id in channels and channels.index(other.id) >= channels.index(chan.id):
                 break
             max_chan = other
