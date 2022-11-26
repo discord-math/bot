@@ -2,11 +2,12 @@ import asyncio
 import asyncio.subprocess
 from typing import Optional, Protocol, cast
 
-import bot.commands
-import bot.privileges
+from bot.commands import Context, cleanup, command
+from bot.privileges import priv
 import plugins
 import util.db.kv
-import util.discord
+from util.discord import format
+
 
 class UpdateConf(Protocol):
     def __getitem__(self, key: str) -> Optional[str]: ...
@@ -18,10 +19,10 @@ async def init() -> None:
     global conf
     conf = cast(UpdateConf, await util.db.kv.load(__name__))
 
-@bot.commands.cleanup
-@bot.commands.command("update")
-@bot.privileges.priv("admin")
-async def update_command(ctx: bot.commands.Context, bot_directory: Optional[str]) -> None:
+@cleanup
+@command("update")
+@priv("admin")
+async def update_command(ctx: Context, bot_directory: Optional[str]) -> None:
     """Pull changes from git remote."""
     cwd = conf[bot_directory] if bot_directory is not None else None
     git_pull = await asyncio.create_subprocess_exec("git", "pull", "--ff-only", "--recurse-submodules", cwd=cwd,
@@ -32,4 +33,4 @@ async def update_command(ctx: bot.commands.Context, bot_directory: Optional[str]
     finally:
         await git_pull.wait()
 
-    await ctx.send(util.discord.format("{!b}", output))
+    await ctx.send(format("{!b}", output))

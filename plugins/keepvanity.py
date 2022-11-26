@@ -1,14 +1,13 @@
 from typing import Awaitable, Optional, Protocol, cast
 
 import discord
-import discord.ext.commands
+from discord import Guild, Message, MessageType
+from discord.ext.commands import Cog
 
-import bot.client
-import bot.cogs
+from bot.client import client
+from bot.cogs import cog
 import plugins
-import util.asyncio
 import util.db.kv
-import util.discord
 
 class KeepvanityConf(Awaitable[None], Protocol):
     guild: int
@@ -24,7 +23,7 @@ async def init() -> None:
     conf.guild = int(conf.guild)
     await conf
 
-async def check_guild_vanity(guild: discord.Guild) -> None:
+async def check_guild_vanity(guild: Guild) -> None:
     if guild.id != conf.guild:
         return
     try:
@@ -33,17 +32,17 @@ async def check_guild_vanity(guild: discord.Guild) -> None:
         if conf.vanity is not None:
             await guild.edit(vanity_code=conf.vanity)
 
-@bot.cogs.cog
-class KeepVanity(discord.ext.commands.Cog):
+@cog
+class KeepVanity(Cog):
     """Restores the guild vanity URL as soon as enough boosts are available"""
-    @discord.ext.commands.Cog.listener()
+    @Cog.listener()
     async def on_ready(self) -> None:
-        for guild in bot.client.client.guilds:
+        for guild in client.guilds:
             await check_guild_vanity(guild)
 
-    @discord.ext.commands.Cog.listener()
-    async def on_message(self, msg: discord.Message) -> None:
-        if msg.type != discord.MessageType.premium_guild_tier_3:
+    @Cog.listener()
+    async def on_message(self, msg: Message) -> None:
+        if msg.type != MessageType.premium_guild_tier_3:
             return
         if msg.guild is None:
             return
@@ -51,7 +50,7 @@ class KeepVanity(discord.ext.commands.Cog):
 
 @plugins.init
 async def init_check_task() -> None:
-    for guild in bot.client.client.guilds:
+    for guild in client.guilds:
         try:
             await check_guild_vanity(guild)
         except (discord.NotFound, discord.Forbidden):

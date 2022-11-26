@@ -1,16 +1,20 @@
+"""
+This module declares a decorator 'location' that can be put on a command to restrict its invocations to a particular set
+of channels and categories
+"""
 import logging
 from typing import Any, Awaitable, Callable, Coroutine, List, Literal, Optional, Protocol, Tuple, Union, cast
 
-import discord
+from discord import CategoryChannel, Thread
+from discord.abc import GuildChannel
 import discord.ext.commands
-import discord.utils
 
-import bot.client
-import bot.commands
-import bot.privileges
+from bot.client import client
+from bot.commands import Context, cleanup, group
+from bot.privileges import priv
 import plugins
 import util.db.kv
-import util.discord
+from util.discord import PartialCategoryChannelConverter, PartialChannelConverter, UserError, format
 from util.frozen_list import FrozenList
 
 class LocationsConf(Awaitable[None], Protocol):
@@ -26,12 +30,12 @@ async def init() -> None:
     global conf
     conf = cast(LocationsConf, await util.db.kv.load(__name__))
 
-def in_location(loc: str, channel: Union[discord.abc.GuildChannel, discord.Thread]) -> bool:
+def in_location(loc: str, channel: Union[GuildChannel, Thread]) -> bool:
     chans = conf[loc, "channels"]
     cats = conf[loc, "categories"]
     if chans and channel.id in chans:
         return True
-    if chans and isinstance(channel, discord.Thread) and channel.parent_id in chans:
+    if chans and isinstance(channel, Thread) and channel.parent_id in chans:
         return True
     if cats and channel.category_id is not None and channel.category_id in cats:
         return True
@@ -39,17 +43,18 @@ def in_location(loc: str, channel: Union[discord.abc.GuildChannel, discord.Threa
 
 def location(name: str) -> Callable[[Callable[..., Coroutine[Any, Any, None]]], Callable[
     ..., Coroutine[Any, Any, None]]]:
-    def command_location_check(ctx: bot.commands.Context) -> bool:
-        return isinstance(ctx.channel, (discord.abc.GuildChannel, discord.Thread)) and in_location(name, ctx.channel)
+    """A decorator for a command that restricts it the location (set of channels and categories) with the given name."""
+    def command_location_check(ctx: Context) -> bool:
+        return isinstance(ctx.channel, (GuildChannel, Thread)) and in_location(name, ctx.channel)
     return discord.ext.commands.check(command_location_check)
 
-class LocContext(bot.commands.Context):
+class LocContext(Context):
     loc: str
 
-@bot.commands.cleanup
-@bot.commands.group("location")
-@bot.privileges.priv("shell")
-async def location_command(ctx: bot.commands.Context) -> None:
+@cleanup
+@group("location")
+@priv("shell")
+async def location_command(ctx: Context) -> None:
     """Manage locations where a command can be invoked."""
     pass
 
@@ -58,22 +63,22 @@ def location_exists(loc: str) -> bool:
 
 def validate_location(loc: str) -> None:
     if not location_exists(loc):
-        raise util.discord.UserError(util.discord.format("Location {!i} does not exist", loc))
+        raise UserError(format("Location {!i} does not exist", loc))
 
 @location_command.command("new")
-async def location_new(ctx: bot.commands.Context, loc: str) -> None:
+async def location_new(ctx: Context, loc: str) -> None:
     """Create a new location."""
     if location_exists(loc):
-        raise util.discord.UserError(util.discord.format("Location {!i} already exists", loc))
+        raise UserError(format("Location {!i} already exists", loc))
 
     conf[loc, "channels"] = []
     conf[loc, "categories"] = []
     await conf
 
-    await ctx.send(util.discord.format("Created location {!i}", loc))
+    await ctx.send(format("Created location {!i}", loc))
 
 @location_command.command("delete")
-async def location_delete(ctx: bot.commands.Context, loc: str) -> None:
+async def location_delete(ctx: Context, loc: str) -> None:
     """Delete a location."""
     validate_location(loc)
 
@@ -81,30 +86,30 @@ async def location_delete(ctx: bot.commands.Context, loc: str) -> None:
     conf[loc, "categories"] = None
     await conf
 
-    await ctx.send(util.discord.format("Removed location {!i}", loc))
+    await ctx.send(format("Removed location {!i}", loc))
 
 @location_command.command("show")
-async def location_show(ctx: bot.commands.Context, loc: str) -> None:
+async def location_show(ctx: Context, loc: str) -> None:
     """Show the channels and categories in a location."""
     validate_location(loc)
     chans = conf[loc, "channels"]
     cats = conf[loc, "categories"]
     output = []
     for id in chans or ():
-        chan = bot.client.client.get_channel(id)
-        if isinstance(chan, discord.abc.GuildChannel):
-            ctext = util.discord.format("{!c}({!i} {!i})", chan, chan.name, chan.id)
+        chan = client.get_channel(id)
+        if isinstance(chan, GuildChannel):
+            ctext = format("{!c}({!i} {!i})", chan, chan.name, chan.id)
         else:
-            ctext = util.discord.format("{!c}({!i})", id, id)
+            ctext = format("{!c}({!i})", id, id)
         output.append("channel {}".format(ctext))
     for id in cats or ():
-        cat = bot.client.client.get_channel(id)
-        if isinstance(cat, discord.CategoryChannel):
-            ctext = util.discord.format("{!c}({!i} {!i})", cat, cat.name, cat.id)
+        cat = client.get_channel(id)
+        if isinstance(cat, CategoryChannel):
+            ctext = format("{!c}({!i} {!i})", cat, cat.name, cat.id)
         else:
-            ctext = util.discord.format("{!c}({!i})", id, id)
+            ctext = format("{!c}({!i})", id, id)
         output.append("category {}".format(ctext))
-    await ctx.send(util.discord.format("Location {!i} includes: {}", loc, "; ".join(output)))
+    await ctx.send(format("Location {!i} includes: {}", loc, "; ".join(output)))
 
 @location_command.group("add")
 async def location_add(ctx: LocContext, loc: str) -> None:
@@ -113,30 +118,30 @@ async def location_add(ctx: LocContext, loc: str) -> None:
     ctx.loc = loc
 
 @location_add.command("channel")
-async def location_add_channel(ctx: LocContext, chan: util.discord.PartialTextChannelConverter) -> None:
+async def location_add_channel(ctx: LocContext, chan: PartialChannelConverter) -> None:
     """Add a channel to a location."""
     loc = ctx.loc
     chans = conf[loc, "channels"] or FrozenList()
     if chan.id in chans:
-        raise util.discord.UserError(util.discord.format("Channel {!c} is already in location {!i}", chan.id, loc))
+        raise UserError(format("Channel {!c} is already in location {!i}", chan.id, loc))
 
     conf[loc, "channels"] = chans + [chan.id]
     await conf
 
-    await ctx.send(util.discord.format("Added channel {!c} to location {!i}", chan.id, loc))
+    await ctx.send(format("Added channel {!c} to location {!i}", chan.id, loc))
 
 @location_add.command("category")
-async def location_add_category(ctx: LocContext, cat: util.discord.PartialCategoryChannelConverter) -> None:
+async def location_add_category(ctx: LocContext, cat: PartialCategoryChannelConverter) -> None:
     """Add a category to a location."""
     loc = ctx.loc
     cats = conf[loc, "categories"] or FrozenList()
     if cat.id in cats:
-        raise util.discord.UserError(util.discord.format("Category {!c} is already in location {!i}", cat.id, loc))
+        raise UserError(format("Category {!c} is already in location {!i}", cat.id, loc))
 
     conf[loc, "categories"] = cats + [cat.id]
     await conf
 
-    await ctx.send(util.discord.format("Added category {!c} to location {!i}", cat.id, loc))
+    await ctx.send(format("Added category {!c} to location {!i}", cat.id, loc))
 
 @location_command.group("remove")
 async def location_remove(ctx: LocContext, loc: str) -> None:
@@ -145,31 +150,31 @@ async def location_remove(ctx: LocContext, loc: str) -> None:
     ctx.loc = loc
 
 @location_remove.command("channel")
-async def location_remove_channel(ctx: LocContext, chan: util.discord.PartialTextChannelConverter) -> None:
+async def location_remove_channel(ctx: LocContext, chan: PartialChannelConverter) -> None:
     """Remove a channel from a location."""
     loc = ctx.loc
     chans = conf[loc, "channels"] or FrozenList()
     if chan.id not in chans:
-        raise util.discord.UserError(util.discord.format("Channel {!c} is already not in location {!i}", chan.id, loc))
+        raise UserError(format("Channel {!c} is already not in location {!i}", chan.id, loc))
 
     mchans = chans.copy()
     mchans.remove(chan.id)
     conf[loc, "channels"] = mchans
     await conf
 
-    await ctx.send(util.discord.format("Removed channel {!c} from location {!i}", chan.id, loc))
+    await ctx.send(format("Removed channel {!c} from location {!i}", chan.id, loc))
 
 @location_remove.command("category")
-async def location_remove_category(ctx: LocContext, cat: util.discord.PartialCategoryChannelConverter) -> None:
+async def location_remove_category(ctx: LocContext, cat: PartialCategoryChannelConverter) -> None:
     """Remove a category from a location."""
     loc = ctx.loc
     cats = conf[loc, "categories"] or FrozenList()
     if cat.id not in cats:
-        raise util.discord.UserError(util.discord.format("Category {!c} is already not in location {!i}", cat.id, loc))
+        raise UserError(format("Category {!c} is already not in location {!i}", cat.id, loc))
 
     mcats = cats.copy()
     mcats.remove(cat.id)
     conf[loc, "categories"] = mcats
     await conf
 
-    await ctx.send(util.discord.format("Added category {!c} to location {!i}", cat.id, loc))
+    await ctx.send(format("Added category {!c} to location {!i}", cat.id, loc))

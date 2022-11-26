@@ -1,10 +1,10 @@
 import logging
-import asyncpg
-import asyncpg.exceptions
-import asyncpg.cursor
-import asyncpg.transaction
-import asyncpg.prepared_stmt
-from typing import Any, Sequence, Union, Optional, Type, Callable
+from typing import Any, Callable, Optional, Sequence, Type, Union
+
+from asyncpg import Connection, PostgresLogMessage, Record
+from asyncpg.cursor import CursorFactory
+from asyncpg.prepared_stmt import PreparedStatement
+from asyncpg.transaction import Transaction
 
 severity_map = {
     "DEBUG": logging.DEBUG,
@@ -53,18 +53,17 @@ def fmt_query_multi(query: str, log_data: Union[bool, Sequence[int]], args: Sequ
 def fmt_table(name: str, schema: Optional[str]) -> str:
     return schema + "." + name if schema is not None else name
 
-def LoggingConnection(logger: logging.Logger) -> Type[asyncpg.connection.Connection]:
+def LoggingConnection(logger: logging.Logger) -> Type[Connection]:
 
-    def log_message(conn: asyncpg.connection.Connection, msg: asyncpg.exceptions.PostgresLogMessage # type: ignore
-        ) -> None:
+    def log_message(conn: Connection, msg: PostgresLogMessage) -> None: # type: ignore
         severity = getattr(msg, "severity_en") or getattr(msg, "severity")
         logger.log(severity_map.get(severity, logging.INFO), "{} {}".format(id(conn), msg))
 
-    def log_termination(conn: asyncpg.connection.Connection) -> None: # type: ignore
+    def log_termination(conn: Connection) -> None: # type: ignore
         logger.debug("{} closed".format(id(conn)))
 
     the_logger = logger
-    class LoggingConnection(asyncpg.connection.Connection): # type: ignore
+    class LoggingConnection(Connection): # type: ignore
         logger: logging.Logger = the_logger
 
         def __init__(self, proto: Any, transport: Any, *args: Any, **kwargs: Any):
@@ -91,7 +90,7 @@ def LoggingConnection(logger: logging.Logger) -> Type[asyncpg.connection.Connect
             return await super().copy_to_table(table_name, schema_name=schema_name, **kwargs)
 
         def cursor(self, query: str, *args: Sequence[Any], log_data: Union[bool, Sequence[int]] = True, **kwargs: Any
-            ) -> asyncpg.cursor.CursorFactory:
+            ) -> CursorFactory:
             self.logger.debug("{}: cursor: {}".format(id(self), fmt_query_single(query, log_data, args)))
             return super().cursor(query, *args, **kwargs)
 
@@ -106,25 +105,25 @@ def LoggingConnection(logger: logging.Logger) -> Type[asyncpg.connection.Connect
             return await super().executemany(query, args, **kwargs)
 
         async def fetch(self, query: str, *args: Sequence[Any], log_data: Union[bool, Sequence[int]] = True,
-            **kwargs: Any) -> Sequence[asyncpg.Record]:
+            **kwargs: Any) -> Sequence[Record]:
             self.logger.debug("{} fetch: {}".format(id(self), fmt_query_single(query, log_data, args)))
             return await super().fetch(query, *args, **kwargs)
 
         async def fetchrow(self, query: str, *args: Sequence[Any], log_data: Union[bool, Sequence[int]] = True,
-            **kwargs: Any) -> Optional[asyncpg.Record]:
+            **kwargs: Any) -> Optional[Record]:
             self.logger.debug("{} fetchrow: {}".format(id(self), fmt_query_single(query, log_data, args)))
             return await super().fetchrow(query, *args, **kwargs)
 
         async def fetchval(self, query: str, *args: Sequence[Any], log_data: Union[bool, Sequence[int]] = True,
-            **kwargs: Any) -> Optional[asyncpg.Record]:
+            **kwargs: Any) -> Optional[Record]:
             self.logger.debug("{} fetchval: {}".format(id(self), fmt_query_single(query, log_data, args)))
             return await super().fetchval(query, *args, **kwargs)
 
-        def transaction(self, **kwargs: Any) -> asyncpg.transaction.Transaction:
+        def transaction(self, **kwargs: Any) -> Transaction:
             self.logger.debug("{} transaction".format(id(self)))
             return super().transaction(**kwargs)
 
-        async def prepare(self, query: str, **kwargs: Any) -> asyncpg.prepared_stmt.PreparedStatement:
+        async def prepare(self, query: str, **kwargs: Any) -> PreparedStatement:
             self.logger.debug("{} prepare: {}".format(id(self), query))
             # TODO: hook into PreparedStatement
             return await super().prepare(query, **kwargs)

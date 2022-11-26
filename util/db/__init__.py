@@ -1,14 +1,17 @@
 import contextlib
+import logging
+from typing import Any, AsyncIterator, Callable, Dict, Union
+
 import asyncpg
 import sqlalchemy
-import sqlalchemy.schema
-import sqlalchemy.ext.asyncio
+from sqlalchemy import Connection
 import sqlalchemy.dialects.postgresql
-import logging
-from typing import Dict, AsyncIterator, Callable, Any, Union
+import sqlalchemy.ext.asyncio
+from sqlalchemy.schema import DDLElement, ExecutableDDLElement
+
 import static_config
-import util.db.log as util_db_log
 import util.db.dsn as util_db_dsn
+import util.db.log as util_db_log
 
 logger: logging.Logger = logging.getLogger(__name__)
 connection_dsn: str = static_config.DB["dsn"]
@@ -33,20 +36,21 @@ def create_async_engine(connect_args: Dict[str, Any] = {}, **kwargs: Any) -> sql
     return sqlalchemy.ext.asyncio.create_async_engine(async_connection_uri,
         pool_pre_ping=True, connect_args=args, **kwargs)
 
-from util.db.initialization import init as init, init_for as init_for
+from util.db.initialization import init as init
+from util.db.initialization import init_for as init_for
 
-def get_ddl(*cbs: Union[sqlalchemy.schema.DDLElement, Callable[[sqlalchemy.Connection], None]]) -> str:
+def get_ddl(*cbs: Union[DDLElement, Callable[[Connection], None]]) -> str:
     # By default sqlalchemy treats asyncpg as if it had paramstyle="format", which means it tries to escape percent
     # signs. We don't want that so we have to override the paramstyle. Ideally "numeric" would be the right choice here
     # but that doesn't work.
     dialect = sqlalchemy.dialects.postgresql.dialect(paramstyle="qmark")
     ddls = []
 
-    def executor(sql: sqlalchemy.schema.ExecutableDDLElement, *args: Any, **kwargs: Any) -> None:
+    def executor(sql: ExecutableDDLElement, *args: Any, **kwargs: Any) -> None:
         ddls.append(str(sql.compile(dialect=dialect)) + ";")
     conn = sqlalchemy.create_mock_engine(sqlalchemy.make_url("postgresql://"), executor)
     for cb in cbs:
-        if isinstance(cb, sqlalchemy.schema.DDLElement):
+        if isinstance(cb, DDLElement):
             conn.execute(cb)
         else:
             cb(conn) # type: ignore

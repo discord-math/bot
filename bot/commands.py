@@ -8,14 +8,16 @@ from typing import Any, Callable, Coroutine, Optional, Protocol, Set, Type, Type
 from typing_extensions import Concatenate, ParamSpec
 
 import discord
+from discord import AllowedMentions, Client, Message, PartialMessage
 import discord.ext.commands
+from discord.ext.commands import (BadUnionArgument, Bot, CheckFailure, Cog, Command, CommandError, CommandInvokeError,
+    CommandNotFound, Group, UserInputError)
 
-import bot.client
-import bot.cogs
+from bot.client import client
+from bot.cogs import cog
 import plugins
 import util.db.kv
-import util.discord
-
+from util.discord import format
 
 class CommandsConfig(Protocol):
     prefix: str
@@ -28,31 +30,31 @@ async def init() -> None:
     global conf
     conf = cast(CommandsConfig, await util.db.kv.load(__name__))
 
-def bot_prefix(bot: discord.Client, msg: discord.Message) -> str:
+def bot_prefix(bot: Client, msg: Message) -> str:
     return conf.prefix
-bot.client.client.command_prefix = bot_prefix
+client.command_prefix = bot_prefix
 @plugins.finalizer
 def cleanup_prefix() -> None:
-    bot.client.client.command_prefix = ()
+    client.command_prefix = ()
 
-Context = discord.ext.commands.Context[discord.ext.commands.Bot]
+Context = discord.ext.commands.Context[Bot]
 
-@bot.cogs.cog
-class Commands(discord.ext.commands.Cog):
-    @discord.ext.commands.Cog.listener()
+@cog
+class Commands(Cog):
+    @Cog.listener()
     async def on_command(self, ctx: Context) -> None:
-        logger.info(util.discord.format("Command {!r} from {!m} in {!c}",
+        logger.info(format("Command {!r} from {!m} in {!c}",
             ctx.command and ctx.command.qualified_name, ctx.author.id, ctx.channel.id))
 
-    @discord.ext.commands.Cog.listener()
+    @Cog.listener()
     async def on_command_error(self, ctx: Context, exc: Exception) -> None:
         try:
-            if isinstance(exc, discord.ext.commands.CommandNotFound):
+            if isinstance(exc, CommandNotFound):
                 return
-            elif isinstance(exc, discord.ext.commands.CheckFailure):
+            elif isinstance(exc, CheckFailure):
                 return
-            elif isinstance(exc, discord.ext.commands.UserInputError):
-                if isinstance(exc, discord.ext.commands.BadUnionArgument):
+            elif isinstance(exc, UserInputError):
+                if isinstance(exc, BadUnionArgument):
                     def conv_name(conv: Any) -> Any:
                         try:
                             return conv.__name__
@@ -75,66 +77,66 @@ class Commands(discord.ext.commands.Cog):
                             s for s in ctx.invoked_parents + [ctx.invoked_with, ctx.command.signature] if s)
                     else:
                         usage = " ".join(s for s in [ctx.command.qualified_name, ctx.command.signature] if s)
-                    message += util.discord.format("\nUsage: {!i}", usage)
-                await ctx.send(message, allowed_mentions=discord.AllowedMentions.none())
+                    message += format("\nUsage: {!i}", usage)
+                await ctx.send(message, allowed_mentions=AllowedMentions.none())
                 return
-            elif isinstance(exc, discord.ext.commands.CommandInvokeError):
-                logger.error(util.discord.format("Error in command {} {!r} {!r} from {!m} in {!c}",
+            elif isinstance(exc, CommandInvokeError):
+                logger.error(format("Error in command {} {!r} {!r} from {!m} in {!c}",
                     ctx.command and ctx.command.qualified_name, tuple(ctx.args), ctx.kwargs,
                     ctx.author.id, ctx.channel.id), exc_info=exc.__cause__)
                 return
-            elif isinstance(exc, discord.ext.commands.CommandError):
-                await ctx.send("Error: {}".format(str(exc)), allowed_mentions=discord.AllowedMentions.none())
+            elif isinstance(exc, CommandError):
+                await ctx.send("Error: {}".format(str(exc)), allowed_mentions=AllowedMentions.none())
                 return
             else:
-                logger.error(util.discord.format("Unknown exception in command {} {!r} {!r} from {!m} in {!c}",
+                logger.error(format("Unknown exception in command {} {!r} {!r} from {!m} in {!c}",
                     ctx.command and ctx.command.qualified_name, tuple(ctx.args), ctx.kwargs), exc_info=exc)
                 return
         finally:
             await finalize_cleanup(ctx)
 
-    @discord.ext.commands.Cog.listener()
-    async def on_message(self, msg: discord.Message) -> None:
-        await bot.client.client.process_commands(msg)
+    @Cog.listener()
+    async def on_message(self, msg: Message) -> None:
+        await client.process_commands(msg)
 
 T = TypeVar("T")
 P = ParamSpec("P")
-BotT = TypeVar('BotT', bound=discord.ext.commands.Bot, covariant=True)
+BotT = TypeVar('BotT', bound=Bot, covariant=True)
 ContextT = TypeVar('ContextT', bound=Context)
-CogT = TypeVar("CogT", bound=Optional[discord.ext.commands.Cog])
-FreeCommandT = TypeVar("FreeCommandT", bound=discord.ext.commands.Command[None, Any, Any])
-CommandT = TypeVar("CommandT", bound=discord.ext.commands.Command[Any, Any, Any])
+CogT = TypeVar("CogT", bound=Optional[Cog])
+FreeCommandT = TypeVar("FreeCommandT", bound=Command[None, Any, Any])
+CommandT = TypeVar("CommandT", bound=Command[Any, Any, Any])
 
 @overload
 def command(name: Optional[str] = None, cls: Type[FreeCommandT] = ..., *args: Any, **kwargs: Any) -> Callable[
     [Callable[Concatenate[ContextT, P], Coroutine[Any, Any, Any]]], FreeCommandT]: ...
 @overload
 def command(name: Optional[str] = None, cls: None = None, *args: Any, **kwargs: Any) -> Callable[
-    [Callable[Concatenate[ContextT, P], Coroutine[Any, Any, T]]],
-    discord.ext.commands.Command[None, P, T]]: ...
-def command(name: Optional[str] = None, cls: Any = discord.ext.commands.Command, *args: Any, **kwargs: Any) -> Callable[
+    [Callable[Concatenate[ContextT, P], Coroutine[Any, Any, T]]], Command[None, P, T]]: ...
+def command(name: Optional[str] = None, cls: Any = Command, *args: Any, **kwargs: Any) -> Callable[
     [Callable[Concatenate[discord.ext.commands.Context[Any], P], Coroutine[Any, Any, Any]]], Any]:
     def decorator(fun: Callable[Concatenate[ContextT, P], Coroutine[Any, Any, T]]
         ) -> Callable[Concatenate[ContextT, P], Coroutine[Any, Any, T]]:
-        cmd: discord.ext.commands.Command[None, P, T]
-        if isinstance(fun, discord.ext.commands.Command):
+        cmd: Command[None, P, T]
+        if isinstance(fun, Command):
             if args or kwargs:
                 raise TypeError("the provided object is already a Command (args/kwargs have no effect)")
             cmd = fun
         else:
             cmd = discord.ext.commands.command(name=name, cls=cls, *args, **kwargs)(fun) # type: ignore
-        bot.client.client.add_command(cmd)
+        client.add_command(cmd)
         def cleanup_command() -> None:
-            bot.client.client.remove_command(cmd.name)
+            client.remove_command(cmd.name)
         plugins.finalizer(cleanup_command)
         return cmd
     return decorator
 
 def group(name: Optional[str] = None, *args: Any, **kwargs: Any) -> Callable[
-    [Callable[Concatenate[ContextT, P], Coroutine[Any, Any, T]]], discord.ext.commands.Group[None, P, T]]:
-    return command(name, cls=discord.ext.commands.Group, *args, **kwargs)
+    [Callable[Concatenate[ContextT, P], Coroutine[Any, Any, T]]], Group[None, P, T]]:
+    return command(name, cls=Group, *args, **kwargs)
 
 def suppress_usage(cmd: T) -> T:
+    """This decorator on a command suppresses the usage instructions if the command is invoked incorrectly."""
     cmd.suppress_usage = True # type: ignore
     return cmd
 
@@ -143,7 +145,7 @@ class CleanupContext(discord.ext.commands.Context[BotT]):
 
 class CleanupReference:
     __slots__ = "messages", "task"
-    messages: Set[discord.PartialMessage]
+    messages: Set[PartialMessage]
     task: Optional[asyncio.Task[None]]
 
     def __init__(self, ctx: CleanupContext[BotT]):
@@ -160,8 +162,8 @@ class CleanupReference:
             self.task.cancel()
             self.task = None
 
-    def add(self, msg: discord.Message) -> None:
-        self.messages.add(discord.PartialMessage(channel=msg.channel, id=msg.id))
+    def add(self, msg: Message) -> None:
+        self.messages.add(PartialMessage(channel=msg.channel, id=msg.id))
 
     async def finalize(self) -> None:
         if self.task is None:
@@ -187,7 +189,7 @@ def init_cleanup(ctx: CleanupContext[BotT]) -> None:
         ctx.cleanup = ref
 
         old_send = ctx.send
-        async def send(*args: Any, **kwargs: Any) -> discord.Message:
+        async def send(*args: Any, **kwargs: Any) -> Message:
             msg = await old_send(*args, **kwargs)
             ref.add(msg)
             return msg
@@ -197,13 +199,13 @@ async def finalize_cleanup(ctx: ContextT) -> None:
     if (ref := getattr(ctx, "cleanup", None)) is not None:
         await ref.finalize()
 
-"""Mark a message as "output" of a cleanup command."""
-def add_cleanup(ctx: ContextT, msg: discord.Message) -> None:
+def add_cleanup(ctx: ContextT, msg: Message) -> None:
+    """Mark a message as "output" of a cleanup command."""
     if (ref := getattr(ctx, "cleanup", None)) is not None:
         ref.add(msg)
 
-"""Make the command watch out for the deletion of the invoking message, and in that case, delete all output."""
 def cleanup(cmd: CommandT) -> CommandT:
+    """Make the command watch out for the deletion of the invoking message, and in that case, delete all output."""
     old_invoke = cmd.invoke
     async def invoke(ctx: CleanupContext[BotT]) -> None:
         init_cleanup(ctx)

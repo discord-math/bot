@@ -2,37 +2,35 @@ import json
 from typing import List, Optional, Union
 
 import asyncpg
-import discord
-import discord.ext.commands
+from discord.ext.commands import Greedy
 
-import bot.commands
-import bot.privileges
-import bot.reactions
-import util.asyncio
+from bot.commands import Context, cleanup, command, group
+from bot.privileges import priv
+from bot.reactions import get_reaction
 import util.db
 import util.db.kv
-import util.discord
+from util.discord import CodeBlock, Inline, Quoted, format
 
-@bot.commands.cleanup
-@bot.commands.group("config", invoke_without_command=True)
-@bot.privileges.priv("shell")
-async def config_command(ctx: bot.commands.Context, namespace: Optional[str], key: Optional[str],
-    value: Optional[Union[util.discord.CodeBlock, util.discord.Inline, util.discord.Quoted]]) -> None:
+@cleanup
+@group("config", invoke_without_command=True)
+@priv("shell")
+async def config_command(ctx: Context, namespace: Optional[str], key: Optional[str],
+    value: Optional[Union[CodeBlock, Inline, Quoted]]) -> None:
     """Edit the key-value configs."""
     if namespace is None:
-        await ctx.send(", ".join(util.discord.format("{!i}", nsp) for nsp in await util.db.kv.get_namespaces()))
+        await ctx.send(", ".join(format("{!i}", nsp) for nsp in await util.db.kv.get_namespaces()))
         return
 
     conf = await util.db.kv.load(namespace)
 
     if key is None:
-        await ctx.send("; ".join(",".join(util.discord.format("{!i}", key) for key in keys) for keys in conf))
+        await ctx.send("; ".join(",".join(format("{!i}", key) for key in keys) for keys in conf))
         return
 
     keys = key.split(",")
 
     if value is None:
-        await ctx.send(util.discord.format("{!i}", util.db.kv.json_encode(conf[keys])))
+        await ctx.send(format("{!i}", util.db.kv.json_encode(conf[keys])))
         return
 
     conf[keys] = json.loads(value.text)
@@ -40,8 +38,8 @@ async def config_command(ctx: bot.commands.Context, namespace: Optional[str], ke
     await ctx.send("\u2705")
 
 @config_command.command("--delete")
-@bot.privileges.priv("shell")
-async def config_delete(ctx: bot.commands.Context, namespace: str, key: str) -> None:
+@priv("shell")
+async def config_delete(ctx: Context, namespace: str, key: str) -> None:
     """Delete the provided key from the config."""
     conf = await util.db.kv.load(namespace)
     keys = key.split(",")
@@ -49,11 +47,10 @@ async def config_delete(ctx: bot.commands.Context, namespace: str, key: str) -> 
     await conf
     await ctx.send("\u2705")
 
-@bot.commands.cleanup
-@bot.commands.command("sql")
-@bot.privileges.priv("shell")
-async def sql_command(ctx: bot.commands.Context,
-    args: discord.ext.commands.Greedy[Union[util.discord.CodeBlock, util.discord.Inline, str]]) -> None:
+@cleanup
+@command("sql")
+@priv("shell")
+async def sql_command(ctx: Context, args: Greedy[Union[CodeBlock, Inline, str]]) -> None:
     """Execute arbitrary SQL statements in the database."""
     data_outputs: List[List[str]] = []
     outputs: List[Union[str, List[str]]] = []
@@ -61,12 +58,12 @@ async def sql_command(ctx: bot.commands.Context,
         tx = conn.transaction()
         await tx.start()
         for arg in args:
-            if isinstance(arg, (util.discord.CodeBlock, util.discord.Inline)):
+            if isinstance(arg, (CodeBlock, Inline)):
                 try:
                     stmt = await conn.prepare(arg.text)
                     results = (await stmt.fetch())[:1000]
                 except asyncpg.PostgresError as e:
-                    outputs.append(util.discord.format("{!b}", e))
+                    outputs.append(format("{!b}", e))
                 else:
                     outputs.append(stmt.get_statusmsg())
                     if results:
@@ -94,7 +91,7 @@ async def sql_command(ctx: bot.commands.Context,
                 total_len += 4
             total_len -= len(removed) + 1
 
-        text = "\n".join(util.discord.format("{!b}", "\n".join(output))
+        text = "\n".join(format("{!b}", "\n".join(output))
             if isinstance(output, list) else output for output in outputs)[:2000]
 
         reply = await ctx.send(text)
@@ -110,7 +107,7 @@ async def sql_command(ctx: bot.commands.Context,
         if not has_tx:
             return
 
-        if await bot.reactions.get_reaction(reply, ctx.author, {"\u21A9": False, "\u2705": True}, timeout=60):
+        if await get_reaction(reply, ctx.author, {"\u21A9": False, "\u2705": True}, timeout=60):
             await tx.commit()
         else:
             await tx.rollback()

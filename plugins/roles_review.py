@@ -1,24 +1,23 @@
 from typing import TYPE_CHECKING, List, Literal, Optional, Protocol, Tuple, cast
 
-import discord
-import discord.app_commands
-import discord.ext.commands
+from discord import AllowedMentions, ButtonStyle, Interaction, InteractionType, Member, Role, TextChannel, TextStyle
+from discord.ext.commands import Cog
 if TYPE_CHECKING:
     import discord.types.interactions
-import discord.ui
-import sqlalchemy
-import sqlalchemy.ext.asyncio
+from discord.ui import Button, Modal, TextInput, View
+from sqlalchemy import BOOLEAN, BigInteger, Integer, delete, select
+from sqlalchemy.ext.asyncio import async_sessionmaker
 import sqlalchemy.orm
+from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.schema import CreateSchema
 
-import bot.cogs
-import bot.commands
-import bot.interactions
-import bot.privileges
+from bot.cogs import cog
+from bot.commands import Context, cleanup, command
+from bot.privileges import priv
 import plugins
 import util.db
 import util.db.kv
-import util.discord
-import util.frozen_list
+from util.discord import PartialRoleConverter, PartialUserConverter, format
 
 class RolesReviewConf(Protocol):
     review_channel: int
@@ -35,18 +34,18 @@ registry: sqlalchemy.orm.registry = sqlalchemy.orm.registry()
 engine = util.db.create_async_engine()
 plugins.finalizer(engine.dispose)
 
-sessionmaker = sqlalchemy.ext.asyncio.async_sessionmaker(engine, future=True, expire_on_commit=False)
+sessionmaker = async_sessionmaker(engine, future=True, expire_on_commit=False)
 
 @registry.mapped
 class Application:
     __tablename__ = "applications"
     __table_args__ = {"schema": "roles_review"}
 
-    id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.Integer, primary_key=True)
-    listing_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger, nullable=False)
-    user_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger, nullable=False)
-    role_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger, nullable=False)
-    resolved: sqlalchemy.orm.Mapped[bool] = sqlalchemy.orm.mapped_column(sqlalchemy.BOOLEAN, nullable=False)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    listing_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    role_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    resolved: Mapped[bool] = mapped_column(BOOLEAN, nullable=False)
 
     if TYPE_CHECKING:
         def __init__(self, *, listing_id: int, user_id: int, role_id: int, resolved: bool, id: Optional[int] = None
@@ -56,13 +55,13 @@ class Application:
 class Vote:
     __tablename__ = "votes"
 
-    application_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.Integer,
-        sqlalchemy.ForeignKey(Application.id, ondelete="CASCADE"), nullable=False) # type: ignore
-    voter_id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger, nullable=False)
-    vote: sqlalchemy.orm.Mapped[bool] = sqlalchemy.orm.mapped_column(sqlalchemy.BOOLEAN, nullable=False)
-    veto: sqlalchemy.orm.Mapped[bool] = sqlalchemy.orm.mapped_column(sqlalchemy.BOOLEAN, nullable=False)
+    application_id: Mapped[int] = mapped_column(Integer,
+        ForeignKey(Application.id, ondelete="CASCADE"), nullable=False) # type: ignore
+    voter_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    vote: Mapped[bool] = mapped_column(BOOLEAN, nullable=False)
+    veto: Mapped[bool] = mapped_column(BOOLEAN, nullable=False)
 
-    __table_args__ = (sqlalchemy.PrimaryKeyConstraint(application_id, voter_id, veto), # type: ignore
+    __table_args__ = (PrimaryKeyConstraint(application_id, voter_id, veto), # type: ignore
         {"schema": "roles_review"})
 
     if TYPE_CHECKING:
@@ -73,19 +72,19 @@ async def init() -> None:
     global conf
     conf = cast(RolesReviewConf, await util.db.kv.load(__name__))
     await util.db.init(util.db.get_ddl(
-        sqlalchemy.schema.CreateSchema("roles_review"),
+        CreateSchema("roles_review"),
         registry.metadata.create_all))
 
-class ApproveRoleView(discord.ui.View):
+class ApproveRoleView(View):
     def __init__(self, msg_id: int) -> None:
         super().__init__(timeout=None)
-        self.add_item(discord.ui.Button(style=discord.ButtonStyle.success, label="Approve",
+        self.add_item(Button(style=ButtonStyle.success, label="Approve",
             custom_id="{}:{}:Approve".format(__name__, msg_id)))
-        self.add_item(discord.ui.Button(style=discord.ButtonStyle.danger, label="Deny",
+        self.add_item(Button(style=ButtonStyle.danger, label="Deny",
             custom_id="{}:{}:Deny".format(__name__, msg_id)))
-        self.add_item(discord.ui.Button(style=discord.ButtonStyle.secondary, label="Retract",
+        self.add_item(Button(style=ButtonStyle.secondary, label="Retract",
             custom_id="{}:{}:Retract".format(__name__, msg_id)))
-        self.add_item(discord.ui.Button(style=discord.ButtonStyle.secondary, label="Veto",
+        self.add_item(Button(style=ButtonStyle.secondary, label="Veto",
             custom_id="{}:{}:Veto".format(__name__, msg_id)))
 
 def voting_decision(votes: List[Vote]) -> Optional[bool]:
@@ -104,12 +103,12 @@ def voting_decision(votes: List[Vote]) -> Optional[bool]:
             return False
     return None
 
-async def cast_vote(interaction: discord.Interaction, msg_id: int, dir: Optional[bool], veto: Optional[str] = None) -> None:
+async def cast_vote(interaction: Interaction, msg_id: int, dir: Optional[bool], veto: Optional[str] = None) -> None:
     assert interaction.message
     assert interaction.guild
     assert dir is not None or veto is None
     async with sessionmaker() as session:
-        stmt = sqlalchemy.select(Application).where(Application.listing_id == msg_id).limit(1)
+        stmt = select(Application).where(Application.listing_id == msg_id).limit(1)
         app = (await session.execute(stmt)).scalars().first()
 
         if app is None:
@@ -121,11 +120,11 @@ async def cast_vote(interaction: discord.Interaction, msg_id: int, dir: Optional
             return
 
         if (role_id := conf[app.role_id, "role"]) is not None:
-            if not isinstance(interaction.user, discord.Member) or not any(role.id == role_id for role in interaction.user.roles):
+            if not isinstance(interaction.user, Member) or not any(role.id == role_id for role in interaction.user.roles):
                 await interaction.response.send_message("You are not allowed to vote on this application.", ephemeral=True)
                 return
 
-        stmt = sqlalchemy.select(Vote).where(Vote.application_id == app.id)
+        stmt = select(Vote).where(Vote.application_id == app.id)
         votes = list((await session.execute(stmt)).scalars())
 
         if dir is None:
@@ -158,14 +157,14 @@ async def cast_vote(interaction: discord.Interaction, msg_id: int, dir: Optional
         if veto is not None:
             comment = "veto {}: {}".format(comment, veto)
         await interaction.message.edit(
-            content=util.discord.format("{}\n{!m}: {}{}", interaction.message.content, interaction.user, comment,
+            content=format("{}\n{!m}: {}{}", interaction.message.content, interaction.user, comment,
                 "" if decision is None else "\nDecision: \u2705" if decision else "\nDecision: \u274C"),
             view=ApproveRoleView(msg_id) if decision is None else None,
-            allowed_mentions=discord.AllowedMentions.none())
+            allowed_mentions=AllowedMentions.none())
 
         if decision is not None:
             if decision == True:
-                stmt = sqlalchemy.delete(Application).where(Application.id == app.id)
+                stmt = delete(Application).where(Application.id == app.id)
                 await session.execute(stmt)
             else:
                 app.resolved = True
@@ -178,18 +177,18 @@ async def cast_vote(interaction: discord.Interaction, msg_id: int, dir: Optional
                 if (role := interaction.guild.get_role(app.role_id)) is not None:
                     await user.add_roles(role, reason="By vote")
 
-class VetoModal(discord.ui.Modal):
-    reason = discord.ui.TextInput(style=discord.TextStyle.paragraph, required=False, label="Reason for the veto")
+class VetoModal(Modal):
+    reason = TextInput(style=TextStyle.paragraph, required=False, label="Reason for the veto")
     # Selects disallowed in modals for now:
-    # decision = discord.ui.Select(placeholder="Decision", options=[
-    #    discord.SelectOption(label="Approve", emoji="\u2705"), discord.SelectOption(label="Deny", emoji="\u274C")])
-    decision = discord.ui.TextInput(max_length=1, label="[Y]es\u2705 / [N]o\u274C")
+    # decision = Select(placeholder="Decision", options=[
+    #    SelectOption(label="Approve", emoji="\u2705"), SelectOption(label="Deny", emoji="\u274C")])
+    decision = TextInput(max_length=1, label="[Y]es\u2705 / [N]o\u274C")
 
     def __init__(self, msg_id: int) -> None:
         self.msg_id = msg_id
         super().__init__(title="Veto", timeout=600)
 
-    async def on_submit(self, interaction: discord.Interaction) -> None:
+    async def on_submit(self, interaction: Interaction) -> None:
         #if self.decision.values == ["Approve"]:
         if str(self.decision)[:1].upper() == "Y":
             await cast_vote(interaction, self.msg_id, True, veto=str(self.reason))
@@ -197,11 +196,11 @@ class VetoModal(discord.ui.Modal):
         elif str(self.decision)[:1].upper() == "N":
             await cast_vote(interaction, self.msg_id, False, veto=str(self.reason))
 
-@bot.cogs.cog
-class RolesReviewCog(discord.ext.commands.Cog):
-    @discord.ext.commands.Cog.listener()
-    async def on_interaction(self, interaction: discord.Interaction) -> None:
-        if interaction.type != discord.InteractionType.component or interaction.data is None:
+@cog
+class RolesReviewCog(Cog):
+    @Cog.listener()
+    async def on_interaction(self, interaction: Interaction) -> None:
+        if interaction.type != InteractionType.component or interaction.data is None:
             return
         data = cast("discord.types.interactions.MessageComponentInteractionData", interaction.data)
         if data["component_type"] != 2:
@@ -223,50 +222,49 @@ class RolesReviewCog(discord.ext.commands.Cog):
         elif action == "Retract":
             await cast_vote(interaction, msg_id, None)
         elif action == "Veto":
-            if (isinstance(interaction.user, discord.Member)
+            if (isinstance(interaction.user, Member)
                 and any(role.id == conf.veto_role for role in interaction.user.roles)):
                 await interaction.response.send_modal(VetoModal(msg_id))
             else:
                 await interaction.response.send_message("You are not allowed to veto.", ephemeral=True)
 
-    @bot.commands.cleanup
-    @discord.ext.commands.command("review_reset")
-    @bot.privileges.priv("mod")
-    async def review_reset(self, ctx: bot.commands.Context, user: util.discord.PartialUserConverter,
-        role: util.discord.PartialRoleConverter) -> None:
+    @cleanup
+    @command("review_reset")
+    @priv("mod")
+    async def review_reset(self, ctx: Context, user: PartialUserConverter, role: PartialRoleConverter) -> None:
         """
         If a user's application for a particular role has been denied, this command will allow them to apply again.
         """
         async with sessionmaker() as session:
-            stmt = (sqlalchemy.delete(Application)
+            stmt = (delete(Application)
                 .where(Application.user_id == user.id, Application.role_id == role.id, Application.resolved == True)
                 .returning(True))
             if (await session.execute(stmt)).first():
-                await ctx.send(util.discord.format("Reset {!m}'s application status for {!M}.", user, role),
-                    allowed_mentions=discord.AllowedMentions.none())
+                await ctx.send(format("Reset {!m}'s application status for {!M}.", user, role),
+                    allowed_mentions=AllowedMentions.none())
                 await session.commit()
             else:
-                await ctx.send(util.discord.format("{!m} has no resolved applications for {!M}.", user, role),
-                    allowed_mentions=discord.AllowedMentions.none())
+                await ctx.send(format("{!m} has no resolved applications for {!M}.", user, role),
+                    allowed_mentions=AllowedMentions.none())
 
-async def apply(member: discord.Member, role: discord.Role, inputs: List[Tuple[str, str]]) -> Optional[str]:
+async def apply(member: Member, role: Role, inputs: List[Tuple[str, str]]) -> Optional[str]:
     async with sessionmaker() as session:
-        stmt = (sqlalchemy.select(Application.id)
+        stmt = (select(Application.id)
             .where(Application.user_id == member.id, Application.role_id == role.id)
             .limit(1))
         if (await session.execute(stmt)).first() is not None:
             return "You have already applied for {}.".format(role.name)
 
         channel = member.guild.get_channel(conf.review_channel)
-        assert isinstance(channel, discord.TextChannel)
+        assert isinstance(channel, TextChannel)
 
-        msg = await channel.send(util.discord.format("{!m} ({}#{} {}) requested {!M}:\n\n{}", member, member.name,
+        msg = await channel.send(format("{!m} ({}#{} {}) requested {!M}:\n\n{}", member, member.name,
                 member.discriminator, member.id, role,
                 "\n\n".join("**{}**: {}".format(question, answer) for question, answer in inputs)),
-            allowed_mentions=discord.AllowedMentions.none())
+            allowed_mentions=AllowedMentions.none())
         session.add(Application(listing_id=msg.id, user_id=member.id, role_id=role.id, resolved=False))
         await session.commit()
-        await channel.send("Votes:", view=ApproveRoleView(msg.id), allowed_mentions=discord.AllowedMentions.none())
+        await channel.send("Votes:", view=ApproveRoleView(msg.id), allowed_mentions=AllowedMentions.none())
 
         if (repl_id := conf[role.id, "replace"]) is not None:
             if (repl := member.guild.get_role(repl_id)) is not None:

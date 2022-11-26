@@ -3,21 +3,21 @@ import logging
 from typing import Any, Callable, Coroutine, Optional, TypeVar, Union
 from typing_extensions import Concatenate, ParamSpec
 
-import discord
+from discord import Interaction, Member, Message, User
 import discord.app_commands
-import discord.ext.commands
-import discord.ui
+from discord.app_commands import AppCommandError, CheckFailure, Command, ContextMenu, Group
+from discord.ui import View
 
-import bot.client
+from bot.client import client
 import plugins
-import util.discord
+from util.discord import format
 
 logger = logging.getLogger(__name__)
 
-old_on_error = bot.client.client.tree.on_error
-@bot.client.client.tree.error
-async def on_error(interaction: discord.Interaction, exc: discord.app_commands.AppCommandError) -> None:
-    if isinstance(exc, discord.app_commands.CheckFailure):
+old_on_error = client.tree.on_error
+@client.tree.error
+async def on_error(interaction: Interaction, exc: AppCommandError) -> None:
+    if isinstance(exc, CheckFailure):
         message = "Error: {}".format(str(exc))
         if interaction.response.is_done():
             await interaction.followup.send(message, ephemeral=True)
@@ -25,17 +25,17 @@ async def on_error(interaction: discord.Interaction, exc: discord.app_commands.A
             await interaction.response.send_message(message, ephemeral=True)
         return
     else:
-        logger.error(util.discord.format("Error in command {!r} {!r} from {!m} in {!c}: {}", interaction.command,
+        logger.error(format("Error in command {!r} {!r} from {!m} in {!c}: {}", interaction.command,
             interaction.data, interaction.user, interaction.channel_id, str(exc)), exc_info=exc.__cause__)
         return
 @plugins.finalizer
 def restore_on_error() -> None:
-    bot.client.client.tree.error(old_on_error)
+    client.tree.error(old_on_error)
 
 sync_required = asyncio.Event()
 
 async def sync_commands() -> None:
-    await bot.client.client.wait_until_ready()
+    await client.wait_until_ready()
 
     while True:
         try:
@@ -48,7 +48,7 @@ async def sync_commands() -> None:
                 pass
 
             logger.debug("Syncing command tree")
-            await bot.client.client.tree.sync()
+            await client.tree.sync()
         except asyncio.CancelledError:
             raise
         except:
@@ -59,66 +59,69 @@ P = ParamSpec("P")
 T = TypeVar("T")
 
 def command(name: str, description: Optional[str] = None) -> Callable[
-    [Callable[Concatenate[discord.Interaction, P], Coroutine[Any, Any, T]]],
-    discord.app_commands.Command[Any, P, T]]:
-    def decorator(fun: Callable[Concatenate[discord.Interaction, P], Coroutine[Any, Any, T]]
-        ) -> discord.app_commands.Command[Any, P, T]:
+    [Callable[Concatenate[Interaction, P], Coroutine[Any, Any, T]]], Command[Any, P, T]]:
+    """Decorator for a slash command that is added/removed together with the plugin."""
+    def decorator(fun: Callable[Concatenate[Interaction, P], Coroutine[Any, Any, T]]
+        ) -> Command[Any, P, T]:
         if description is None:
             cmd = discord.app_commands.command(name=name)(fun)
         else:
             cmd = discord.app_commands.command(name=name, description=description)(fun)
 
-        bot.client.client.tree.add_command(cmd)
+        client.tree.add_command(cmd)
         sync_required.set()
         def finalizer():
-            bot.client.client.tree.remove_command(cmd.name)
+            client.tree.remove_command(cmd.name)
             sync_required.set()
         plugins.finalizer(finalizer)
 
         return cmd
     return decorator
 
-def group(name: str, *, description: str, **kwargs: Any) -> discord.app_commands.Group:
-    cmd = discord.app_commands.Group(name=name, description=description, **kwargs)
+def group(name: str, *, description: str, **kwargs: Any) -> Group:
+    """Decorator for a slash command group that is added/removed together with the plugin."""
+    cmd = Group(name=name, description=description, **kwargs)
 
-    bot.client.client.tree.add_command(cmd)
+    client.tree.add_command(cmd)
     sync_required.set()
     def finalizer():
-        bot.client.client.tree.remove_command(cmd.name)
+        client.tree.remove_command(cmd.name)
         sync_required.set()
     plugins.finalizer(finalizer)
 
     return cmd
 
 def context_menu(name: str) -> Callable[[Union[
-        Callable[[discord.Interaction, discord.Member], Coroutine[Any, Any, Any]],
-        Callable[[discord.Interaction, discord.User], Coroutine[Any, Any, Any]],
-        Callable[[discord.Interaction, discord.Message], Coroutine[Any, Any, Any]],
-        Callable[[discord.Interaction, Union[discord.Member, discord.User]], Coroutine[Any, Any, Any]]
-    ]], discord.app_commands.ContextMenu]:
+        Callable[[Interaction, Member], Coroutine[Any, Any, Any]],
+        Callable[[Interaction, User], Coroutine[Any, Any, Any]],
+        Callable[[Interaction, Message], Coroutine[Any, Any, Any]],
+        Callable[[Interaction, Union[Member, User]], Coroutine[Any, Any, Any]]
+    ]], ContextMenu]:
+    """Decorator for a context menu command that is added/removed together with the plugin."""
     def decorator(fun: Union[
-        Callable[[discord.Interaction, discord.Member], Coroutine[Any, Any, Any]],
-        Callable[[discord.Interaction, discord.User], Coroutine[Any, Any, Any]],
-        Callable[[discord.Interaction, discord.Message], Coroutine[Any, Any, Any]],
-        Callable[[discord.Interaction, Union[discord.Member, discord.User]], Coroutine[Any, Any, Any]]]
-        ) -> discord.app_commands.ContextMenu:
+        Callable[[Interaction, Member], Coroutine[Any, Any, Any]],
+        Callable[[Interaction, User], Coroutine[Any, Any, Any]],
+        Callable[[Interaction, Message], Coroutine[Any, Any, Any]],
+        Callable[[Interaction, Union[Member, User]], Coroutine[Any, Any, Any]]]
+        ) -> ContextMenu:
         cmd = discord.app_commands.context_menu(name=name)(fun)
 
-        bot.client.client.tree.add_command(cmd)
+        client.tree.add_command(cmd)
         sync_required.set()
         def finalizer():
-            bot.client.client.tree.remove_command(cmd.name)
+            client.tree.remove_command(cmd.name)
             sync_required.set()
         plugins.finalizer(finalizer)
 
         return cmd
     return decorator
 
-V = TypeVar("V", bound=discord.ui.View)
+V = TypeVar("V", bound=View)
 
 def persistent_view(view: V) -> V:
+    """Declare a given view as persistent (for as long as the plugin is loaded)."""
     assert view.is_persistent()
-    bot.client.client.add_view(view)
+    client.add_view(view)
     def finalizer():
         view.stop()
     plugins.finalizer(finalizer)

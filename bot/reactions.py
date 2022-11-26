@@ -1,17 +1,20 @@
+"""Utilities for waiting for Discord reactions."""
 from __future__ import annotations
 
 import asyncio
 from typing import (Any, AsyncIterator, Callable, ContextManager, Dict, Generic, Literal, Optional, Tuple, TypeVar,
     Union, cast, overload)
-import weakref
+from weakref import WeakSet
 
 import discord
-import discord.ext.commands
+from discord import (Emoji, Message, PartialEmoji, RawReactionActionEvent, RawReactionClearEmojiEvent,
+    RawReactionClearEvent)
+from discord.abc import Snowflake
+from discord.ext.commands import Cog
 
-import bot.client
-import bot.cogs
+from bot.client import client
+from bot.cogs import cog
 import util.asyncio
-import util.discord
 
 T = TypeVar("T")
 
@@ -33,12 +36,24 @@ class FilteredQueue(asyncio.Queue[T], Generic[T]):
         if self.filter(value):
             return super().put_nowait(value)
 
-ReactionEvent = Union[discord.RawReactionActionEvent, discord.RawReactionClearEvent, discord.RawReactionClearEmojiEvent]
+ReactionEvent = Union[RawReactionActionEvent, RawReactionClearEvent, RawReactionClearEmojiEvent]
 
-reaction_queues: weakref.WeakSet[FilteredQueue[Union[BaseException, Tuple[str, ReactionEvent]]]]
-reaction_queues = weakref.WeakSet()
+reaction_queues: WeakSet[FilteredQueue[Union[BaseException, Tuple[str, ReactionEvent]]]]
+reaction_queues = WeakSet()
 
 class ReactionMonitor(ContextManager['ReactionMonitor[T]'], Generic[T]):
+    """
+    A reaction monitor waits for reaction events matching particular rules, or until specified timeouts expire. Example
+    use-case:
+
+        try:
+            with ReactionMonitor(event="add", message_id=..., timeout_each=120, timeout_total=300) as mon:
+                ev, payload = await mon
+                # ev = "add"
+                # payload: RawReactionActionEvent
+        except asyncio.TimeoutError:
+            # either 2 minutes have passed since most recent reaction, or 5 minutes have passed in total
+    """
     __slots__ = ("loop", "queue", "end_time", "timeout_each")
     loop: asyncio.AbstractEventLoop
     queue: FilteredQueue[Union[BaseException, Tuple[str, ReactionEvent]]]
@@ -46,37 +61,37 @@ class ReactionMonitor(ContextManager['ReactionMonitor[T]'], Generic[T]):
     timeout_each: Optional[float]
 
     @overload
-    def __init__(self: ReactionMonitor[discord.RawReactionActionEvent], *, event: Literal["add", "remove"],
-        filter: Optional[Callable[[str, discord.RawReactionActionEvent], bool]] = None,
+    def __init__(self: ReactionMonitor[RawReactionActionEvent], *, event: Literal["add", "remove"],
+        filter: Optional[Callable[[str, RawReactionActionEvent], bool]] = None,
         guild_id: Optional[int] = None, channel_id: Optional[int] = None, message_id: Optional[int] = None,
-        author_id: Optional[int] = None, emoji: Optional[Union[discord.PartialEmoji, discord.Emoji, str, int]] = None,
+        author_id: Optional[int] = None, emoji: Optional[Union[PartialEmoji, Emoji, str, int]] = None,
         loop: Optional[asyncio.AbstractEventLoop] = None, timeout_each: Optional[float] = None,
         timeout_total: Optional[float] = None): ...
     @overload
-    def __init__(self: ReactionMonitor[discord.RawReactionClearEvent], *, event: Literal["clear"],
-        filter: Optional[Callable[[str, discord.RawReactionClearEvent], bool]] = None,
+    def __init__(self: ReactionMonitor[RawReactionClearEvent], *, event: Literal["clear"],
+        filter: Optional[Callable[[str, RawReactionClearEvent], bool]] = None,
         guild_id: Optional[int] = None, channel_id: Optional[int] = None, message_id: Optional[int] = None,
-        author_id: Optional[int] = None, emoji: Optional[Union[discord.PartialEmoji, discord.Emoji, str, int]] = None,
+        author_id: Optional[int] = None, emoji: Optional[Union[PartialEmoji, Emoji, str, int]] = None,
         loop: Optional[asyncio.AbstractEventLoop] = None, timeout_each: Optional[float] = None,
         timeout_total: Optional[float] = None): ...
     @overload
-    def __init__(self: ReactionMonitor[discord.RawReactionClearEmojiEvent], *, event: Literal["clear_emoji"],
-        filter: Optional[Callable[[str, discord.RawReactionClearEmojiEvent], bool]] = None,
+    def __init__(self: ReactionMonitor[RawReactionClearEmojiEvent], *, event: Literal["clear_emoji"],
+        filter: Optional[Callable[[str, RawReactionClearEmojiEvent], bool]] = None,
         guild_id: Optional[int] = None, channel_id: Optional[int] = None, message_id: Optional[int] = None,
-        author_id: Optional[int] = None, emoji: Optional[Union[discord.PartialEmoji, discord.Emoji, str, int]] = None,
+        author_id: Optional[int] = None, emoji: Optional[Union[PartialEmoji, Emoji, str, int]] = None,
         loop: Optional[asyncio.AbstractEventLoop] = None, timeout_each: Optional[float] = None,
         timeout_total: Optional[float] = None): ...
     @overload
     def __init__(self: ReactionMonitor[ReactionEvent], *, event: None = None,
         filter: Optional[Callable[[str, ReactionEvent], bool]] = None,
         guild_id: Optional[int] = None, channel_id: Optional[int] = None, message_id: Optional[int] = None,
-        author_id: Optional[int] = None, emoji: Optional[Union[discord.PartialEmoji, discord.Emoji, str, int]] = None,
+        author_id: Optional[int] = None, emoji: Optional[Union[PartialEmoji, Emoji, str, int]] = None,
         loop: Optional[asyncio.AbstractEventLoop] = None, timeout_each: Optional[float] = None,
         timeout_total: Optional[float] = None): ...
     def __init__(self: ReactionMonitor[Any], *, event: Optional[str] = None,
         filter: Optional[Callable[[str, Any], bool]] = None,
         guild_id: Optional[int] = None, channel_id: Optional[int] = None, message_id: Optional[int] = None,
-        author_id: Optional[int] = None, emoji: Optional[Union[discord.PartialEmoji, discord.Emoji, str, int]] = None,
+        author_id: Optional[int] = None, emoji: Optional[Union[PartialEmoji, Emoji, str, int]] = None,
         loop: Optional[asyncio.AbstractEventLoop] = None, timeout_each: Optional[float] = None,
         timeout_total: Optional[float] = None):
 
@@ -156,25 +171,25 @@ def deliver_event(ev: str, payload: ReactionEvent) -> None:
             raise
     cont_deliver()
 
-@bot.cogs.cog
-class Reactions(discord.ext.commands.Cog):
-    @discord.ext.commands.Cog.listener()
-    async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent) -> None:
+@cog
+class Reactions(Cog):
+    @Cog.listener()
+    async def on_raw_reaction_add(self, payload: RawReactionActionEvent) -> None:
         deliver_event("add", payload)
 
-    @discord.ext.commands.Cog.listener()
-    async def on_raw_reaction_remove(self, payload: discord.RawReactionActionEvent) -> None:
+    @Cog.listener()
+    async def on_raw_reaction_remove(self, payload: RawReactionActionEvent) -> None:
         deliver_event("remove", payload)
 
-    @discord.ext.commands.Cog.listener()
-    async def on_raw_reaction_clear(self, payload: discord.RawReactionClearEvent) -> None:
+    @Cog.listener()
+    async def on_raw_reaction_clear(self, payload: RawReactionClearEvent) -> None:
         deliver_event("clear", payload)
 
-    @discord.ext.commands.Cog.listener()
-    async def on_raw_reaction_clear_emoji(self, payload: discord.RawReactionClearEmojiEvent) -> None:
+    @Cog.listener()
+    async def on_raw_reaction_clear_emoji(self, payload: RawReactionClearEmojiEvent) -> None:
         deliver_event("clear_emoji", payload)
 
-def emoji_key(emoji: Union[discord.Emoji, discord.PartialEmoji, str]) -> Union[str, int]:
+def emoji_key(emoji: Union[Emoji, PartialEmoji, str]) -> Union[str, int]:
     if isinstance(emoji, str):
         return emoji
     elif emoji.id is None:
@@ -182,10 +197,14 @@ def emoji_key(emoji: Union[discord.Emoji, discord.PartialEmoji, str]) -> Union[s
     else:
         return emoji.id
 
-async def get_reaction(msg: discord.Message, user: discord.abc.Snowflake,
-    reactions: Dict[Union[discord.Emoji, discord.PartialEmoji, str], T], *,
+async def get_reaction(msg: Message, user: Snowflake, reactions: Dict[Union[Emoji, PartialEmoji, str], T], *,
     timeout: Optional[float] = None, unreact: bool = True) -> Optional[T]:
-    assert bot.client.client.user is not None
+    """
+    Offer a set of reactions on a given message, each corresponding to a given return value, and wait for the given user
+    to react on any one of them, or until timeout is reached, in which case None is returned. If unreact=True, then all
+    reactions that were not selected by the user are removed afterwards.
+    """
+    assert client.user is not None
     reacts = {emoji_key(key): value for key, value in reactions.items()}
     with ReactionMonitor(channel_id=msg.channel.id, message_id=msg.id, author_id=user.id,
         event="add", filter=lambda _, p: emoji_key(p.emoji) in reacts, timeout_each=timeout) as mon:
@@ -199,16 +218,19 @@ async def get_reaction(msg: discord.Message, user: discord.abc.Snowflake,
             return None
     if unreact:
         try:
-            await asyncio.gather(*(msg.remove_reaction(key, bot.client.client.user)
+            await asyncio.gather(*(msg.remove_reaction(key, client.user)
                 for key in reactions if emoji_key(key) != emoji_key(payload.emoji)))
         except (discord.NotFound, discord.Forbidden):
             pass
     return reacts.get(emoji_key(payload.emoji))
 
-async def get_input(msg: discord.Message, user: discord.abc.Snowflake,
-    reactions: Dict[Union[discord.Emoji, discord.PartialEmoji, str], T], *,
-    timeout: Optional[float] = None, unreact: bool = True) -> Optional[Union[T, discord.Message]]:
-    assert bot.client.client.user is not None
+async def get_input(msg: Message, user: Snowflake, reactions: Dict[Union[Emoji, PartialEmoji, str], T], *,
+    timeout: Optional[float] = None, unreact: bool = True) -> Optional[Union[T, Message]]:
+    """
+    Offer a set of reactions on a given message a-la get_reaction, and wait until the user either reacts or responds
+    with a message.
+    """
+    assert client.user is not None
     reacts = {emoji_key(key): value for key, value in reactions.items()}
     with ReactionMonitor(channel_id=msg.channel.id, message_id=msg.id, author_id=user.id,
         event="add", filter=lambda _, p: emoji_key(p.emoji) in reacts, timeout_each=timeout) as mon:
@@ -216,7 +238,7 @@ async def get_input(msg: discord.Message, user: discord.abc.Snowflake,
             await asyncio.gather(*(msg.add_reaction(key) for key in reactions))
         except (discord.NotFound, discord.Forbidden):
             pass
-        msg_task = asyncio.create_task(bot.client.client.wait_for("message",
+        msg_task = asyncio.create_task(client.wait_for("message",
             check=lambda m: m.channel == msg.channel and m.author.id == user.id))
         reaction_task = asyncio.ensure_future(mon)
         try:
@@ -228,7 +250,7 @@ async def get_input(msg: discord.Message, user: discord.abc.Snowflake,
         reaction_task.cancel()
         if unreact:
             try:
-                await asyncio.gather(*(msg.remove_reaction(key, bot.client.client.user) for key in reactions))
+                await asyncio.gather(*(msg.remove_reaction(key, client.user) for key in reactions))
             except (discord.NotFound, discord.Forbidden):
                 pass
         return msg_task.result()
@@ -237,7 +259,7 @@ async def get_input(msg: discord.Message, user: discord.abc.Snowflake,
         _, payload = reaction_task.result()
         if unreact:
             try:
-                await asyncio.gather(*(msg.remove_reaction(key, bot.client.client.user)
+                await asyncio.gather(*(msg.remove_reaction(key, client.user)
                     for key in reactions if emoji_key(key) != emoji_key(payload.emoji)))
             except (discord.NotFound, discord.Forbidden):
                 pass

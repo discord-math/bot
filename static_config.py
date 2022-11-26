@@ -6,11 +6,11 @@ execution of the bot. This module implements __getattr__ so that you could write
     static_config.foo["bar"]
 """
 
-import configparser
+from configparser import ConfigParser, SectionProxy
 
-config_file: str = "bot.conf"
+config_file = "bot.conf"
 
-config: configparser.ConfigParser = configparser.ConfigParser()
+config= ConfigParser()
 config.read(config_file, encoding="utf")
 
 def writeback() -> None:
@@ -18,7 +18,7 @@ def writeback() -> None:
     with open(config_file, "w", encoding="utf") as f:
         config.write(f)
 
-def __getattr__(name: str) -> configparser.SectionProxy:
+def __getattr__(name: str) -> SectionProxy:
     try:
         return config[name]
     except KeyError as exc:

@@ -5,16 +5,20 @@ probably have its own DB handling code.
 """
 
 from __future__ import annotations
+
 import asyncio
-import asyncpg
 import contextlib
 import json
-import weakref
-from typing import Optional, Dict, Iterator, AsyncIterator, Tuple, Set, Sequence, Union, Any, cast
+from typing import (Any, AsyncIterator, Dict, Iterator, Optional, Sequence,
+    Set, Tuple, Union, cast)
+from weakref import WeakValueDictionary
+
+import asyncpg
+
 import util.asyncio
 import util.db as util_db
-import util.frozen_list
-import util.frozen_dict
+from util.frozen_dict import FrozenDict
+from util.frozen_list import FrozenList
 
 schema_initialized = False
 
@@ -34,20 +38,18 @@ async def init_schema() -> None:
 
 def json_freeze(value: Optional[Any]) -> Optional[Any]:
     if isinstance(value, list):
-        return util.frozen_list.FrozenList(
-            json_freeze(v) for v in value)
+        return FrozenList(json_freeze(v) for v in value)
     elif isinstance(value, dict):
-        return util.frozen_dict.FrozenDict(
-            (k, json_freeze(v)) for k, v in value.items())
+        return FrozenDict((k, json_freeze(v)) for k, v in value.items())
     else:
         return value
 
 class ThawingJSONEncoder(json.JSONEncoder):
     __slots__ = ()
     def default(self, obj: Any) -> Any:
-        if isinstance(obj, util.frozen_list.FrozenList):
+        if isinstance(obj, FrozenList):
             return obj.copy()
-        elif isinstance(obj, util.frozen_dict.FrozenDict):
+        elif isinstance(obj, FrozenDict):
             return obj.copy()
         else:
             return super().default(obj)
@@ -138,8 +140,8 @@ class ConfigStore(Dict[Tuple[str, ...], str]):
         super().__init__(*args, **kwargs)
         self.ready = asyncio.Event()
 
-config_stores: weakref.WeakValueDictionary[str, ConfigStore]
-config_stores = weakref.WeakValueDictionary()
+config_stores: WeakValueDictionary[str, ConfigStore]
+config_stores = WeakValueDictionary()
 
 KeyType = Union[str, int, Sequence[Union[str, int]]]
 

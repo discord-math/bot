@@ -6,22 +6,22 @@ from typing import Awaitable, Iterable, List, Optional, Protocol, Set, Union, ca
 
 import aiohttp
 
-import bot.commands
-import bot.privileges
-import bot.reactions
+from bot.commands import Context, group
+from bot.privileges import priv
+from bot.reactions import get_input
 import plugins
 import util.db.kv
-import util.discord
-import util.frozen_list
+from util.discord import CodeBlock, Inline, Quoted, format
+from util.frozen_list import FrozenList
 
 class PhishConf(Awaitable[None], Protocol):
     api: str
     identity: str
     submit_url: str
     submit_token: str
-    resolve_domains: util.frozen_list.FrozenList[str]
-    local_blacklist: util.frozen_list.FrozenList[str]
-    local_whitelist: util.frozen_list.FrozenList[str]
+    resolve_domains: FrozenList[str]
+    local_blacklist: FrozenList[str]
+    local_whitelist: FrozenList[str]
 
 conf: PhishConf
 logger = logging.getLogger(__name__)
@@ -71,8 +71,8 @@ async def watch_websocket() -> None:
                                 local_whitelist -= new_domains
                                 update_conf = True
                         if update_conf:
-                            conf.local_blacklist = util.frozen_list.FrozenList(local_blacklist)
-                            conf.local_whitelist = util.frozen_list.FrozenList(local_whitelist)
+                            conf.local_blacklist = FrozenList(local_blacklist)
+                            conf.local_whitelist = FrozenList(local_whitelist)
                             await conf
                     elif msg.type == aiohttp.WSMsgType.CLOSED:
                         break
@@ -119,9 +119,9 @@ async def resolve_link(link: str) -> Optional[str]:
         pass
     return None
 
-@bot.commands.group("phish")
-@bot.privileges.priv("mod")
-async def phish_command(ctx: bot.commands.Context) -> None:
+@group("phish")
+@priv("mod")
+async def phish_command(ctx: Context) -> None:
     """Manage the phishing domain list."""
     pass
 
@@ -132,28 +132,28 @@ def link_to_domain(link: str) -> str:
         return link.strip()
 
 @phish_command.command("check")
-async def phish_check(ctx: bot.commands.Context, *,
-    link: Union[util.discord.CodeBlock, util.discord.Inline, util.discord.Quoted]) -> None:
+async def phish_check(ctx: Context, *,
+    link: Union[CodeBlock, Inline, Quoted]) -> None:
     """Check a link against the domain list."""
     domain = link_to_domain(link.text)
     checks = domain_checks(domain)
     output = []
     for check in checks:
         if check in local_whitelist:
-            output.append(util.discord.format("{!i} is listed locally as safe.", check))
+            output.append(format("{!i} is listed locally as safe.", check))
     for check in checks:
         if check in local_blacklist:
-            output.append(util.discord.format("{!i} is listed locally as malicious.", check))
+            output.append(format("{!i} is listed locally as malicious.", check))
     for check in checks:
         if check in domains:
-            output.append(util.discord.format("{!i} appears in the malicious domain list.", check))
+            output.append(format("{!i} appears in the malicious domain list.", check))
     if len(output) == 0:
         output.append("The domain is not listed anywhere.")
     await ctx.send("\n".join(output))
 
 @phish_command.command("add")
-async def phish_add(ctx: bot.commands.Context, *,
-    link: Union[util.discord.CodeBlock, util.discord.Inline, util.discord.Quoted]) -> None:
+async def phish_add(ctx: Context, *,
+    link: Union[CodeBlock, Inline, Quoted]) -> None:
     """Locally mark a domain as malicious."""
     domain = link_to_domain(link.text)
     checks = domain_checks(domain)
@@ -162,19 +162,19 @@ async def phish_add(ctx: bot.commands.Context, *,
     for check in checks:
         if check in local_whitelist:
             local_whitelist.remove(check)
-            conf.local_whitelist = util.frozen_list.FrozenList(local_whitelist)
-            output.append(util.discord.format("{!i} is no longer locally marked as safe.", check))
+            conf.local_whitelist = FrozenList(local_whitelist)
+            output.append(format("{!i} is no longer locally marked as safe.", check))
     for check in checks:
         if check in local_blacklist:
-            output.append(util.discord.format("{!i} is already listed locally as malicious.", check))
+            output.append(format("{!i} is already listed locally as malicious.", check))
     if not any(check in local_blacklist for check in checks):
         for check in checks:
             if check in domains:
-                output.append(util.discord.format("{!i} already appears in the malicious domain list.", check))
+                output.append(format("{!i} already appears in the malicious domain list.", check))
         if not any(check in domains for check in checks):
             local_blacklist.add(domain)
-            conf.local_blacklist = util.frozen_list.FrozenList(local_blacklist)
-            output.append(util.discord.format(
+            conf.local_blacklist = FrozenList(local_blacklist)
+            output.append(format(
                 "{!i} is now marked locally as malicious. Submitting {!i} to the phishing database, "
                 "please input a reason (e.g. \"nitro scam\", \u274C to cancel):", domain, link.text))
             do_submit = True
@@ -182,14 +182,14 @@ async def phish_add(ctx: bot.commands.Context, *,
     msg = await ctx.send("\n".join(output))
 
     if do_submit:
-        reason = await bot.reactions.get_input(msg, ctx.author, {"\u274C": None}, timeout=300)
+        reason = await get_input(msg, ctx.author, {"\u274C": None}, timeout=300)
         if reason is not None:
-            result = await submit_link(link.text, util.discord.format("{!m}: {}", ctx.author, reason.content))
-            await ctx.send(util.discord.format("{!i}", result))
+            result = await submit_link(link.text, format("{!m}: {}", ctx.author, reason.content))
+            await ctx.send(format("{!i}", result))
 
 @phish_command.command("remove")
-async def phish_remove(ctx: bot.commands.Context, *,
-    link: Union[util.discord.CodeBlock, util.discord.Inline, util.discord.Quoted]) -> None:
+async def phish_remove(ctx: Context, *,
+    link: Union[CodeBlock, Inline, Quoted]) -> None:
     """Locally mark a domain as safe."""
     domain = link_to_domain(link.text)
     checks = domain_checks(domain)
@@ -197,21 +197,21 @@ async def phish_remove(ctx: bot.commands.Context, *,
     for check in checks:
         if check in local_blacklist:
             local_blacklist.remove(check)
-            conf.local_blacklist = util.frozen_list.FrozenList(local_blacklist)
-            output.append(util.discord.format("{!i} is no longer locally marked as malicious.", check))
+            conf.local_blacklist = FrozenList(local_blacklist)
+            output.append(format("{!i} is no longer locally marked as malicious.", check))
     for check in checks:
         if check in local_whitelist:
-            output.append(util.discord.format("{!i} is already listed locally as safe.", check))
+            output.append(format("{!i} is already listed locally as safe.", check))
     if not any(check in local_whitelist for check in checks):
         for check in checks:
             if check in domains:
-                output.append(util.discord.format("{!i} appears in the malicious domain list.", check))
+                output.append(format("{!i} appears in the malicious domain list.", check))
         if any(check in domains for check in checks):
             local_whitelist.add(domain)
-            conf.local_whitelist = util.frozen_list.FrozenList(local_whitelist)
-            output.append(util.discord.format("{!i} is now marked locally as safe.", domain))
+            conf.local_whitelist = FrozenList(local_whitelist)
+            output.append(format("{!i} is now marked locally as safe.", domain))
         else:
-            output.append(util.discord.format("{!i} does not appear in the malicious domain list.", domain))
+            output.append(format("{!i} does not appear in the malicious domain list.", domain))
     await conf
     await ctx.send("\n".join(output))
 
@@ -230,7 +230,7 @@ async def init() -> None:
     domains = set(await get_all_domains())
     if domains & local_blacklist:
         local_blacklist -= domains
-        conf.local_blacklist = util.frozen_list.FrozenList(local_blacklist)
+        conf.local_blacklist = FrozenList(local_blacklist)
     await conf
     ws_task = asyncio.create_task(watch_websocket())
     plugins.finalizer(ws_task.cancel)

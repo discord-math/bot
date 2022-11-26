@@ -1,5 +1,7 @@
 from __future__ import annotations
-from typing import Any, Dict, Tuple, Iterator, Optional, Iterable, Union, Generic, TypeVar, overload
+
+from typing import (Any, Dict, Generic, Iterable, Iterator, Optional, Tuple,
+    TypeVar, Union, overload)
 
 K = TypeVar("K")
 V = TypeVar("V", covariant=True)

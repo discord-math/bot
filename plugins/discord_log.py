@@ -1,18 +1,17 @@
 import asyncio
-import io
+from io import BytesIO
 import logging
 import sys
-import threading
-import types
+from threading import Lock
+from types import FrameType
 from typing import List, Optional, Protocol, cast
 
-import discord
+from discord import Client, File
 
-import bot.client
+from bot.client import client
 import plugins
-import util.asyncio
 import util.db.kv
-import util.discord
+from util.discord import ChannelById, format
 
 class LoggingConf(Protocol):
     channel: Optional[str]
@@ -23,11 +22,11 @@ logger: logging.Logger = logging.getLogger(__name__)
 class DiscordHandler(logging.Handler):
     __slots__ = "queue", "lock"
     queue: List[str]
-    lock: threading.Lock
+    lock: Lock
 
     def __init__(self, level: int = logging.NOTSET):
         self.queue = []
-        self.lock = threading.Lock() # just in case
+        self.lock = Lock() # just in case
         return super().__init__(level)
 
     def queue_pop(self) -> Optional[str]:
@@ -36,24 +35,24 @@ class DiscordHandler(logging.Handler):
                 return None
             return self.queue.pop(0)
 
-    async def log_discord(self, chan_id: int, client: discord.Client) -> None:
+    async def log_discord(self, chan_id: int, client: Client) -> None:
         try:
             message = ""
             while (text := self.queue_pop()) is not None:
-                codeblock = util.discord.format("{!b:py}", text)
+                codeblock = format("{!b:py}", text)
                 if len(message) + len(codeblock) > 2000:
                     if len(message) > 0:
-                        await util.discord.ChannelById(client, chan_id).send(message)
+                        await ChannelById(client, chan_id).send(message)
                     if len(codeblock) > 2000:
-                        await util.discord.ChannelById(client, chan_id).send(
-                            file=discord.File(io.BytesIO(text.encode("utf8")), filename="log.txt"))
+                        await ChannelById(client, chan_id).send(
+                            file=File(BytesIO(text.encode("utf8")), filename="log.txt"))
                         message = ""
                     else:
                         message = codeblock
                 else:
                     message += codeblock
             if len(message) > 0:
-                await util.discord.ChannelById(client, chan_id).send(message)
+                await ChannelById(client, chan_id).send(message)
         except:
             logger.critical("Could not report exception to Discord", exc_info=True, extra={"no_discord": True})
 
@@ -73,7 +72,6 @@ class DiscordHandler(logging.Handler):
         except ValueError:
             return
 
-        client = bot.client.client
         if client.is_closed():
             return
 
@@ -81,7 +79,7 @@ class DiscordHandler(logging.Handler):
 
         # Check the traceback for whether we are nested inside log_discord,
         # as a last resort measure
-        frame: Optional[types.FrameType] = sys._getframe()
+        frame: Optional[FrameType] = sys._getframe()
         while frame:
             if frame.f_code == self.log_discord.__code__:
                 del frame
@@ -94,7 +92,7 @@ class DiscordHandler(logging.Handler):
                 self.queue.append(text)
             else:
                 self.queue.append(text)
-                util.asyncio.run_async(self.log_discord, chan_id, client)
+                asyncio.create_task(self.log_discord(chan_id, client), name="Logging to Discord")
 
 @plugins.init
 async def init() -> None:

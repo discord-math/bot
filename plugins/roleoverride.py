@@ -1,16 +1,15 @@
 from typing import Optional, Protocol, cast
 
-import discord
-import discord.ext.commands
+from discord import Member
+from discord.ext.commands import Cog
 
-import bot.cogs
+from bot.cogs import cog
 import plugins
 import util.db.kv
-import util.discord
-import util.frozen_list
+from util.frozen_list import FrozenList
 
 class RoleOverrideConf(Protocol):
-    def __getitem__(self, id: int) -> Optional[util.frozen_list.FrozenList[int]]: ...
+    def __getitem__(self, id: int) -> Optional[FrozenList[int]]: ...
     def __contains__(self, id: int) -> bool: ...
 
 conf: RoleOverrideConf
@@ -20,10 +19,10 @@ async def init() -> None:
     global conf
     conf = cast(RoleOverrideConf, await util.db.kv.load(__name__))
 
-@bot.cogs.cog
-class RoleOverride(discord.ext.commands.Cog):
-    @discord.ext.commands.Cog.listener()
-    async def on_member_update(self, before: discord.Member, after: discord.Member) -> None:
+@cog
+class RoleOverride(Cog):
+    @Cog.listener()
+    async def on_member_update(self, before: Member, after: Member) -> None:
         removed = set()
         for role in after.roles:
             if (masked := conf[role.id]) is not None:

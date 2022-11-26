@@ -1,8 +1,9 @@
 import logging
 import logging.handlers
 import time
+from typing import Any, Callable, List, Optional, TextIO, Tuple, Type, Union
 import warnings
-from typing import List, Tuple, TextIO, Any, Union, Optional, Callable, Type
+
 import static_config
 
 logging.basicConfig(handlers=[], force=True)

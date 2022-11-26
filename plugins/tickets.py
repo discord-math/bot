@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
-import datetime
+from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 import enum
 import logging
 import re
@@ -10,24 +10,29 @@ from typing import (TYPE_CHECKING, Any, AsyncIterator, Awaitable, Callable, Dict
     Optional, Protocol, Sequence, Set, Tuple, Type, TypeVar, Union, cast)
 
 import discord
-import discord.abc
-import discord.ext.commands
+from discord import (AllowedMentions, AuditLogAction, AuditLogEntry, ChannelType, Embed, Member, Message,
+    MessageReference, Object, PartialMessage, TextChannel, Thread, User, VoiceState)
+from discord.abc import Messageable
+from discord.ext.commands import Cog, command, group
 import sqlalchemy
-import sqlalchemy.ext.asyncio
+from sqlalchemy import TEXT, TIMESTAMP, BigInteger, Column, Integer, MetaData, Table, func, select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 import sqlalchemy.orm
+from sqlalchemy.orm import Mapped, joinedload, mapped_column, relationship
+from sqlalchemy.schema import DDL, CreateSchema
 
-import bot.client
-import bot.cogs
+from bot.client import client
+from bot.cogs import cog
 import bot.commands
-import bot.privileges
-import bot.reactions
+from bot.commands import Context, cleanup
+from bot.privileges import priv
+from bot.reactions import ReactionMonitor, get_input
 import plugins
 import plugins.persistence
-import util.asyncio
 import util.db
 import util.db.kv
-import util.discord
-import util.frozen_list
+from util.discord import InvocationError, PartialUserConverter, UserError, format
+from util.frozen_list import FrozenList
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -60,12 +65,12 @@ time_expansion = {
 # ----------- Config -----------
 class TicketsConf(Awaitable[None], Protocol):
     guild: int # ID of the guild the ticket system is managing
-    tracked_roles: util.frozen_list.FrozenList[int] # List of roleids of tracked roles
+    tracked_roles: FrozenList[int] # List of roleids of tracked roles
     last_auditid: Optional[int] # ID of last audit event processed
     ticket_list: int # Channel id of the ticket list in the guild
     prompt_interval: int # How often to ping about delivered tickets
-    pending_unmutes: util.frozen_list.FrozenList[int] # List of users peding VC unmute
-    pending_undeafens: util.frozen_list.FrozenList[int] # List of users peding VC undeafen
+    pending_unmutes: FrozenList[int] # List of users peding VC unmute
+    pending_undeafens: FrozenList[int] # List of users peding VC undeafen
     audit_log_precision: float # How long to allow the audit log to catch up
     cleanup_delay: Optional[float] # How long to wait before cleaning up junk messages in the ticket list
 
@@ -85,7 +90,7 @@ registry: sqlalchemy.orm.registry = sqlalchemy.orm.registry()
 engine = util.db.create_async_engine()
 plugins.finalizer(engine.dispose)
 
-sessionmaker = sqlalchemy.ext.asyncio.async_sessionmaker(engine, future=True, expire_on_commit=False)
+sessionmaker = async_sessionmaker(engine, future=True, expire_on_commit=False)
 
 class TicketType(enum.Enum):
     """
@@ -122,31 +127,28 @@ class TicketStage(enum.Enum):
     DELIVERED = "Delivered"
     COMMENTED = "Commented"
 
-ModQueueView = sqlalchemy.Table("mod_queues", sqlalchemy.MetaData(),
-    sqlalchemy.Column("id", sqlalchemy.BigInteger), schema="tickets")
+ModQueueView = Table("mod_queues", MetaData(), Column("id", BigInteger), schema="tickets")
 
 @registry.mapped
 class TicketMod:
     __tablename__ = "mods"
     __table_args__ = {"schema": "tickets"}
-    modid: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger, primary_key=True,
-        autoincrement=False)
-    last_read_msgid: sqlalchemy.orm.Mapped[Optional[int]] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger)
-    scheduled_delivery: sqlalchemy.orm.Mapped[Optional[datetime.datetime]] = sqlalchemy.orm.mapped_column(
-        sqlalchemy.TIMESTAMP, nullable=True)
+    modid: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    last_read_msgid: Mapped[Optional[int]] = mapped_column(BigInteger)
+    scheduled_delivery: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP, nullable=True)
 
-    queue_top = sqlalchemy.orm.relationship(lambda: Ticket,
+    queue_top = relationship(lambda: Ticket,
             primaryjoin=lambda: sqlalchemy.and_(TicketMod.modid == Ticket.modid,
-                Ticket.id.in_(sqlalchemy.select(ModQueueView.columns.id))),
-        viewonly=True, uselist=False) # type: sqlalchemy.orm.Mapped[Optional[Ticket]]
+                Ticket.id.in_(select(ModQueueView.columns.id))),
+        viewonly=True, uselist=False) # type: Mapped[Optional[Ticket]]
         # needs to be refreshed whenever ticket.stage is updated
 
     if TYPE_CHECKING:
         def __init__(self, *, modid: int, last_read_msgid: Optional[int] = ...,
-            scheduled_delivery: Optional[datetime.datetime] = ...) -> None: ...
+            scheduled_delivery: Optional[datetime] = ...) -> None: ...
 
     @staticmethod
-    async def get(session: sqlalchemy.ext.asyncio.AsyncSession, modid: int) -> TicketMod:
+    async def get(session: AsyncSession, modid: int) -> TicketMod:
         """Get a TicketMod by id, or create if it doesn't exist"""
         mod: Optional[TicketMod] = await session.get(TicketMod, modid)
         if mod is None:
@@ -157,8 +159,8 @@ class TicketMod:
 
     async def load_queue(self) -> Optional[Ticket]:
         """Populate the queue_top field"""
-        await sqlalchemy.ext.asyncio.async_object_session(self).get(TicketMod, self.modid, # type: ignore
-            populate_existing=True, options=(sqlalchemy.orm.joinedload(TicketMod.queue_top),))
+        await async_object_session(self).get(TicketMod, self.modid, # type: ignore
+            populate_existing=True, options=(joinedload(TicketMod.queue_top),))
         return self.queue_top
 
     @staticmethod
@@ -180,13 +182,13 @@ class TicketMod:
         if ticket == await self.load_queue():
             if (msg := await ticket.get_delivery_message()) is not None:
                 try:
-                    await msg.channel.send(util.discord.format("Ticket #{} was taken by {!m}", ticket.id, modid))
+                    await msg.channel.send(format("Ticket #{} was taken by {!m}", ticket.id, modid))
                     await msg.delete()
                 except (discord.NotFound, discord.Forbidden):
                     pass
         ticket.modified_by = actorid
         ticket.delivered_id = None
-        new_mod = await TicketMod.get(sqlalchemy.ext.asyncio.async_object_session(self), modid) # type: ignore
+        new_mod = await TicketMod.get(async_object_session(self), modid) # type: ignore
         old_top = await new_mod.load_queue()
         ticket.mod = new_mod
         if ticket == await new_mod.load_queue():
@@ -202,14 +204,14 @@ class TicketMod:
             new_mod.scheduled_delivery = None
 
     async def try_initial_delivery(self, ticket: Ticket) -> None:
-        logger.debug(util.discord.format("Delivering Ticket #{} to {!m}", ticket.id, self.modid))
-        user = bot.client.client.get_user(self.modid)
+        logger.debug(format("Delivering Ticket #{} to {!m}", ticket.id, self.modid))
+        user = client.get_user(self.modid)
         if user is None:
             try:
-                user = await bot.client.client.fetch_user(self.modid)
+                user = await client.fetch_user(self.modid)
             except discord.NotFound:
-                logger.error(util.discord.format("Could not find {!m} to deliver Ticket #{}", self.modid, ticket.id))
-                self.scheduled_delivery = datetime.datetime.utcnow() + datetime.timedelta(seconds=conf.prompt_interval)
+                logger.error(format("Could not find {!m} to deliver Ticket #{}", self.modid, ticket.id))
+                self.scheduled_delivery = datetime.utcnow() + timedelta(seconds=conf.prompt_interval)
                 return
         try:
             msg = await user.send("Please comment on the following:", embed=ticket.to_embed(dm=True))
@@ -217,16 +219,16 @@ class TicketMod:
             return
         ticket.delivered_id = msg.id
         ticket.stage = TicketStage.DELIVERED
-        self.scheduled_delivery = datetime.datetime.utcnow() + datetime.timedelta(seconds=conf.prompt_interval)
+        self.scheduled_delivery = datetime.utcnow() + timedelta(seconds=conf.prompt_interval)
 
     async def try_redelivery(self, ticket: Ticket) -> None:
-        logger.debug(util.discord.format("Re-delivering Ticket #{} to {!m}", ticket.id, self.modid))
-        user = bot.client.client.get_user(self.modid)
+        logger.debug(format("Re-delivering Ticket #{} to {!m}", ticket.id, self.modid))
+        user = client.get_user(self.modid)
         if user is None:
             try:
-                user = await bot.client.client.fetch_user(self.modid)
+                user = await client.fetch_user(self.modid)
             except discord.NotFound:
-                logger.error(util.discord.format("Could not find {!m} to re-deliver Ticket #{}", self.modid, ticket.id))
+                logger.error(format("Could not find {!m} to re-deliver Ticket #{}", self.modid, ticket.id))
                 return
         if (msg := await ticket.get_delivery_message(user)) is not None:
             try:
@@ -239,7 +241,7 @@ class TicketMod:
             return
         ticket.delivered_id = msg.id
         ticket.stage = TicketStage.DELIVERED
-        self.scheduled_delivery = datetime.datetime.utcnow() + datetime.timedelta(seconds=conf.prompt_interval)
+        self.scheduled_delivery = datetime.utcnow() + timedelta(seconds=conf.prompt_interval)
 
     @staticmethod
     def parse_ticket_comment(ticket: Ticket, text: str) -> Tuple[Optional[int], str, str]:
@@ -267,15 +269,15 @@ class TicketMod:
                 msg += "Provided duration ignored since this ticket is no longer in effect."
                 duration = None
             else:
-                expiry = ticket.created_at + datetime.timedelta(seconds=duration)
-                now = datetime.datetime.utcnow()
+                expiry = ticket.created_at + timedelta(seconds=duration)
+                now = datetime.utcnow()
                 if expiry <= now:
                     msg += "Ticket will expire immediately!"
                 else:
                     msg += "Ticket will expire in {}.".format(str(expiry - now).split('.')[0])
         return duration, comment, msg
 
-    async def process_message(self, msg: discord.Message) -> None:
+    async def process_message(self, msg: Message) -> None:
         """
         Process a non-command message from the moderator.
         If there is a current active ticket, treat it as a comment.
@@ -284,7 +286,7 @@ class TicketMod:
         prefix = bot.commands.conf.prefix
         if not prefix or not msg.content.startswith(prefix):
             if (ticket := await self.load_queue()) is not None:
-                logger.debug(util.discord.format("Processing message from {!m} as comment to Ticket #{}: {!r}",
+                logger.debug(format("Processing message from {!m} as comment to Ticket #{}: {!r}",
                     self.modid, ticket.id, msg.content))
 
                 ticket.duration, ticket.comment, message = self.parse_ticket_comment(ticket, msg.content)
@@ -308,44 +310,42 @@ class Ticket:
     __allow_unmapped__ = True
     __tablename__ = "tickets"
     __table_args__ = {"schema": "tickets"}
-    id: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.Integer, primary_key=True)
-    type: sqlalchemy.orm.Mapped[TicketType] = sqlalchemy.orm.mapped_column(
-        sqlalchemy.Enum(TicketType, schema="tickets"), nullable=False)
-    stage: sqlalchemy.orm.Mapped[TicketStage] = sqlalchemy.orm.mapped_column(
-        sqlalchemy.Enum(TicketStage, schema="tickets"), nullable=False, default=TicketStage.NEW)
-    status: sqlalchemy.orm.Mapped[TicketStatus] = sqlalchemy.orm.mapped_column(
-        sqlalchemy.Enum(TicketStatus, schema="tickets"), nullable=False, default=TicketStatus.IN_EFFECT)
-    modid: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger,
-        sqlalchemy.ForeignKey(TicketMod.modid), nullable=False) # type: ignore
-    targetid: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger, nullable=False)
-    auditid: sqlalchemy.orm.Mapped[Optional[int]] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger)
-    duration: sqlalchemy.orm.Mapped[Optional[int]] = sqlalchemy.orm.mapped_column(sqlalchemy.Integer)
-    comment: sqlalchemy.orm.Mapped[Optional[str]] = sqlalchemy.orm.mapped_column(sqlalchemy.TEXT)
-    list_msgid: sqlalchemy.orm.Mapped[Optional[int]] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger)
-    delivered_id: sqlalchemy.orm.Mapped[Optional[int]] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger)
-    created_at: sqlalchemy.orm.Mapped[datetime.datetime] = sqlalchemy.orm.mapped_column(sqlalchemy.TIMESTAMP,
-        nullable=False, default=sqlalchemy.func.current_timestamp().op("AT TIME ZONE")("UTC"))
-    modified_by: sqlalchemy.orm.Mapped[Optional[int]] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    type: Mapped[TicketType] = mapped_column(sqlalchemy.Enum(TicketType, schema="tickets"), nullable=False)
+    stage: Mapped[TicketStage] = mapped_column(sqlalchemy.Enum(TicketStage, schema="tickets"), nullable=False,
+        default=TicketStage.NEW)
+    status: Mapped[TicketStatus] = mapped_column(sqlalchemy.Enum(TicketStatus, schema="tickets"), nullable=False,
+        default=TicketStatus.IN_EFFECT)
+    modid: Mapped[int] = mapped_column(BigInteger, ForeignKey(TicketMod.modid), nullable=False) # type: ignore
+    targetid: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    auditid: Mapped[Optional[int]] = mapped_column(BigInteger)
+    duration: Mapped[Optional[int]] = mapped_column(Integer)
+    comment: Mapped[Optional[str]] = mapped_column(TEXT)
+    list_msgid: Mapped[Optional[int]] = mapped_column(BigInteger)
+    delivered_id: Mapped[Optional[int]] = mapped_column(BigInteger)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False,
+        default=func.current_timestamp().op("AT TIME ZONE")("UTC"))
+    modified_by: Mapped[Optional[int]] = mapped_column(BigInteger)
 
-    mod: sqlalchemy.orm.Mapped[TicketMod] = sqlalchemy.orm.relationship(TicketMod, lazy="joined")
+    mod: Mapped[TicketMod] = relationship(TicketMod, lazy="joined")
     __mapper_args__ = {"polymorphic_on": type}
 
     # Does this ticket type support reverting
     can_revert: bool
 
     # Action triggering automatic ticket creation
-    trigger_action: Optional[discord.AuditLogAction] = None
+    trigger_action: Optional[AuditLogAction] = None
     # Action triggering automatic ticket reversal
-    revert_trigger_action: Optional[discord.AuditLogAction] = None
+    revert_trigger_action: Optional[AuditLogAction] = None
 
     @property
     def hidden(self) -> bool:
         return self.status == TicketStatus.HIDDEN
 
     @property
-    def expiry(self) -> Optional[datetime.datetime]:
+    def expiry(self) -> Optional[datetime]:
         if self.can_revert and self.duration is not None:
-            return self.created_at + datetime.timedelta(seconds=self.duration)
+            return self.created_at + timedelta(seconds=self.duration)
         return None
 
     @property
@@ -368,25 +368,25 @@ class Ticket:
             self.comment += "\n" + comment
 
     def to_summary(self, *, dm: bool = False) -> str:
-        return util.discord.format("[#{}]({}): {!m} {} ({})", self.id, self.jump_link, self.modid,
+        return format("[#{}]({}): {!m} {} ({})", self.id, self.jump_link, self.modid,
             self.describe(dm=dm), self.status_line)
 
-    def to_embed(self, *, dm: bool = False) -> discord.Embed:
+    def to_embed(self, *, dm: bool = False) -> Embed:
         """
         The discord embed describing this ticket.
         """
-        embed = discord.Embed(
+        embed = Embed(
             title="Ticket #{}".format(self.id),
             description="{} ({})\n{}".format(self.describe(dm=dm), self.status_line, self.comment or ""),
             timestamp=self.created_at)
-        embed.add_field(name="Moderator", value=util.discord.format("{!m}", self.modid))
+        embed.add_field(name="Moderator", value=format("{!m}", self.modid))
 
         if self.can_revert:
             if self.expiry is None:
                 embed.add_field(name="Permanent", value="\u200E")
             else:
-                timestamp = int(self.expiry.replace(tzinfo=datetime.timezone.utc).timestamp())
-                embed.add_field(name="Duration", value=str(datetime.timedelta(seconds=self.duration or 0)))
+                timestamp = int(self.expiry.replace(tzinfo=timezone.utc).timestamp())
+                embed.add_field(name="Duration", value=str(timedelta(seconds=self.duration or 0)))
                 embed.add_field(name="Expires", value="<t:{}:f>, <t:{}:R>".format(timestamp, timestamp))
         return embed
 
@@ -404,8 +404,8 @@ class Ticket:
 
         # Post to or update the ticket list
         if conf.ticket_list:
-            channel = bot.client.client.get_channel(conf.ticket_list)
-            if isinstance(channel, (discord.TextChannel, discord.Thread)):
+            channel = client.get_channel(conf.ticket_list)
+            if isinstance(channel, (TextChannel, Thread)):
                 message = None
                 if self.list_msgid is not None:
                     try:
@@ -435,8 +435,8 @@ class Ticket:
         await self.mod.ticket_updated(self)
 
     @staticmethod
-    @contextlib.asynccontextmanager
-    async def publish_all(session: sqlalchemy.ext.asyncio.AsyncSession) -> AsyncIterator[None]:
+    @asynccontextmanager
+    async def publish_all(session: AsyncSession) -> AsyncIterator[None]:
         """
         When entering, we save the list of all tickets that have been modified in this session. Presumably a commit
         happens after. When exiting we publish all those tickets. This can modify TicketMods so another commit might
@@ -454,16 +454,14 @@ class Ticket:
             await ticket.publish()
 
     @staticmethod
-    async def create_from_audit(session: sqlalchemy.ext.asyncio.AsyncSession, audit: discord.AuditLogEntry
-        ) -> Sequence[Ticket]:
+    async def create_from_audit(session: AsyncSession, audit: AuditLogEntry) -> Sequence[Ticket]:
         """
         If the audit log entry represents a mod action we care about, create a ticket and return it
         """
         return ()
 
     @staticmethod
-    async def revert_from_audit(session: sqlalchemy.ext.asyncio.AsyncSession, audit: discord.AuditLogEntry
-        ) -> Sequence[Ticket]:
+    async def revert_from_audit(session: AsyncSession, audit: AuditLogEntry) -> Sequence[Ticket]:
         """
         If the audit log entry represents any tickets we have, return the list of such tickets.
         """
@@ -512,14 +510,14 @@ class Ticket:
         if reason is not None:
             self.append_comment(reason)
 
-    async def get_delivery_message(self, user: Optional[discord.User] = None) -> Optional[discord.Message]:
+    async def get_delivery_message(self, user: Optional[User] = None) -> Optional[Message]:
         if self.delivered_id is None:
             return None
         if user is None:
-            user = bot.client.client.get_user(self.modid)
+            user = client.get_user(self.modid)
         if user is None:
             try:
-                user = await bot.client.client.fetch_user(self.modid)
+                user = await client.fetch_user(self.modid)
             except discord.NotFound:
                 return None
         try:
@@ -530,42 +528,35 @@ class Ticket:
 @registry.mapped
 class TicketHistory:
     __tablename__ = "history"
-    version: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.Integer)
-    last_modified_at: sqlalchemy.orm.Mapped[Optional[datetime.datetime]] = sqlalchemy.orm.mapped_column(
-        sqlalchemy.TIMESTAMP)
-    id: sqlalchemy.orm.Mapped[Optional[int]] = sqlalchemy.orm.mapped_column(sqlalchemy.Integer,
-        sqlalchemy.ForeignKey(Ticket.id, onupdate="CASCADE")) # type: ignore
-    type: sqlalchemy.orm.Mapped[Optional[TicketType]] = sqlalchemy.orm.mapped_column(
-        sqlalchemy.Enum(TicketType, schema="tickets"))
-    stage: sqlalchemy.orm.Mapped[Optional[TicketStage]] = sqlalchemy.orm.mapped_column(
-        sqlalchemy.Enum(TicketStage, schema="tickets"))
-    status: sqlalchemy.orm.Mapped[Optional[TicketStatus]] = sqlalchemy.orm.mapped_column(
-        sqlalchemy.Enum(TicketStatus, schema="tickets"))
-    modid: sqlalchemy.orm.Mapped[Optional[int]] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger)
-    targetid: sqlalchemy.orm.Mapped[Optional[int]] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger)
-    roleid: sqlalchemy.orm.Mapped[Optional[int]] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger)
-    auditid: sqlalchemy.orm.Mapped[Optional[int]] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger)
-    duration: sqlalchemy.orm.Mapped[Optional[int]] = sqlalchemy.orm.mapped_column(sqlalchemy.Integer)
-    comment: sqlalchemy.orm.Mapped[Optional[str]] = sqlalchemy.orm.mapped_column(sqlalchemy.TEXT)
-    list_msgid: sqlalchemy.orm.Mapped[Optional[int]] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger)
-    delivered_id: sqlalchemy.orm.Mapped[Optional[int]] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger)
-    created_at: sqlalchemy.orm.Mapped[datetime.datetime] = sqlalchemy.orm.mapped_column(sqlalchemy.TIMESTAMP)
-    modified_by: sqlalchemy.orm.Mapped[Optional[int]] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger)
-    __table_args__ = (sqlalchemy.PrimaryKeyConstraint(id, version), {"schema": "tickets"}) # type: ignore
+    version: Mapped[int] = mapped_column(Integer)
+    last_modified_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP)
+    id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey(Ticket.id, onupdate="CASCADE")) # type: ignore
+    type: Mapped[Optional[TicketType]] = mapped_column(sqlalchemy.Enum(TicketType, schema="tickets"))
+    stage: Mapped[Optional[TicketStage]] = mapped_column(sqlalchemy.Enum(TicketStage, schema="tickets"))
+    status: Mapped[Optional[TicketStatus]] = mapped_column(sqlalchemy.Enum(TicketStatus, schema="tickets"))
+    modid: Mapped[Optional[int]] = mapped_column(BigInteger)
+    targetid: Mapped[Optional[int]] = mapped_column(BigInteger)
+    roleid: Mapped[Optional[int]] = mapped_column(BigInteger)
+    auditid: Mapped[Optional[int]] = mapped_column(BigInteger)
+    duration: Mapped[Optional[int]] = mapped_column(Integer)
+    comment: Mapped[Optional[str]] = mapped_column(TEXT)
+    list_msgid: Mapped[Optional[int]] = mapped_column(BigInteger)
+    delivered_id: Mapped[Optional[int]] = mapped_column(BigInteger)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP)
+    modified_by: Mapped[Optional[int]] = mapped_column(BigInteger)
+    __table_args__ = (PrimaryKeyConstraint(id, version), {"schema": "tickets"}) # type: ignore
 
     @staticmethod
-    async def get(session: sqlalchemy.ext.asyncio.AsyncSession, id: int) -> List[TicketHistory]:
+    async def get(session: AsyncSession, id: int) -> List[TicketHistory]:
         """Get history of a ticket by id, in chronological order"""
-        stmt = sqlalchemy.select(TicketHistory).where(TicketHistory.id == id
+        stmt = select(TicketHistory).where(TicketHistory.id == id
             ).order_by(TicketHistory.version)
         return list((await session.execute(stmt)).scalars())
 
 
 # Map of audit actions to the associated handler methods.
-create_handlers: Dict[discord.AuditLogAction, List[Callable[[sqlalchemy.ext.asyncio.AsyncSession,
-    discord.AuditLogEntry], Awaitable[Sequence[Ticket]]]]] = {}
-revert_handlers: Dict[discord.AuditLogAction, List[Callable[[sqlalchemy.ext.asyncio.AsyncSession,
-    discord.AuditLogEntry], Awaitable[Sequence[Ticket]]]]] = {}
+create_handlers: Dict[AuditLogAction, List[Callable[[AsyncSession, AuditLogEntry], Awaitable[Sequence[Ticket]]]]] = {}
+revert_handlers: Dict[AuditLogAction, List[Callable[[AsyncSession, AuditLogEntry], Awaitable[Sequence[Ticket]]]]] = {}
 
 T = TypeVar("T", bound=Ticket)
 
@@ -586,7 +577,7 @@ class NoteTicket(Ticket):
         def __init__(self, *, mod: TicketMod, targetid: int, id: int = ..., stage: TicketStage = ...,
             status: TicketStatus = ..., auditid: Optional[int] = ..., duration: Optional[int] = ...,
             comment: Optional[str] = ..., list_msgid: Optional[int] = ..., delivered_id: Optional[int] = ...,
-            created_at: datetime.datetime = ..., modified_by: Optional[int] = ...) -> None: ...
+            created_at: datetime = ..., modified_by: Optional[int] = ...) -> None: ...
 
     can_revert = True
 
@@ -594,7 +585,7 @@ class NoteTicket(Ticket):
     revert_trigger_action = None
 
     def describe(self, *, dm: bool = False) -> str:
-        return util.discord.format("**Note** for {!m}", self.targetid)
+        return format("**Note** for {!m}", self.targetid)
 
     async def revert_action(self, reason: Optional[str] = None) -> None:
         pass
@@ -609,9 +600,8 @@ class NoteTicket(Ticket):
 
 blame_re: re.Pattern[str] = re.compile(r"^[^:]* by (\d+): (.*)$", re.I)
 
-async def audit_ticket_data(session: sqlalchemy.ext.asyncio.AsyncSession, audit: discord.AuditLogEntry
-    ) -> Dict[str, Any]:
-    assert isinstance(audit.target, (discord.User, discord.Member))
+async def audit_ticket_data(session: AsyncSession, audit: AuditLogEntry) -> Dict[str, Any]:
+    assert isinstance(audit.target, (User, Member))
     assert audit.user is not None
     mod_id = audit.user.id
     comment = audit.reason
@@ -642,19 +632,18 @@ class KickTicket(Ticket):
         def __init__(self, *, mod: TicketMod, targetid: int, id: int = ..., stage: TicketStage = ...,
             status: TicketStatus = ..., auditid: Optional[int] = ..., duration: Optional[int] = ...,
             comment: Optional[str] = ..., list_msgid: Optional[int] = ..., delivered_id: Optional[int] = ...,
-            created_at: datetime.datetime = ..., modified_by: Optional[int] = ...) -> None: ...
+            created_at: datetime = ..., modified_by: Optional[int] = ...) -> None: ...
 
     can_revert = False
 
-    trigger_action = discord.AuditLogAction.kick
+    trigger_action = AuditLogAction.kick
     revert_trigger_action = None
 
     def describe(self, *, dm: bool = False) -> str:
-        return util.discord.format("**Kicked** {!m}", self.targetid)
+        return format("**Kicked** {!m}", self.targetid)
 
     @staticmethod
-    async def create_from_audit(session: sqlalchemy.ext.asyncio.AsyncSession, audit: discord.AuditLogEntry
-        ) -> Sequence[Ticket]:
+    async def create_from_audit(session: AsyncSession, audit: AuditLogEntry) -> Sequence[Ticket]:
         return (KickTicket(**await audit_ticket_data(session, audit)),)
 
     async def hide(self, actorid: int, reason: Optional[str] = None) -> None:
@@ -673,35 +662,33 @@ class BanTicket(Ticket):
         def __init__(self, *, mod: TicketMod, targetid: int, id: int = ..., stage: TicketStage = ...,
             status: TicketStatus = ..., auditid: Optional[int] = ..., duration: Optional[int] = ...,
             comment: Optional[str] = ..., list_msgid: Optional[int] = ..., delivered_id: Optional[int] = ...,
-            created_at: datetime.datetime = ..., modified_by: Optional[int] = ...) -> None: ...
+            created_at: datetime = ..., modified_by: Optional[int] = ...) -> None: ...
 
     can_revert = True
 
-    trigger_action = discord.AuditLogAction.ban
-    revert_trigger_action = discord.AuditLogAction.unban
+    trigger_action = AuditLogAction.ban
+    revert_trigger_action = AuditLogAction.unban
 
     def describe(self, *, dm: bool = False) -> str:
-        return util.discord.format("**Banned** {!m}", self.targetid)
+        return format("**Banned** {!m}", self.targetid)
 
     @staticmethod
-    async def create_from_audit(session: sqlalchemy.ext.asyncio.AsyncSession, audit: discord.AuditLogEntry
-        ) -> Sequence[Ticket]:
-        assert isinstance(audit.target, (discord.User, discord.Member))
+    async def create_from_audit(session: AsyncSession, audit: AuditLogEntry) -> Sequence[Ticket]:
+        assert isinstance(audit.target, (User, Member))
         assert audit.user is not None
         return (BanTicket(**await audit_ticket_data(session, audit)),)
 
     @staticmethod
-    async def revert_from_audit(session: sqlalchemy.ext.asyncio.AsyncSession, audit: discord.AuditLogEntry
-        ) -> Sequence[Ticket]:
-        assert isinstance(audit.target, (discord.User, discord.Member))
+    async def revert_from_audit(session: AsyncSession, audit: AuditLogEntry) -> Sequence[Ticket]:
+        assert isinstance(audit.target, (User, Member))
         assert audit.user is not None
-        stmt = sqlalchemy.select(BanTicket).where(
+        stmt = select(BanTicket).where(
             BanTicket.status.in_((TicketStatus.IN_EFFECT, TicketStatus.EXPIRE_FAILED)),
             BanTicket.targetid == audit.target.id)
         return (await session.execute(stmt)).scalars().all()
 
     async def revert_action(self, reason: Optional[str] = None) -> None:
-        guild = bot.client.client.get_guild(conf.guild)
+        guild = client.get_guild(conf.guild)
         assert guild
         async for entry in guild.bans(limit=None): # TODO: before/after?
             if entry.user.id == self.targetid:
@@ -717,20 +704,19 @@ class VCMuteTicket(Ticket):
         def __init__(self, *, mod: TicketMod, targetid: int, id: int = ..., stage: TicketStage = ...,
             status: TicketStatus = ..., auditid: Optional[int] = ..., duration: Optional[int] = ...,
             comment: Optional[str] = ..., list_msgid: Optional[int] = ..., delivered_id: Optional[int] = ...,
-            created_at: datetime.datetime = ..., modified_by: Optional[int] = ...) -> None: ...
+            created_at: datetime = ..., modified_by: Optional[int] = ...) -> None: ...
 
     can_revert = True
 
-    trigger_action = discord.AuditLogAction.member_update
-    revert_trigger_action = discord.AuditLogAction.member_update
+    trigger_action = AuditLogAction.member_update
+    revert_trigger_action = AuditLogAction.member_update
 
     def describe(self, *, dm: bool = False) -> str:
-        return util.discord.format("**VC Muted** {!m}", self.targetid)
+        return format("**VC Muted** {!m}", self.targetid)
 
     @staticmethod
-    async def create_from_audit(session: sqlalchemy.ext.asyncio.AsyncSession, audit: discord.AuditLogEntry
-        ) -> Sequence[Ticket]:
-        assert isinstance(audit.target, (discord.User, discord.Member))
+    async def create_from_audit(session: AsyncSession, audit: AuditLogEntry) -> Sequence[Ticket]:
+        assert isinstance(audit.target, (User, Member))
         assert audit.user is not None
         if not getattr(audit.before, "mute", True) and getattr(audit.after, "mute", False):
             return (VCMuteTicket(**await audit_ticket_data(session, audit)),)
@@ -738,12 +724,11 @@ class VCMuteTicket(Ticket):
             return ()
 
     @staticmethod
-    async def revert_from_audit(session: sqlalchemy.ext.asyncio.AsyncSession, audit: discord.AuditLogEntry
-        ) -> Sequence[Ticket]:
-        assert isinstance(audit.target, (discord.User, discord.Member))
+    async def revert_from_audit(session: AsyncSession, audit: AuditLogEntry) -> Sequence[Ticket]:
+        assert isinstance(audit.target, (User, Member))
         assert audit.user is not None
         if getattr(audit.before, "mute", False) and not getattr(audit.after, "mute", False):
-            stmt = sqlalchemy.select(VCMuteTicket).where(
+            stmt = select(VCMuteTicket).where(
                 VCMuteTicket.status.in_((TicketStatus.IN_EFFECT, TicketStatus.EXPIRE_FAILED)),
                 VCMuteTicket.targetid == audit.target.id)
             return (await session.execute(stmt)).scalars().all()
@@ -751,7 +736,7 @@ class VCMuteTicket(Ticket):
             return ()
 
     async def revert_action(self, reason: Optional[str] = None) -> None:
-        guild = bot.client.client.get_guild(conf.guild)
+        guild = client.get_guild(conf.guild)
         assert guild
         try:
             member = await guild.fetch_member(self.targetid)
@@ -776,20 +761,19 @@ class VCDeafenTicket(Ticket):
         def __init__(self, *, mod: TicketMod, targetid: int, id: int = ..., stage: TicketStage = ...,
             status: TicketStatus = ..., auditid: Optional[int] = ..., duration: Optional[int] = ...,
             comment: Optional[str] = ..., list_msgid: Optional[int] = ..., delivered_id: Optional[int] = ...,
-            created_at: datetime.datetime = ..., modified_by: Optional[int] = ...) -> None: ...
+            created_at: datetime = ..., modified_by: Optional[int] = ...) -> None: ...
 
     can_revert = True
 
-    trigger_action = discord.AuditLogAction.member_update
-    revert_trigger_action = discord.AuditLogAction.member_update
+    trigger_action = AuditLogAction.member_update
+    revert_trigger_action = AuditLogAction.member_update
 
     def describe(self, *, dm: bool = False) -> str:
-        return util.discord.format("**VC Deafened** {!m}", self.targetid)
+        return format("**VC Deafened** {!m}", self.targetid)
 
     @staticmethod
-    async def create_from_audit(session: sqlalchemy.ext.asyncio.AsyncSession, audit: discord.AuditLogEntry
-        ) -> Sequence[Ticket]:
-        assert isinstance(audit.target, (discord.User, discord.Member))
+    async def create_from_audit(session: AsyncSession, audit: AuditLogEntry) -> Sequence[Ticket]:
+        assert isinstance(audit.target, (User, Member))
         assert audit.user is not None
         if not getattr(audit.before, "deaf", True) and getattr(audit.after, "deaf", False):
             return (VCDeafenTicket(**await audit_ticket_data(session, audit)),)
@@ -797,12 +781,11 @@ class VCDeafenTicket(Ticket):
             return ()
 
     @staticmethod
-    async def revert_from_audit(session: sqlalchemy.ext.asyncio.AsyncSession, audit: discord.AuditLogEntry
-        ) -> Sequence[Ticket]:
-        assert isinstance(audit.target, (discord.User, discord.Member))
+    async def revert_from_audit(session: AsyncSession, audit: AuditLogEntry) -> Sequence[Ticket]:
+        assert isinstance(audit.target, (User, Member))
         assert audit.user is not None
         if getattr(audit.before, "deaf", False) and not getattr(audit.after, "deaf", False):
-            stmt = sqlalchemy.select(VCDeafenTicket).where(
+            stmt = select(VCDeafenTicket).where(
                 VCDeafenTicket.status.in_((TicketStatus.IN_EFFECT, TicketStatus.EXPIRE_FAILED)),
                 VCDeafenTicket.targetid == audit.target.id)
             return (await session.execute(stmt)).scalars().all()
@@ -810,7 +793,7 @@ class VCDeafenTicket(Ticket):
             return ()
 
     async def revert_action(self, reason: Optional[str] = None) -> None:
-        guild = bot.client.client.get_guild(conf.guild)
+        guild = client.get_guild(conf.guild)
         assert guild
         try:
             member = await guild.fetch_member(self.targetid)
@@ -829,33 +812,32 @@ class VCDeafenTicket(Ticket):
 @registry.mapped
 @register_action
 class AddRoleTicket(Ticket):
-    roleid: sqlalchemy.orm.Mapped[int] = sqlalchemy.orm.mapped_column(sqlalchemy.BigInteger, nullable=True)
+    roleid: Mapped[int] = mapped_column(BigInteger, nullable=True)
     __mapper_args__ = {"polymorphic_identity": TicketType.ADD_ROLE, "polymorphic_load": "inline"}
 
     if TYPE_CHECKING:
         def __init__(self, *, mod: TicketMod, targetid: int, roleid: int, id: int = ..., stage: TicketStage = ...,
             status: TicketStatus = ..., auditid: Optional[int] = ..., duration: Optional[int] = ...,
             comment: Optional[str] = ..., list_msgid: Optional[int] = ..., delivered_id: Optional[int] = ...,
-            created_at: datetime.datetime = ..., modified_by: Optional[int] = ...) -> None: ...
+            created_at: datetime = ..., modified_by: Optional[int] = ...) -> None: ...
 
     can_revert = True
 
-    trigger_action = discord.AuditLogAction.member_role_update
-    revert_trigger_action = discord.AuditLogAction.member_role_update
+    trigger_action = AuditLogAction.member_role_update
+    revert_trigger_action = AuditLogAction.member_role_update
 
     def describe(self, *, dm: bool = False) -> str:
-        role_desc = util.discord.format("{!M}", self.roleid)
+        role_desc = format("{!M}", self.roleid)
         if dm:
-            if (guild := bot.client.client.get_guild(conf.guild)) and (role := guild.get_role(self.roleid)):
+            if (guild := client.get_guild(conf.guild)) and (role := guild.get_role(self.roleid)):
                 role_desc = role.name
             else:
                 role_desc = str(self.roleid)
-        return util.discord.format("**Added Role** {} to {!m}", role_desc, self.targetid)
+        return format("**Added Role** {} to {!m}", role_desc, self.targetid)
 
     @staticmethod
-    async def create_from_audit(session: sqlalchemy.ext.asyncio.AsyncSession, audit: discord.AuditLogEntry
-        ) -> Sequence[Ticket]:
-        assert isinstance(audit.target, (discord.User, discord.Member))
+    async def create_from_audit(session: AsyncSession, audit: AuditLogEntry) -> Sequence[Ticket]:
+        assert isinstance(audit.target, (User, Member))
         assert audit.user is not None
         tickets = []
         for role in audit.changes.after.roles or ():
@@ -864,21 +846,20 @@ class AddRoleTicket(Ticket):
         return tickets
 
     @staticmethod
-    async def revert_from_audit(session: sqlalchemy.ext.asyncio.AsyncSession, audit: discord.AuditLogEntry
-        ) -> Sequence[Ticket]:
-        assert isinstance(audit.target, (discord.User, discord.Member))
+    async def revert_from_audit(session: AsyncSession, audit: AuditLogEntry) -> Sequence[Ticket]:
+        assert isinstance(audit.target, (User, Member))
         assert audit.user is not None
         tickets: List[Ticket] = []
         for role in audit.changes.before.roles or ():
             if role.id in conf.tracked_roles:
-                stmt = sqlalchemy.select(AddRoleTicket).where(
+                stmt = select(AddRoleTicket).where(
                     AddRoleTicket.status.in_((TicketStatus.IN_EFFECT, TicketStatus.EXPIRE_FAILED)),
                     AddRoleTicket.targetid == audit.target.id, AddRoleTicket.roleid == role.id)
                 tickets.extend((await session.execute(stmt)).scalars())
         return tickets
 
     async def revert_action(self, reason: Optional[str] = None) -> None:
-        guild = bot.client.client.get_guild(conf.guild)
+        guild = client.get_guild(conf.guild)
         assert guild
         role = guild.get_role(self.roleid)
         assert role
@@ -892,9 +873,9 @@ class AddRoleTicket(Ticket):
 @plugins.init
 async def init_db() -> None:
     await util.db.init(util.db.get_ddl(
-        sqlalchemy.schema.CreateSchema("tickets"),
+        CreateSchema("tickets"),
         registry.metadata.create_all,
-        sqlalchemy.DDL(r"""
+        DDL(r"""
             CREATE INDEX tickets_mod_queue ON tickets.tickets USING BTREE (modid, id) WHERE stage <> 'COMMENTED';
 
             CREATE VIEW tickets.mod_queues AS
@@ -981,8 +962,8 @@ async def poll_audit_log() -> None:
     """
     Whenever this task is woken up via audit_log_updated, it will read any new audit log events and process them.
     """
-    await bot.client.client.wait_until_ready()
-    if not conf.guild or not (guild := bot.client.client.get_guild(conf.guild)):
+    await client.wait_until_ready()
+    if not conf.guild or not (guild := client.get_guild(conf.guild)):
         logger.error("Guild not configured, or can't find the configured guild! Cannot read audit log.")
         return
 
@@ -1048,14 +1029,14 @@ def expiry_updated() -> None:
 
 # TODO: scheduling module
 async def expire_tickets() -> None:
-    await bot.client.client.wait_until_ready()
+    await client.wait_until_ready()
 
     while True:
         try:
             async with sessionmaker() as session:
                 min_expiry = None
-                now = datetime.datetime.utcnow()
-                stmt = sqlalchemy.select(Ticket).where(Ticket.status == TicketStatus.IN_EFFECT, Ticket.duration != None)
+                now = datetime.utcnow()
+                stmt = select(Ticket).where(Ticket.status == TicketStatus.IN_EFFECT, Ticket.duration != None)
                 for ticket, in await session.execute(stmt):
                     if (expiry := ticket.expiry) is None:
                         continue
@@ -1071,7 +1052,7 @@ async def expire_tickets() -> None:
                 async with Ticket.publish_all(session):
                     await session.commit()
 
-            delay = (min_expiry - datetime.datetime.utcnow()).total_seconds() if min_expiry is not None else 86400.0
+            delay = (min_expiry - datetime.utcnow()).total_seconds() if min_expiry is not None else 86400.0
             logger.debug("Waiting for upcoming expiration in {} seconds".format(delay))
             try:
                 await asyncio.wait_for(expiration_event.wait(), timeout=delay)
@@ -1097,20 +1078,19 @@ def delivery_updated() -> None:
 
 async def deliver_tickets() -> None:
     global queued_mods
-    await bot.client.client.wait_until_ready()
+    await client.wait_until_ready()
 
     while True:
         try:
             async with sessionmaker() as session:
-                stmt = sqlalchemy.select(TicketMod).options(sqlalchemy.orm.joinedload(TicketMod.queue_top)).where(
-                    TicketMod.queue_top != None)
+                stmt = select(TicketMod).options(joinedload(TicketMod.queue_top)).where(TicketMod.queue_top != None)
                 mods = (await session.execute(stmt)).scalars().all()
 
                 queued_mods = set(mod.modid for mod in mods)
                 logger.debug("Listening for comments from {!r}".format(queued_mods))
 
                 min_delivery = None
-                now = datetime.datetime.utcnow()
+                now = datetime.utcnow()
                 for mod in mods:
                     if mod.queue_top is None:
                         continue
@@ -1123,7 +1103,7 @@ async def deliver_tickets() -> None:
                         except asyncio.CancelledError:
                             raise
                         except:
-                            logger.error(util.discord.format("Exception when delivering a ticket to {!m}", mod.modid),
+                            logger.error(format("Exception when delivering a ticket to {!m}", mod.modid),
                                 exc_info=True)
                     if mod.scheduled_delivery is not None:
                         if min_delivery is None or mod.scheduled_delivery < min_delivery:
@@ -1131,7 +1111,7 @@ async def deliver_tickets() -> None:
                 # Can't have any publishable changes
                 await session.commit()
 
-            delay = (min_delivery - datetime.datetime.utcnow()).total_seconds() if min_delivery is not None else 86400.0
+            delay = (min_delivery - datetime.utcnow()).total_seconds() if min_delivery is not None else 86400.0
             logger.debug("Waiting for upcoming delivery in {} seconds".format(delay))
             try:
                 await asyncio.wait_for(delivery_event.wait(), timeout=delay)
@@ -1163,9 +1143,8 @@ async def init_tasks() -> None:
 
 # ------------ Commands ------------
 
-async def resolve_ticket(ref: Optional[discord.MessageReference],
-    ticket_arg: Optional[Union[discord.PartialMessage, int]],
-    session: sqlalchemy.ext.asyncio.AsyncSession) -> Ticket:
+async def resolve_ticket(ref: Optional[MessageReference], ticket_arg: Optional[Union[PartialMessage, int]],
+    session: AsyncSession) -> Ticket:
     """
     Resolves a ticket from the given message and command arg, if possible.
     """
@@ -1176,31 +1155,30 @@ async def resolve_ticket(ref: Optional[discord.MessageReference],
         if ticket_arg < 1 << 22:
             ticket = cast(Optional[Ticket], await session.get(Ticket, ticket_arg))
             if ticket is None:
-                raise util.discord.InvocationError("No ticket with ID {}".format(ticket_arg))
+                raise InvocationError("No ticket with ID {}".format(ticket_arg))
             return ticket
         else:
-            stmt = sqlalchemy.select(Ticket).where(Ticket.list_msgid == ticket_arg)
+            stmt = select(Ticket).where(Ticket.list_msgid == ticket_arg)
             ticket = cast(Optional[Ticket], (await session.execute(stmt)).scalar())
             if ticket is None:
-                raise util.discord.InvocationError("Message ID {} is not referring to a ticket".format(ticket_arg))
+                raise InvocationError("Message ID {} is not referring to a ticket".format(ticket_arg))
             return ticket
-    elif isinstance(ticket_arg, discord.PartialMessage):
-        stmt = sqlalchemy.select(Ticket).where(Ticket.list_msgid == ticket_arg.id)
+    elif isinstance(ticket_arg, PartialMessage):
+        stmt = select(Ticket).where(Ticket.list_msgid == ticket_arg.id)
         ticket = cast(Optional[Ticket], (await session.execute(stmt)).scalar())
         if ticket is None:
-            raise util.discord.InvocationError("Message ID {} is not referring to a ticket".format(ticket_arg.id))
+            raise InvocationError("Message ID {} is not referring to a ticket".format(ticket_arg.id))
         return ticket
     elif ref is not None:
-        stmt = sqlalchemy.select(Ticket).where(Ticket.list_msgid == ref.message_id)
+        stmt = select(Ticket).where(Ticket.list_msgid == ref.message_id)
         ticket = cast(Optional[Ticket], (await session.execute(stmt)).scalar())
         if ticket is None:
-            raise util.discord.InvocationError("Message ID {} is not referring to a ticket".format(ref.message_id))
+            raise InvocationError("Message ID {} is not referring to a ticket".format(ref.message_id))
         return ticket
     else:
-        raise util.discord.InvocationError("Specify a ticket by ID, message ID, or by replying to it")
+        raise InvocationError("Specify a ticket by ID, message ID, or by replying to it")
 
-def summarise_tickets(tickets: Sequence[Ticket], title: str, *, dm: bool = False
-    ) -> Optional[Iterator[discord.Embed]]:
+def summarise_tickets(tickets: Sequence[Ticket], title: str, *, dm: bool = False) -> Optional[Iterator[Embed]]:
     """
     Create paged embeds of ticket summaries from the provided list of tickets.
     """
@@ -1211,16 +1189,16 @@ def summarise_tickets(tickets: Sequence[Ticket], title: str, *, dm: bool = False
     blocks = ['\n'.join(lines[i:i+10]) for i in range(0, len(lines), 10)]
     page_count = len(blocks)
 
-    embeds = (discord.Embed(description=blocks[i], title=title) for i in range(page_count))
+    embeds = (Embed(description=blocks[i], title=title) for i in range(page_count))
     if page_count > 1:
         embeds = (embed.set_footer(text="Page {}/{}".format(i+1, page_count)) for i, embed in enumerate(embeds))
     return embeds
 
 class Page(NamedTuple):
     content: Optional[str] = None
-    embed: Optional[discord.Embed] = None
+    embed: Optional[Embed] = None
 
-async def pager(dest: discord.abc.Messageable, pages: List[Page]) -> None:
+async def pager(dest: Messageable, pages: List[Page]) -> None:
     """
     Page a sequence of pages.
     """
@@ -1236,7 +1214,7 @@ async def pager(dest: discord.abc.Messageable, pages: List[Page]) -> None:
         raise ValueError("Cannot page with no pages!")
 
     # Send first page
-    msg = await dest.send(allowed_mentions=discord.AllowedMentions.none(), **pages[0]._asdict())
+    msg = await dest.send(allowed_mentions=AllowedMentions.none(), **pages[0]._asdict())
 
     if len(pages) == 1:
         return
@@ -1245,9 +1223,9 @@ async def pager(dest: discord.abc.Messageable, pages: List[Page]) -> None:
     for r in reactions:
         await msg.add_reaction(r)
 
-    bot_id = bot.client.client.user.id if bot.client.client.user is not None else None
+    bot_id = client.user.id if client.user is not None else None
     index = 0
-    with bot.reactions.ReactionMonitor(channel_id=msg.channel.id, message_id=msg.id, event="add",
+    with ReactionMonitor(channel_id=msg.channel.id, message_id=msg.id, event="add",
         filter=lambda _, p: p.user_id != bot_id and p.emoji.name in reactions,
         timeout_each=120) as mon:
         try:
@@ -1260,12 +1238,12 @@ async def pager(dest: discord.abc.Messageable, pages: List[Page]) -> None:
                 elif str(payload.emoji) == all_reaction:
                     await msg.delete()
                     for page in pages:
-                        await dest.send(allowed_mentions=discord.AllowedMentions.none(), **page._asdict())
+                        await dest.send(allowed_mentions=AllowedMentions.none(), **page._asdict())
                     break
                 index %= len(pages)
-                await msg.edit(allowed_mentions=discord.AllowedMentions.none(), **pages[index]._asdict())
+                await msg.edit(allowed_mentions=AllowedMentions.none(), **pages[index]._asdict())
                 try:
-                    await msg.remove_reaction(payload.emoji, discord.Object(payload.user_id))
+                    await msg.remove_reaction(payload.emoji, Object(payload.user_id))
                 except discord.HTTPException:
                     pass
             else:
@@ -1282,19 +1260,18 @@ async def pager(dest: discord.abc.Messageable, pages: List[Page]) -> None:
 
 voice_lock: asyncio.Lock = asyncio.Lock()
 
-@bot.cogs.cog
-class Tickets(discord.ext.commands.Cog):
+@cog
+class Tickets(Cog):
     """Manage infraction history"""
-    @bot.commands.cleanup
-    @discord.ext.commands.command("note")
-    @bot.privileges.priv("mod")
-    async def note_command(self, ctx: bot.commands.Context, target: util.discord.PartialUserConverter, *,
-        note: Optional[str]) -> None:
+    @cleanup
+    @command("note")
+    @priv("mod")
+    async def note_command(self, ctx: Context, target: PartialUserConverter, *, note: Optional[str]) -> None:
         """Create a note on the target user."""
         if note is None:
             # Request the note dynamically
             prompt = await ctx.send("Please enter the note:")
-            response = await bot.reactions.get_input(prompt, ctx.author, {"\u274C": None}, timeout=300)
+            response = await get_input(prompt, ctx.author, {"\u274C": None}, timeout=300)
             if response is not None:
                 note = response.content
 
@@ -1304,55 +1281,53 @@ class Tickets(discord.ext.commands.Cog):
                 async with Ticket.publish_all(session):
                     await session.commit()
                 await session.commit()
-            await ctx.send(embed=discord.Embed(
+            await ctx.send(embed=Embed(
                 description="[#{}]({}): Note created!".format(ticket.id, ticket.jump_link)))
 
-    @discord.ext.commands.group("ticket", aliases=["tickets"])
-    @bot.privileges.priv("mod")
-    async def ticket_command(self, ctx: bot.commands.Context) -> None:
+    @group("ticket", aliases=["tickets"])
+    @priv("mod")
+    async def ticket_command(self, ctx: Context) -> None:
         """Manage tickets."""
         pass
 
-    @bot.commands.cleanup
+    @cleanup
     @ticket_command.command("top")
-    async def ticket_top(self, ctx: bot.commands.Context) -> None:
+    async def ticket_top(self, ctx: Context) -> None:
         """Re-deliver the ticket at the top of your queue to your DMs."""
         async with sessionmaker() as session:
             mod = await session.get(TicketMod, ctx.author.id,
-                options=(sqlalchemy.orm.joinedload(TicketMod.queue_top),))
+                options=(joinedload(TicketMod.queue_top),))
 
             if mod is None or mod.queue_top is None:
                 await ctx.send("Your queue is empty, good job!")
             else:
                 await mod.try_redelivery(mod.queue_top)
-                if ctx.channel.type != discord.ChannelType.private:
+                if ctx.channel.type != ChannelType.private:
                     await ctx.send("Ticket #{} has been delivered to your DMs.".format(mod.queue_top.id))
 
             await session.commit()
 
-    @bot.commands.cleanup
+    @cleanup
     @ticket_command.command("queue")
-    async def ticket_queue(self, ctx: bot.commands.Context, mod: Optional[util.discord.PartialUserConverter]
-        ) -> None:
+    async def ticket_queue(self, ctx: Context, mod: Optional[PartialUserConverter]) -> None:
         """Show the specified moderator's (or your own) ticket queue."""
         user = ctx.author if mod is None else mod
 
         async with sessionmaker() as session:
-            stmt = sqlalchemy.select(Ticket).where(Ticket.modid == user.id, Ticket.stage != TicketStage.COMMENTED
+            stmt = select(Ticket).where(Ticket.modid == user.id, Ticket.stage != TicketStage.COMMENTED
                 ).order_by(Ticket.id)
             tickets = (await session.execute(stmt)).scalars().all()
             embeds = summarise_tickets(tickets, "Queue for {}".format(user),
-                dm=ctx.channel.type == discord.ChannelType.private)
+                dm=ctx.channel.type == ChannelType.private)
 
         if embeds:
             await pager(ctx, [Page(embed=embed) for embed in embeds])
         else:
-            await ctx.send(util.discord.format("{!m} has an empty queue!", user),
-                allowed_mentions=discord.AllowedMentions.none())
+            await ctx.send(format("{!m} has an empty queue!", user),
+                allowed_mentions=AllowedMentions.none())
 
     @ticket_command.command("take")
-    async def ticket_take(self, ctx: bot.commands.Context, ticket: Optional[Union[discord.PartialMessage, int]]
-        ) -> None:
+    async def ticket_take(self, ctx: Context, ticket: Optional[Union[PartialMessage, int]]) -> None:
         """Assign the specified ticket to yourself."""
         async with sessionmaker() as session:
             tkt = await resolve_ticket(ctx.message.reference, ticket, session)
@@ -1366,25 +1341,25 @@ class Tickets(discord.ext.commands.Cog):
                 await ctx.send("You have claimed Ticket #{}.".format(tkt.id))
 
     @ticket_command.command("assign")
-    async def ticket_assign(self, ctx: bot.commands.Context,
-        ticket: Optional[Union[discord.PartialMessage, int]], mod: util.discord.PartialUserConverter) -> None:
+    async def ticket_assign(self, ctx: Context, ticket: Optional[Union[PartialMessage, int]], mod: PartialUserConverter
+        ) -> None:
         """Assign the specified ticket to the specified moderator."""
         async with sessionmaker() as session:
             tkt = await resolve_ticket(ctx.message.reference, ticket, session)
             if mod.id == tkt.modid:
-                await ctx.send(util.discord.format("Ticket #{} is already assigned to {!m}", tkt.id, mod.id),
-                    allowed_mentions=discord.AllowedMentions.none())
+                await ctx.send(format("Ticket #{} is already assigned to {!m}", tkt.id, mod.id),
+                    allowed_mentions=AllowedMentions.none())
             else:
                 await tkt.mod.transfer(tkt, mod.id, actorid=ctx.author.id)
                 await tkt.publish()
                 await session.commit()
 
-                await ctx.send(util.discord.format("Assigned Ticket #{} to {!m}", tkt.id, mod.id),
-                    allowed_mentions=discord.AllowedMentions.none())
+                await ctx.send(format("Assigned Ticket #{} to {!m}", tkt.id, mod.id),
+                    allowed_mentions=AllowedMentions.none())
 
     @ticket_command.command("set")
-    async def ticket_set(self, ctx: bot.commands.Context,
-        ticket: Optional[Union[discord.PartialMessage, int]], *, duration_comment: str) -> None:
+    async def ticket_set(self, ctx: Context, ticket: Optional[Union[PartialMessage, int]], *, duration_comment: str
+        ) -> None:
         """Set the duration and comment for a ticket."""
         async with sessionmaker() as session:
             tkt = await resolve_ticket(ctx.message.reference, ticket, session)
@@ -1396,36 +1371,34 @@ class Tickets(discord.ext.commands.Cog):
             await tkt.publish()
             await session.commit()
 
-            await ctx.send(embed=discord.Embed(description="[#{}]({}): Ticket updated. {}".format(
+            await ctx.send(embed=Embed(description="[#{}]({}): Ticket updated. {}".format(
                 tkt.id, tkt.jump_link, message)))
 
     @ticket_command.command("append")
-    async def ticket_append(self, ctx: bot.commands.Context,
-        ticket: Optional[Union[discord.PartialMessage, int]], *, comment: str) -> None:
+    async def ticket_append(self, ctx: Context, ticket: Optional[Union[PartialMessage, int]], *, comment: str) -> None:
         """Append to a ticket's comment."""
         async with sessionmaker() as session:
             tkt = await resolve_ticket(ctx.message.reference, ticket, session)
             if len(tkt.comment or "") + len(comment) > 2000:
-                raise util.discord.UserError("Cannot append, exceeds maximum comment length!")
+                raise UserError("Cannot append, exceeds maximum comment length!")
 
             tkt.append_comment(comment)
             tkt.modified_by = ctx.author.id
             await tkt.publish()
             await session.commit()
 
-            await ctx.send(embed=discord.Embed(description="[#{}]({}): Ticket updated.".format(
+            await ctx.send(embed=Embed(description="[#{}]({}): Ticket updated.".format(
                 tkt.id, tkt.jump_link)))
 
     @ticket_command.command("revert")
-    async def ticket_revert(self, ctx: bot.commands.Context,
-        ticket: Optional[Union[discord.PartialMessage, int]]) -> None:
+    async def ticket_revert(self, ctx: Context, ticket: Optional[Union[PartialMessage, int]]) -> None:
         """Manually revert a ticket."""
         async with sessionmaker() as session:
             tkt = await resolve_ticket(ctx.message.reference, ticket, session)
             if not tkt.can_revert:
-                raise util.discord.UserError("This ticket type ({}) cannot be reverted!".format(tkt.type.value))
+                raise UserError("This ticket type ({}) cannot be reverted!".format(tkt.type.value))
             if not tkt.status in (TicketStatus.IN_EFFECT, TicketStatus.EXPIRE_FAILED):
-                await ctx.send(embed=discord.Embed(
+                await ctx.send(embed=Embed(
                     description=("[#{}]({}): Cannot be reverted as it is no longer active!".format(
                         tkt.id, tkt.jump_link))))
                 return
@@ -1434,37 +1407,35 @@ class Tickets(discord.ext.commands.Cog):
             await tkt.publish()
             await session.commit()
 
-            await ctx.send(embed=discord.Embed(
+            await ctx.send(embed=Embed(
                 description="[#{}]({}): Ticket reverted.".format(tkt.id, tkt.jump_link)))
 
     @ticket_command.command("hide")
-    async def ticket_hide(self, ctx: bot.commands.Context,
-        ticket: Optional[Union[discord.PartialMessage, int]], *, comment: Optional[str]) -> None:
+    async def ticket_hide(self, ctx: Context, ticket: Optional[Union[PartialMessage, int]], *, comment: Optional[str]
+        ) -> None:
         """Hide (and revert) a ticket."""
         async with sessionmaker() as session:
             tkt = await resolve_ticket(ctx.message.reference, ticket, session)
             if tkt.hidden:
-                await ctx.send(embed=discord.Embed(description="#{}: Is already hidden!".format(tkt.id)))
+                await ctx.send(embed=Embed(description="#{}: Is already hidden!".format(tkt.id)))
                 return
 
             await tkt.hide(ctx.author.id, reason=comment)
             await tkt.publish()
             await session.commit()
 
-            await ctx.send(embed=discord.Embed(description="#{}: Ticket hidden.".format(tkt.id)))
+            await ctx.send(embed=Embed(description="#{}: Ticket hidden.".format(tkt.id)))
 
-    @bot.commands.cleanup
+    @cleanup
     @ticket_command.command("show")
-    async def ticket_show(self, ctx: bot.commands.Context, *,
-        user_or_id: Union[util.discord.PartialUserConverter, discord.PartialMessage, int]
-        ) -> None:
+    async def ticket_show(self, ctx: Context, *, user_or_id: Union[PartialUserConverter, PartialMessage, int]) -> None:
         """Show tickets affecting given user, or a ticket with a specific ID."""
         async with sessionmaker() as session:
-            if isinstance(user_or_id, (discord.PartialMessage, int)):
+            if isinstance(user_or_id, (PartialMessage, int)):
                 tkt = await resolve_ticket(None, user_or_id, session)
-                await ctx.send(embed=tkt.to_embed(dm=ctx.channel.type == discord.ChannelType.private))
+                await ctx.send(embed=tkt.to_embed(dm=ctx.channel.type == ChannelType.private))
             else:
-                stmt = sqlalchemy.select(Ticket).where(Ticket.targetid == user_or_id.id).order_by(Ticket.id)
+                stmt = select(Ticket).where(Ticket.targetid == user_or_id.id).order_by(Ticket.id)
                 tickets = (await session.execute(stmt)).scalars().all()
 
                 shown = []
@@ -1475,13 +1446,13 @@ class Tickets(discord.ext.commands.Cog):
                     else:
                         shown.append(tkt)
 
-                embeds: Optional[Iterable[discord.Embed]] = summarise_tickets(shown,
+                embeds: Optional[Iterable[Embed]] = summarise_tickets(shown,
                     title='Tickets for {}'.format(user_or_id.id),
-                    dm=ctx.channel.type == discord.ChannelType.private)
+                    dm=ctx.channel.type == ChannelType.private)
                 hidden_field = ', '.join('#{}'.format(tkt.id) for tkt in hidden)
 
                 if hidden_field:
-                    embeds = embeds or (discord.Embed(title='Tickets for {}'.format(user_or_id.id)),)
+                    embeds = embeds or (Embed(title='Tickets for {}'.format(user_or_id.id)),)
                     embeds = (embed.add_field(name="Hidden", value=hidden_field) for embed in embeds)
 
                 if embeds:
@@ -1489,33 +1460,31 @@ class Tickets(discord.ext.commands.Cog):
                 else:
                     await ctx.send("No tickets found for this user.")
 
-    @bot.commands.cleanup
+    @cleanup
     @ticket_command.command("showhidden")
-    async def ticket_showhidden(self, ctx: bot.commands.Context, *,
-        user_or_id: Union[util.discord.PartialUserConverter, discord.PartialMessage, int]
+    async def ticket_showhidden(self, ctx: Context, *, user_or_id: Union[PartialUserConverter, PartialMessage, int]
         ) -> None:
         """Show hidden tickets affecting given user, or a ticket with a specific ID."""
         async with sessionmaker() as session:
-            if isinstance(user_or_id, (discord.PartialMessage, int)):
+            if isinstance(user_or_id, (PartialMessage, int)):
                 tkt = await resolve_ticket(None, user_or_id, session)
-                await ctx.send(embed=tkt.to_embed(dm=ctx.channel.type == discord.ChannelType.private))
+                await ctx.send(embed=tkt.to_embed(dm=ctx.channel.type == ChannelType.private))
             else:
-                stmt = sqlalchemy.select(Ticket).where(
+                stmt = select(Ticket).where(
                     Ticket.status == TicketStatus.HIDDEN, Ticket.targetid == user_or_id.id).order_by(Ticket.id)
                 tickets = (await session.execute(stmt)).scalars().all()
 
                 embeds = summarise_tickets(tickets, title='Hidden tickets for {}'.format(user_or_id.id),
-                    dm=ctx.channel.type == discord.ChannelType.private)
+                    dm=ctx.channel.type == ChannelType.private)
 
                 if embeds:
                     await pager(ctx, [Page(embed=embed) for embed in embeds])
                 else:
                     await ctx.send("No hidden tickets found for this user.")
 
-    @bot.commands.cleanup
+    @cleanup
     @ticket_command.command("history")
-    async def ticket_history(self, ctx: bot.commands.Context, *,
-        ticket: Optional[Union[discord.PartialMessage, int]]) -> None:
+    async def ticket_history(self, ctx: Context, *, ticket: Optional[Union[PartialMessage, int]]) -> None:
         """Show revision history for a ticket."""
         async with sessionmaker() as session:
             tkt = await resolve_ticket(ctx.message.reference, ticket, session)
@@ -1525,10 +1494,10 @@ class Tickets(discord.ext.commands.Cog):
             for history in await TicketHistory.get(session, tkt.id):
                 row = []
                 if history.last_modified_at is not None:
-                    timestamp = int(history.last_modified_at.replace(tzinfo=datetime.timezone.utc).timestamp())
+                    timestamp = int(history.last_modified_at.replace(tzinfo=timezone.utc).timestamp())
                     row.append("<t:{}:f>, <t:{}:R>".format(timestamp, timestamp))
                 if history.modified_by is not None:
-                    row.append(util.discord.format("by {!m}", history.modified_by))
+                    row.append(format("by {!m}", history.modified_by))
                 if history.type is not None:
                     row.append(history.type.value)
                 if history.stage is not None:
@@ -1536,15 +1505,15 @@ class Tickets(discord.ext.commands.Cog):
                 if history.status is not None:
                     row.append(history.status.value)
                 if history.modid is not None:
-                    row.append(util.discord.format("moderator {!m}", history.modid))
+                    row.append(format("moderator {!m}", history.modid))
                 if history.targetid is not None:
-                    row.append(util.discord.format("target: {!m}", history.targetid))
+                    row.append(format("target: {!m}", history.targetid))
                 if history.roleid is not None:
-                    row.append(util.discord.format("role: {!M}", history.roleid))
+                    row.append(format("role: {!M}", history.roleid))
                 if history.duration is not None:
-                    row.append(str(datetime.timedelta(seconds=history.duration)))
+                    row.append(str(timedelta(seconds=history.duration)))
                 if history.comment is not None:
-                    row.append(util.discord.format("comment: {!i}", history.comment))
+                    row.append(format("comment: {!i}", history.comment))
                 if history.list_msgid is not None:
                     row.append("https://discord.com/channels/{}/{}/{}".format(
                         conf.guild, conf.ticket_list, history.list_msgid))
@@ -1560,16 +1529,15 @@ class Tickets(discord.ext.commands.Cog):
             pages.append(page)
             return await pager(ctx, [Page(content=content) for content in pages])
 
-    @discord.ext.commands.Cog.listener("on_member_ban")
-    @discord.ext.commands.Cog.listener("on_member_unban")
-    @discord.ext.commands.Cog.listener("on_member_remove")
+    @Cog.listener("on_member_ban")
+    @Cog.listener("on_member_unban")
+    @Cog.listener("on_member_remove")
     async def on_member_remove(self, *args: Any) -> None:
         audit_log_updated()
 
 
-    @discord.ext.commands.Cog.listener("on_voice_state_update")
-    async def process_voice_state(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState
-        ) -> None:
+    @Cog.listener("on_voice_state_update")
+    async def process_voice_state(self, member: Member, before: VoiceState, after: VoiceState) -> None:
         if before.deaf != after.deaf or before.mute != after.mute:
             audit_log_updated()
         if after.channel is not None:
@@ -1577,7 +1545,7 @@ class Tickets(discord.ext.commands.Cog):
                 if member.id in conf.pending_unmutes:
                     try:
                         await member.edit(mute=False)
-                        conf.pending_unmutes = util.frozen_list.FrozenList(
+                        conf.pending_unmutes = FrozenList(
                             filter(lambda i: i != member.id, conf.pending_unmutes))
                         logger.debug("Processed unmute for {}".format(member.id))
                         await conf
@@ -1587,7 +1555,7 @@ class Tickets(discord.ext.commands.Cog):
                 if member.id in conf.pending_undeafens:
                     try:
                         await member.edit(deafen=False)
-                        conf.pending_undeafens = util.frozen_list.FrozenList(
+                        conf.pending_undeafens = FrozenList(
                             filter(lambda i: i != member.id, conf.pending_undeafens))
                         logger.debug("Processed undeafen for {}".format(member.id))
                         await conf
@@ -1595,18 +1563,18 @@ class Tickets(discord.ext.commands.Cog):
                         if exc.text != "Target user is not connected to voice.":
                             raise
 
-    @discord.ext.commands.Cog.listener("on_member_update")
-    async def process_member_update(self, before: discord.Member, after: discord.Member) -> None:
+    @Cog.listener("on_member_update")
+    async def process_member_update(self, before: Member, after: Member) -> None:
         if before.roles != after.roles:
             audit_log_updated()
 
-    @discord.ext.commands.Cog.listener("on_message")
-    async def moderator_message(self, msg: discord.Message) -> None:
-        if msg.channel.type == discord.ChannelType.private:
+    @Cog.listener("on_message")
+    async def moderator_message(self, msg: Message) -> None:
+        if msg.channel.type == ChannelType.private:
             if msg.author.id in queued_mods:
                 async with sessionmaker() as session:
                     mod = await session.get(TicketMod, msg.author.id,
-                        options=(sqlalchemy.orm.joinedload(TicketMod.queue_top),))
+                        options=(joinedload(TicketMod.queue_top),))
                     if mod is None:
                         return
                     await mod.process_message(msg)
@@ -1614,8 +1582,8 @@ class Tickets(discord.ext.commands.Cog):
                         await session.commit()
                     await session.commit()
 
-    @discord.ext.commands.Cog.listener("on_message")
-    async def cleanup_message(self, msg: discord.Message) -> None:
+    @Cog.listener("on_message")
+    async def cleanup_message(self, msg: Message) -> None:
         if conf.cleanup_delay is not None:
             if msg.channel.id == conf.ticket_list:
                 if msg.id in cleanup_exempt: return
@@ -1626,23 +1594,21 @@ class Tickets(discord.ext.commands.Cog):
                 except (discord.NotFound, discord.Forbidden):
                     pass
 
-async def find_notes_prefix(session: sqlalchemy.ext.asyncio.AsyncSession, prefix: str, *, modid: int, targetid: int
-    ) -> List[NoteTicket]:
-    stmt = sqlalchemy.select(NoteTicket).where(NoteTicket.modid == modid, NoteTicket.targetid == targetid,
+async def find_notes_prefix(session: AsyncSession, prefix: str, *, modid: int, targetid: int) -> List[NoteTicket]:
+    stmt = select(NoteTicket).where(NoteTicket.modid == modid, NoteTicket.targetid == targetid,
         NoteTicket.comment.startswith(prefix)).order_by(NoteTicket.id)
     return list((await session.execute(stmt)).scalars())
 
-async def any_visible_tickets(session: sqlalchemy.ext.asyncio.AsyncSession, targetid: int) -> bool:
-    stmt = sqlalchemy.select(sqlalchemy.func.count(Ticket.id)).where(
+async def any_visible_tickets(session: AsyncSession, targetid: int) -> bool:
+    stmt = select(func.count(Ticket.id)).where(
         Ticket.targetid == targetid, Ticket.status != TicketStatus.HIDDEN)
     return bool((await session.execute(stmt)).scalar())
 
-async def create_note(session: sqlalchemy.ext.asyncio.AsyncSession, note: str, *, modid: int, targetid: int
-    ) -> NoteTicket:
+async def create_note(session: AsyncSession, note: str, *, modid: int, targetid: int) -> NoteTicket:
     ticket = NoteTicket(
         mod=await TicketMod.get(session, modid),
         targetid=targetid,
-        created_at=datetime.datetime.utcnow(),
+        created_at=datetime.utcnow(),
         modified_by=modid,
         stage=TicketStage.COMMENTED,
         status=TicketStatus.IN_EFFECT,

@@ -1,25 +1,22 @@
 from typing import Iterable, List, Literal, Optional, Protocol, Tuple, Union, cast, overload
 
-import discord
-import discord.app_commands
-import discord.ext.commands
-import discord.ui
+from discord import ButtonStyle, Interaction, Member, Role, SelectOption, TextStyle
+from discord.abc import Messageable
+from discord.ui import Button, Modal, Select, TextInput, View
 
-import bot.cogs
-import bot.interactions
+from bot.interactions import command, persistent_view
 import plugins
 import plugins.roles_review
 import util.db.kv
-import util.discord
-import util.frozen_list
+from util.frozen_list import FrozenList
 
 class RolesDialogConf(Protocol):
-    roles: util.frozen_list.FrozenList[util.frozen_list.FrozenList[Union[int, str]]]
+    roles: FrozenList[FrozenList[Union[int, str]]]
 
     @overload
     def __getitem__(self, index: Tuple[int, Literal["desc"]]) -> Optional[str]: ...
     @overload
-    def __getitem__(self, index: Tuple[int, Literal["prompt"]]) -> Optional[util.frozen_list.FrozenList[str]]: ...
+    def __getitem__(self, index: Tuple[int, Literal["prompt"]]) -> Optional[FrozenList[str]]: ...
 
 conf: RolesDialogConf
 
@@ -28,8 +25,8 @@ async def init() -> None:
     global conf
     conf = cast(RolesDialogConf, await util.db.kv.load(__name__))
 
-class RolePromptModal(discord.ui.Modal):
-    def __init__(self, prompt_roles: List[discord.Role]) -> None:
+class RolePromptModal(Modal):
+    def __init__(self, prompt_roles: List[Role]) -> None:
         super().__init__(title="Additional information", timeout=1200)
         self.inputs = {}
         for role in prompt_roles:
@@ -41,13 +38,13 @@ class RolePromptModal(discord.ui.Modal):
                 else:
                     placeholder = None
                 prompt = prompt[:45]
-                input = discord.ui.TextInput(label=prompt, style=discord.TextStyle.paragraph, max_length=600,
+                input = TextInput(label=prompt, style=TextStyle.paragraph, max_length=600,
                     placeholder=placeholder)
                 self.inputs[role].append(input)
                 self.add_item(input)
 
-    async def on_submit(self, interaction: discord.Interaction) -> None:
-        if not isinstance(interaction.user, discord.Member):
+    async def on_submit(self, interaction: Interaction) -> None:
+        if not isinstance(interaction.user, Member):
             await interaction.response.send_message("This can only be done in a server.", ephemeral=True)
             return
 
@@ -61,9 +58,9 @@ class RolePromptModal(discord.ui.Modal):
         await interaction.response.send_message(
             "\n".join(outputs) if outputs else "Your input has been submitted for review.", ephemeral=True)
 
-class RoleSelect(discord.ui.Select["RolesView"]):
-    def __init__(self, boolean: bool, role_items: Iterable[Union[int, str]], member: discord.Member,
-        row: Optional[int] = None) -> None:
+class RoleSelect(Select["RolesView"]):
+    def __init__(self, boolean: bool, role_items: Iterable[Union[int, str]], member: Member, row: Optional[int] = None
+        ) -> None:
         self.roles = {}
         index = 0
         options = []
@@ -71,12 +68,12 @@ class RoleSelect(discord.ui.Select["RolesView"]):
         for item in role_items:
             if isinstance(item, int):
                 if (role := member.guild.get_role(item)) is not None:
-                    options.append(discord.SelectOption(label=role.name, value=str(index),
+                    options.append(SelectOption(label=role.name, value=str(index),
                         description=(conf[role.id, "desc"] or "")[:100], default=role in member.roles))
                     self.roles[str(index)] = role
                     index += 1
             else:
-                options.append(discord.SelectOption(label=item, value="_"))
+                options.append(SelectOption(label=item, value="_"))
         if not boolean and sum(option.default for option in options) > 1:
             for option in options:
                 option.default = False
@@ -86,8 +83,8 @@ class RoleSelect(discord.ui.Select["RolesView"]):
             max_values=len(options) if boolean else 1,
             options=options)
 
-    async def callback(self, interaction: discord.Interaction) -> None:
-        if not isinstance(interaction.user, discord.Member):
+    async def callback(self, interaction: Interaction) -> None:
+        if not isinstance(interaction.user, Member):
             await interaction.response.send_message("This can only be done in a server.", ephemeral=True)
             return
 
@@ -118,8 +115,8 @@ class RoleSelect(discord.ui.Select["RolesView"]):
             await interaction.response.send_message(
                 "\u2705 Updated roles." if add_roles or remove_roles else "Roles not changed.", ephemeral=True)
 
-class RolesView(discord.ui.View):
-    def __init__(self, member: discord.Member) -> None:
+class RolesView(View):
+    def __init__(self, member: Member) -> None:
         super().__init__(timeout=600)
 
         booleans: List[Union[int, str]] = []
@@ -134,30 +131,30 @@ class RolesView(discord.ui.View):
         if booleans:
             self.add_item(RoleSelect(True, booleans, member))
 
-async def send_roles_view(interaction: discord.Interaction) -> None:
-    if not isinstance(interaction.user, discord.Member):
+async def send_roles_view(interaction: Interaction) -> None:
+    if not isinstance(interaction.user, Member):
         await interaction.response.send_message("This can only be done in a server.", ephemeral=True)
         return
     await interaction.response.send_message("Select your roles:", view=RolesView(interaction.user), ephemeral=True)
 
-class ManageRolesButton(discord.ui.Button["ManageRolesView"]):
+class ManageRolesButton(Button["ManageRolesView"]):
     def __init__(self) -> None:
-        super().__init__(style=discord.ButtonStyle.primary, label="Manage roles",
+        super().__init__(style=ButtonStyle.primary, label="Manage roles",
             custom_id=__name__ + ":" + "manage")
 
-    async def callback(self, interaction: discord.Interaction) -> None:
+    async def callback(self, interaction: Interaction) -> None:
         await send_roles_view(interaction)
 
-class ManageRolesView(discord.ui.View):
+class ManageRolesView(View):
     def __init__(self) -> None:
         super().__init__(timeout=None)
         self.add_item(ManageRolesButton())
 
-bot.interactions.persistent_view(ManageRolesView())
+persistent_view(ManageRolesView())
 
-@bot.interactions.command("roles", description="Manage self-assigned roles.")
-async def roles_command(interaction: discord.Interaction) -> None:
+@command("roles", description="Manage self-assigned roles.")
+async def roles_command(interaction: Interaction) -> None:
     await send_roles_view(interaction)
 
-async def setup(target: discord.abc.Messageable) -> None:
+async def setup(target: Messageable) -> None:
     await target.send(view=ManageRolesView())

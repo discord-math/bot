@@ -2,19 +2,18 @@ from __future__ import annotations
 
 import asyncio
 import builtins
-import contextlib
-import enum
+from contextlib import contextmanager
+from enum import Enum, auto
 import importlib
-import importlib.machinery
-import importlib.util
+from importlib.machinery import ModuleSpec, PathFinder, SourceFileLoader
 import inspect
 import logging
 import pkgutil
 import sys
-import types
+from types import ModuleType
 from typing import Any, Awaitable, Callable, Dict, Iterable, Iterator, List, Optional, Sequence, Tuple, TypeVar, Union
 
-import util.digraph
+from util.digraph import Digraph
 
 # This is technically a plugin, load it properly next time
 del sys.modules["util.digraph"]
@@ -29,14 +28,14 @@ class PluginException(Exception):
     initializer/finalizer errors.
     """
 
-class PluginState(enum.Enum):
-    NEW = enum.auto() # Freshly registered in the plugins table
-    IMPORTING = enum.auto() # The contents of the plugin's module are currently being executed
-    IMPORTED = enum.auto() # The module object is constructed, but the initializers haven't been called yet
-    INITIALIZING = enum.auto() # The initializers of the plugin are currently being called
-    INITIALIZED = enum.auto() # Successfully loaded
-    FINALIZING = enum.auto() # Currently being unloaded, its finalizers are being called
-    FINALIZED = enum.auto() # Removed from the plugins table
+class PluginState(Enum):
+    NEW = auto() # Freshly registered in the plugins table
+    IMPORTING = auto() # The contents of the plugin's module are currently being executed
+    IMPORTED = auto() # The module object is constructed, but the initializers haven't been called yet
+    INITIALIZING = auto() # The initializers of the plugin are currently being called
+    INITIALIZED = auto() # Successfully loaded
+    FINALIZING = auto() # Currently being unloaded, its finalizers are being called
+    FINALIZED = auto() # Removed from the plugins table
 
 A = TypeVar('A')
 
@@ -64,7 +63,7 @@ class PluginManager:
     logger: logging.Logger
     namespaces: List[str]
     plugins: Dict[str, Plugin]
-    dependencies: util.digraph.Digraph[str] # The source is always in the plugins table
+    dependencies: Digraph[str] # The source is always in the plugins table
     lock: asyncio.Lock # We don't manipulate the dependency graph/module table concurrently, so this lock is taken in
     # all public entry points
 
@@ -72,7 +71,7 @@ class PluginManager:
         self.logger = logging.getLogger(__name__)
         self.namespaces = list(namespaces)
         self.plugins = {}
-        self.dependencies = util.digraph.Digraph()
+        self.dependencies = Digraph()
         self.lock = asyncio.Lock()
 
     def is_plugin(self, name: str) -> bool:
@@ -84,7 +83,7 @@ class PluginManager:
             ",".join(namespace + ".*" for namespace in self.namespaces), id(self))
 
     @staticmethod
-    @contextlib.contextmanager
+    @contextmanager
     def push_plugin(plugin: Plugin) -> Iterator[None]:
         import_stack.append(plugin)
         try:
@@ -112,12 +111,12 @@ class PluginManager:
 
     def register(self) -> None:
         for i in range(len(sys.meta_path)):
-            if sys.meta_path[i] == importlib.machinery.PathFinder:
+            if sys.meta_path[i] == PathFinder:
                 # typeshed for sys.meta_path is incorrect
                 sys.meta_path.insert(i, PluginFinder(self)) # type: ignore
 
     @staticmethod
-    def find_spec(name: str, path: List[str]) -> Optional[importlib.machinery.ModuleSpec]:
+    def find_spec(name: str, path: List[str]) -> Optional[ModuleSpec]:
         if name in sys.modules:
             return sys.modules[name].__spec__
         for finder in sys.meta_path:
@@ -159,7 +158,7 @@ class PluginManager:
                 del sys.modules[name]
             del self.plugins[name]
 
-    async def do_load(self, name: str) -> types.ModuleType:
+    async def do_load(self, name: str) -> ModuleType:
         self.logger.debug("Loading {}".format(name))
         try:
             ret = importlib.import_module(name)
@@ -221,7 +220,7 @@ class PluginManager:
             self.logger.debug("Unloading {} with dependencies: {}".format(name, ", ".join(unload_order)))
             await PluginManager.exc_foreach(self.do_unload, unload_order)
 
-    async def unsafe_reload(self, name: str) -> types.ModuleType:
+    async def unsafe_reload(self, name: str) -> ModuleType:
         """
         Finalize and reload a single plugin. This will run the new plugin code over the same module object, which may
         break any plugins that depend on it. All finalizers will be executed even if some raise exceptions. If there
@@ -248,7 +247,7 @@ class PluginManager:
                     plugin.transition(PluginState.INITIALIZED)
             return ret
 
-    async def reload(self, name: str) -> types.ModuleType:
+    async def reload(self, name: str) -> ModuleType:
         """
         Finalize and reload a plugin and any plugins that (transitively) depend on it. We try to run all finalizers in
         dependency order, and only load plugins that were successfully unloaded, and whose dependencies have been
@@ -285,7 +284,7 @@ class PluginManager:
                 await PluginManager.exc_foreach(maybe_load_plugin, reload_order)
             return self.plugins[name].module
 
-    async def load(self, name: str) -> types.ModuleType:
+    async def load(self, name: str) -> ModuleType:
         """
         Load a single plugin. If it's already loaded, nothing is changed. If there was an exception during initialization,
         the finalizers that managed to register will be run. Returns the module object if successful.
@@ -306,12 +305,12 @@ class Plugin:
     __slots__ = "name", "state", "module", "initializers", "finalizers", "logger"
     name: str
     state: PluginState
-    module: types.ModuleType
+    module: ModuleType
     initializers: List[Callable[[], Awaitable[None]]]
     finalizers: List[Callable[[], Awaitable[None]]]
     logger: logging.Logger
 
-    def __init__(self, name: str, module: types.ModuleType, logger: logging.Logger) -> None:
+    def __init__(self, name: str, module: ModuleType, logger: logging.Logger) -> None:
         self.name = name
         self.state = PluginState.NEW
         self.module = module
@@ -320,7 +319,7 @@ class Plugin:
         self.logger = logger
 
     @staticmethod
-    def new(manager: PluginManager, module: types.ModuleType) -> Plugin:
+    def new(manager: PluginManager, module: ModuleType) -> Plugin:
         name = module.__name__
         if name in manager.plugins:
             raise PluginException("Plugin {} is already defined as {}".format(name, manager.plugins[name].module))
@@ -406,18 +405,18 @@ def trace_import(name: str, globals: Optional[Dict[str, Any]] = None, locals: Op
                 current_manager.add_dependency(current.name, parent)
     return builtins.__import__(name, globals, locals, fromlist, level)
 
-trace_builtins = types.ModuleType(builtins.__name__)
+trace_builtins = ModuleType(builtins.__name__)
 trace_builtins.__dict__.update(builtins.__dict__)
 trace_builtins.__dict__["__import__"] = trace_import
 del trace_import
 
-class PluginLoader(importlib.machinery.SourceFileLoader):
+class PluginLoader(SourceFileLoader):
     __slots__ = "manager"
     def __init__(self, manager: PluginManager, fullname: str, path: Optional[Sequence[Union[bytes, str]]]) -> None:
         self.manager = manager
         super().__init__(fullname, path) # type: ignore
 
-    def exec_module(self, mod: types.ModuleType) -> None:
+    def exec_module(self, mod: ModuleType) -> None:
         plugin = Plugin.new(self.manager, mod)
         mod.__dict__["__builtins__"] = trace_builtins
         with self.manager.push_plugin(plugin):
@@ -425,14 +424,14 @@ class PluginLoader(importlib.machinery.SourceFileLoader):
             super().exec_module(mod)
             plugin.transition(PluginState.IMPORTED)
 
-class PluginFinder(importlib.machinery.PathFinder):
+class PluginFinder(PathFinder):
     __slots__ = "manager"
     def __init__(self, manager: PluginManager) -> None:
         self.manager = manager
         super().__init__()
 
-    def find_spec(self, name: str, path: Optional[Sequence[str]] = None, target: Optional[types.ModuleType] = None
-        ) -> Optional[importlib.machinery.ModuleSpec]:
+    def find_spec(self, name: str, path: Optional[Sequence[str]] = None, target: Optional[ModuleType] = None
+        ) -> Optional[ModuleSpec]:
         if not self.manager.is_plugin(name):
             return None
         spec = super().find_spec(name, path, target)

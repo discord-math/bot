@@ -1,5 +1,5 @@
 import asyncio
-from typing import Any, Callable, Awaitable, TypeVar
+from typing import Any, Awaitable, Callable, TypeVar
 
 R = TypeVar("R")
 
@@ -9,22 +9,10 @@ def __await__(fun: Callable[..., Awaitable[Any]]) -> Callable[..., Any]:
         return fun(*args, **kwargs).__await__()
     return wrapper
 
-def getloop() -> asyncio.AbstractEventLoop:
-    try:
-        return asyncio.get_running_loop()
-    except RuntimeError:
-        return asyncio.get_event_loop()
-
-def run_async(aw: Callable[..., Awaitable[R]], *args: Any, **kwargs: Any) -> asyncio.Task[R]:
-    """Schedule an asynchronous computation from synchronous code"""
-    async def coroutine() -> R:
-        return await aw(*args, **kwargs)
-    return getloop().create_task(coroutine())
-
 def concurrently(fun: Callable[..., R], *args: Any, **kwargs: Any) -> Awaitable[R]:
     """
     Run a synchronous blocking computation in a different python thread, avoiding blocking the current async thread.
     This function starts the computation and returns a future referring to its result. Beware of (actual) thread-safety.
     """
-    return getloop().run_in_executor(None,
+    return asyncio.get_running_loop().run_in_executor(None,
         lambda: fun(*args, **kwargs))

@@ -1,28 +1,27 @@
 import ast
 import builtins
 import inspect
-import io
+from io import BytesIO, StringIO
 import itertools
 import sys
 import traceback
-import types
+from types import FunctionType
 from typing import Any, Callable, Dict, Iterable, Iterator, List, TypeVar, Union
 
-import discord
-import discord.ext.commands
+from discord import File
+from discord.ext.commands import Greedy
 
-import bot.client
-import bot.commands
-import bot.privileges
-import util.discord
+from bot.client import client
+from bot.commands import Context, cleanup, command
+from bot.privileges import priv
+from util.discord import CodeBlock, Inline, format
 
 T = TypeVar("T")
 
-@bot.commands.cleanup
-@bot.commands.command("exec", aliases=["eval"])
-@bot.privileges.priv("shell")
-async def exec_command(ctx: bot.commands.Context,
-    args: discord.ext.commands.Greedy[Union[util.discord.CodeBlock, util.discord.Inline, str]]) -> None:
+@cleanup
+@command("exec", aliases=["eval"])
+@priv("shell")
+async def exec_command(ctx: Context, args: Greedy[Union[CodeBlock, Inline, str]]) -> None:
     """
     Execute all code blocks in the command line as python code.
     The code can be an expression on a series of statements. The code has all loaded modules in scope, as well as "ctx"
@@ -34,16 +33,16 @@ async def exec_command(ctx: bot.commands.Context,
     code_scope["__builtins__"] = builtins
     code_scope.update(builtins.__dict__)
     code_scope["ctx"] = ctx
-    code_scope["client"] = bot.client.client
-    def mk_code_print(fp: io.StringIO) -> Callable[..., None]:
+    code_scope["client"] = client
+    def mk_code_print(fp: StringIO) -> Callable[..., None]:
         def code_print(*args: Any, sep: str = " ", end: str = "\n", file: Any = fp, flush: bool = False):
             return print(*args, sep=sep, end=end, file=file, flush=flush)
         return code_print
-    fp = io.StringIO()
+    fp = StringIO()
     try:
         for arg in args:
-            if isinstance(arg, (util.discord.CodeBlock, util.discord.Inline)):
-                fp = io.StringIO()
+            if isinstance(arg, (CodeBlock, Inline)):
+                fp = StringIO()
                 outputs.append(fp)
                 code_scope["print"] = mk_code_print(fp)
                 try:
@@ -52,7 +51,7 @@ async def exec_command(ctx: bot.commands.Context,
                 except:
                     code = compile(arg.text, "<msg {}>".format(ctx.message.id),
                         "exec", ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
-                fun = types.FunctionType(code, code_scope)
+                fun = FunctionType(code, code_scope)
                 ret = fun()
                 if inspect.iscoroutine(ret):
                     ret = await ret
@@ -87,15 +86,15 @@ async def exec_command(ctx: bot.commands.Context,
         if not empty:
             yield acc
 
-    def format_block(fp: io.StringIO) -> str:
+    def format_block(fp: StringIO) -> str:
         text = fp.getvalue()
-        return util.discord.format("{!b:py}", text) if len(text) else "\u2705"
+        return format("{!b:py}", text) if len(text) else "\u2705"
 
-    def is_short(fp: io.StringIO) -> bool:
+    def is_short(fp: StringIO) -> bool:
         return len(format_block(fp)) <= 2000
 
-    def make_file_output(idx: int, fp: io.StringIO) -> discord.File:
-        return discord.File(io.BytesIO(fp.getvalue().encode("utf8")), filename="output{:d}.txt".format(idx))
+    def make_file_output(idx: int, fp: StringIO) -> File:
+        return File(BytesIO(fp.getvalue().encode("utf8")), filename="output{:d}.txt".format(idx))
 
     message_outputs = chunk_concat(
         (format_block(m) for m in outputs if is_short(m)),
