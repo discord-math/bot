@@ -1,22 +1,24 @@
+from typing import TYPE_CHECKING, List, Literal, Optional, Protocol, Tuple, cast
+
 import discord
-import discord.ui
 import discord.app_commands
 import discord.ext.commands
+if TYPE_CHECKING:
+    import discord.types.interactions
+import discord.ui
 import sqlalchemy
-import sqlalchemy.orm
 import sqlalchemy.ext.asyncio
-from typing import List, Tuple, Literal, Optional, Protocol, cast, TYPE_CHECKING
+import sqlalchemy.orm
+
+import bot.cogs
+import bot.commands
+import bot.interactions
+import bot.privileges
 import plugins
-import plugins.commands
-import plugins.privileges
-import plugins.interactions
-import plugins.cogs
 import util.db
 import util.db.kv
 import util.discord
 import util.frozen_list
-if TYPE_CHECKING:
-    import discord.types.interactions
 
 class RolesReviewConf(Protocol):
     review_channel: int
@@ -195,7 +197,7 @@ class VetoModal(discord.ui.Modal):
         elif str(self.decision)[:1].upper() == "N":
             await cast_vote(interaction, self.msg_id, False, veto=str(self.reason))
 
-@plugins.cogs.cog
+@bot.cogs.cog
 class RolesReviewCog(discord.ext.commands.Cog):
     @discord.ext.commands.Cog.listener()
     async def on_interaction(self, interaction: discord.Interaction) -> None:
@@ -227,10 +229,10 @@ class RolesReviewCog(discord.ext.commands.Cog):
             else:
                 await interaction.response.send_message("You are not allowed to veto.", ephemeral=True)
 
-    @plugins.commands.cleanup
+    @bot.commands.cleanup
     @discord.ext.commands.command("review_reset")
-    @plugins.privileges.priv("mod")
-    async def review_reset(self, ctx: plugins.commands.Context, user: util.discord.PartialUserConverter,
+    @bot.privileges.priv("mod")
+    async def review_reset(self, ctx: bot.commands.Context, user: util.discord.PartialUserConverter,
         role: util.discord.PartialRoleConverter) -> None:
         """
         If a user's application for a particular role has been denied, this command will allow them to apply again.

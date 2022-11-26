@@ -4,15 +4,18 @@ Utilities for registering basic commands. Commands are triggered by a configurab
 
 import asyncio
 import logging
+from typing import Any, Callable, Coroutine, Optional, Protocol, Set, Type, TypeVar, cast, overload
+from typing_extensions import Concatenate, ParamSpec
+
 import discord
 import discord.ext.commands
-from typing import Set, Optional, Callable, Coroutine, Any, Type, TypeVar, Protocol, cast, overload
-from typing_extensions import ParamSpec, Concatenate
-import util.discord
-import discord_client
-import util.db.kv
+
+import bot.client
+import bot.cogs
 import plugins
-import plugins.cogs
+import util.db.kv
+import util.discord
+
 
 class CommandsConfig(Protocol):
     prefix: str
@@ -27,14 +30,14 @@ async def init() -> None:
 
 def bot_prefix(bot: discord.Client, msg: discord.Message) -> str:
     return conf.prefix
-discord_client.client.command_prefix = bot_prefix
+bot.client.client.command_prefix = bot_prefix
 @plugins.finalizer
 def cleanup_prefix() -> None:
-    discord_client.client.command_prefix = ()
+    bot.client.client.command_prefix = ()
 
 Context = discord.ext.commands.Context[discord.ext.commands.Bot]
 
-@plugins.cogs.cog
+@bot.cogs.cog
 class Commands(discord.ext.commands.Cog):
     @discord.ext.commands.Cog.listener()
     async def on_command(self, ctx: Context) -> None:
@@ -92,7 +95,7 @@ class Commands(discord.ext.commands.Cog):
 
     @discord.ext.commands.Cog.listener()
     async def on_message(self, msg: discord.Message) -> None:
-        await discord_client.client.process_commands(msg)
+        await bot.client.client.process_commands(msg)
 
 T = TypeVar("T")
 P = ParamSpec("P")
@@ -120,10 +123,10 @@ def command(name: Optional[str] = None, cls: Any = discord.ext.commands.Command,
             cmd = fun
         else:
             cmd = discord.ext.commands.command(name=name, cls=cls, *args, **kwargs)(fun) # type: ignore
-        discord_client.client.add_command(cmd)
-        @plugins.finalizer
+        bot.client.client.add_command(cmd)
         def cleanup_command() -> None:
-            discord_client.client.remove_command(cmd.name)
+            bot.client.client.remove_command(cmd.name)
+        plugins.finalizer(cleanup_command)
         return cmd
     return decorator
 

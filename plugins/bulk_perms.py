@@ -1,13 +1,15 @@
-import io
-import csv
 import collections
+import csv
+import io
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Set, Tuple, Union
+
 import discord
 import discord.ext.commands
-from typing import List, Dict, Set, Tuple, Callable, Awaitable, Union, Optional, Any
+
+import bot.commands
+import bot.privileges
+import bot.reactions
 import util.discord
-import plugins.commands
-import plugins.privileges
-import plugins.reactions
 
 def channel_sort_key(channel: discord.abc.GuildChannel) -> Tuple[int, bool, int]:
     if isinstance(channel, discord.CategoryChannel):
@@ -34,9 +36,9 @@ def disambiguated_name(channel: discord.abc.GuildChannel) -> str:
     chans.sort(key=lambda chan: chan.id)
     return "{} ({})".format(channel.name, 1 + chans.index(channel))
 
-@plugins.privileges.priv("mod")
-@plugins.commands.command("exportperms")
-async def exportperms(ctx: plugins.commands.Context) -> None:
+@bot.privileges.priv("mod")
+@bot.commands.command("exportperms")
+async def exportperms(ctx: bot.commands.Context) -> None:
     """Export all role and channel permission settings into CSV."""
     if ctx.guild is None:
         raise util.discord.InvocationError("This can only be used in a guild.")
@@ -113,9 +115,9 @@ def edit_channel_overwrites(channel: GuildChannel,
 def sync_channel(channel: SubChannel) -> Callable[[], Awaitable[Any]]:
     return lambda: channel.edit(sync_permissions=True)
 
-@plugins.privileges.priv("admin")
-@plugins.commands.command("importperms")
-async def importperms(ctx: plugins.commands.Context) -> None:
+@bot.privileges.priv("admin")
+@bot.commands.command("importperms")
+async def importperms(ctx: bot.commands.Context) -> None:
     """Import all role and channel permission settings from an attached CSV file."""
     if ctx.guild is None:
         raise util.discord.InvocationError("This can only be used in a guild.")
@@ -276,7 +278,7 @@ async def importperms(ctx: plugins.commands.Context) -> None:
             text += "\n" + out
     msg = await ctx.send(text, allowed_mentions=discord.AllowedMentions.none())
 
-    if await plugins.reactions.get_reaction(msg, ctx.author, {"\u274C": False, "\u2705": True}, timeout=300):
+    if await bot.reactions.get_reaction(msg, ctx.author, {"\u274C": False, "\u2705": True}, timeout=300):
         for action in actions:
             await action()
         await ctx.send("\u2705")

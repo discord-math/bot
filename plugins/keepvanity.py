@@ -1,12 +1,14 @@
+from typing import Awaitable, Optional, Protocol, cast
+
 import discord
 import discord.ext.commands
-from typing import Optional, Awaitable, Protocol, cast
-import discord_client
+
+import bot.client
+import bot.cogs
 import plugins
-import plugins.cogs
-import util.discord
-import util.db.kv
 import util.asyncio
+import util.db.kv
+import util.discord
 
 class KeepvanityConf(Awaitable[None], Protocol):
     guild: int
@@ -31,12 +33,12 @@ async def check_guild_vanity(guild: discord.Guild) -> None:
         if conf.vanity is not None:
             await guild.edit(vanity_code=conf.vanity)
 
-@plugins.cogs.cog
+@bot.cogs.cog
 class KeepVanity(discord.ext.commands.Cog):
     """Restores the guild vanity URL as soon as enough boosts are available"""
     @discord.ext.commands.Cog.listener()
     async def on_ready(self) -> None:
-        for guild in discord_client.client.guilds:
+        for guild in bot.client.client.guilds:
             await check_guild_vanity(guild)
 
     @discord.ext.commands.Cog.listener()
@@ -49,7 +51,7 @@ class KeepVanity(discord.ext.commands.Cog):
 
 @plugins.init
 async def init_check_task() -> None:
-    for guild in discord_client.client.guilds:
+    for guild in bot.client.client.guilds:
         try:
             await check_guild_vanity(guild)
         except (discord.NotFound, discord.Forbidden):

@@ -1,4 +1,3 @@
-import asyncio
 import atexit
 import logging
 import os
@@ -20,9 +19,7 @@ def atexit_restart_maybe() -> None:
             logger.critical("Restart failed", exc_info=True)
 
 def restart() -> None:
-    """
-    Restart the bot by stopping the event loop and exec'ing during the shutdown of the python interpreter.
-    """
+    """Restart the bot by stopping the event loop and exec'ing during the shutdown of the python interpreter."""
     global will_restart
     logger.info("Restart requested", stack_info=True)
     will_restart = True

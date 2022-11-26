@@ -2,7 +2,6 @@
 Automatically load certain plugins after bot initialization.
 """
 
-import asyncio
 import logging
 from typing import Awaitable, Iterator, Optional, Protocol, Set, Tuple, cast
 

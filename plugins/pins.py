@@ -1,12 +1,14 @@
 import asyncio
+from typing import Dict, Optional
+
 import discord
 import discord.ext.commands
-from typing import Dict, Optional
-import plugins.commands
-import plugins.privileges
-import plugins.locations
-import plugins.reactions
-import discord_client
+
+import bot.client
+import bot.commands
+import bot.locations
+import bot.privileges
+import bot.reactions
 import util.discord
 
 class AbortDueToUnpin(Exception):
@@ -15,13 +17,13 @@ class AbortDueToUnpin(Exception):
 class AbortDueToOtherPin(Exception):
     pass
 
-unpin_requests: Dict[int, plugins.reactions.ReactionMonitor[discord.RawReactionActionEvent]] = {}
+unpin_requests: Dict[int, bot.reactions.ReactionMonitor[discord.RawReactionActionEvent]] = {}
 
-@plugins.commands.cleanup
-@plugins.commands.command("pin")
-@plugins.privileges.priv("pin")
-@plugins.locations.location("pin")
-async def pin_command(ctx: plugins.commands.Context, message: Optional[util.discord.ReplyConverter]) -> None:
+@bot.commands.cleanup
+@bot.commands.command("pin")
+@bot.privileges.priv("pin")
+@bot.locations.location("pin")
+async def pin_command(ctx: bot.commands.Context, message: Optional[util.discord.ReplyConverter]) -> None:
     """Pin a message."""
     to_pin = util.discord.partial_from_reply(message, ctx)
     if ctx.guild is None:
@@ -29,7 +31,7 @@ async def pin_command(ctx: plugins.commands.Context, message: Optional[util.disc
     guild = ctx.guild
 
     pin_msg_task = asyncio.create_task(
-        discord_client.client.wait_for("message",
+        bot.client.client.wait_for("message",
             check=lambda m: m.guild is not None and m.guild.id == guild.id
             and m.channel.id == ctx.channel.id
             and m.type == discord.MessageType.pins_add
@@ -57,7 +59,7 @@ async def pin_command(ctx: plugins.commands.Context, message: Optional[util.disc
                     await confirm_msg.add_reaction("\u267B")
                     await confirm_msg.add_reaction("\u274C")
 
-                    with plugins.reactions.ReactionMonitor(guild_id=guild.id, channel_id=ctx.channel.id,
+                    with bot.reactions.ReactionMonitor(guild_id=guild.id, channel_id=ctx.channel.id,
                         message_id=confirm_msg.id, author_id=ctx.author.id, event="add",
                         filter=lambda _, p: p.emoji.name in ["\u267B","\u274C"], timeout_each=60) as mon:
                         try:
@@ -79,15 +81,15 @@ async def pin_command(ctx: plugins.commands.Context, message: Optional[util.disc
     finally:
         try:
             pin_msg = await asyncio.wait_for(pin_msg_task, timeout=60)
-            plugins.commands.add_cleanup(ctx, pin_msg)
+            bot.commands.add_cleanup(ctx, pin_msg)
         except asyncio.TimeoutError:
             pin_msg_task.cancel()
 
-@plugins.commands.cleanup
-@plugins.commands.command("unpin")
-@plugins.privileges.priv("pin")
-@plugins.locations.location("pin")
-async def unpin_command(ctx: plugins.commands.Context, message: Optional[util.discord.ReplyConverter]) -> None:
+@bot.commands.cleanup
+@bot.commands.command("unpin")
+@bot.privileges.priv("pin")
+@bot.locations.location("pin")
+async def unpin_command(ctx: bot.commands.Context, message: Optional[util.discord.ReplyConverter]) -> None:
     """Unpin a message."""
     to_unpin = util.discord.partial_from_reply(message, ctx)
     if ctx.guild is None:

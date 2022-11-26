@@ -1,16 +1,18 @@
 import asyncio
-import aiohttp
 import json
-import re
 import logging
-from typing import List, Set, Optional, Union, Iterable, Awaitable, Protocol, cast
+import re
+from typing import Awaitable, Iterable, List, Optional, Protocol, Set, Union, cast
+
+import aiohttp
+
+import bot.commands
+import bot.privileges
+import bot.reactions
+import plugins
 import util.db.kv
 import util.discord
 import util.frozen_list
-import plugins
-import plugins.commands
-import plugins.privileges
-import plugins.reactions
 
 class PhishConf(Awaitable[None], Protocol):
     api: str
@@ -117,9 +119,9 @@ async def resolve_link(link: str) -> Optional[str]:
         pass
     return None
 
-@plugins.commands.group("phish")
-@plugins.privileges.priv("mod")
-async def phish_command(ctx: plugins.commands.Context) -> None:
+@bot.commands.group("phish")
+@bot.privileges.priv("mod")
+async def phish_command(ctx: bot.commands.Context) -> None:
     """Manage the phishing domain list."""
     pass
 
@@ -130,7 +132,7 @@ def link_to_domain(link: str) -> str:
         return link.strip()
 
 @phish_command.command("check")
-async def phish_check(ctx: plugins.commands.Context, *,
+async def phish_check(ctx: bot.commands.Context, *,
     link: Union[util.discord.CodeBlock, util.discord.Inline, util.discord.Quoted]) -> None:
     """Check a link against the domain list."""
     domain = link_to_domain(link.text)
@@ -150,7 +152,7 @@ async def phish_check(ctx: plugins.commands.Context, *,
     await ctx.send("\n".join(output))
 
 @phish_command.command("add")
-async def phish_add(ctx: plugins.commands.Context, *,
+async def phish_add(ctx: bot.commands.Context, *,
     link: Union[util.discord.CodeBlock, util.discord.Inline, util.discord.Quoted]) -> None:
     """Locally mark a domain as malicious."""
     domain = link_to_domain(link.text)
@@ -180,13 +182,13 @@ async def phish_add(ctx: plugins.commands.Context, *,
     msg = await ctx.send("\n".join(output))
 
     if do_submit:
-        reason = await plugins.reactions.get_input(msg, ctx.author, {"\u274C": None}, timeout=300)
+        reason = await bot.reactions.get_input(msg, ctx.author, {"\u274C": None}, timeout=300)
         if reason is not None:
             result = await submit_link(link.text, util.discord.format("{!m}: {}", ctx.author, reason.content))
             await ctx.send(util.discord.format("{!i}", result))
 
 @phish_command.command("remove")
-async def phish_remove(ctx: plugins.commands.Context, *,
+async def phish_remove(ctx: bot.commands.Context, *,
     link: Union[util.discord.CodeBlock, util.discord.Inline, util.discord.Quoted]) -> None:
     """Locally mark a domain as safe."""
     domain = link_to_domain(link.text)

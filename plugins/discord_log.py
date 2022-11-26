@@ -1,16 +1,18 @@
-import logging
 import asyncio
+import io
+import logging
 import sys
 import threading
 import types
-import io
 from typing import List, Optional, Protocol, cast
+
 import discord
+
+import bot.client
 import plugins
-import discord_client
-import util.discord
-import util.db.kv
 import util.asyncio
+import util.db.kv
+import util.discord
 
 class LoggingConf(Protocol):
     channel: Optional[str]
@@ -71,7 +73,7 @@ class DiscordHandler(logging.Handler):
         except ValueError:
             return
 
-        client = discord_client.client
+        client = bot.client.client
         if client.is_closed():
             return
 
@@ -103,6 +105,6 @@ async def init() -> None:
     handler.setFormatter(logging.Formatter("%(name)s %(levelname)s: %(message)s"))
     logging.getLogger().addHandler(handler)
 
-    @plugins.finalizer
     def finalizer() -> None:
         logging.getLogger().removeHandler(handler)
+    plugins.finalizer(finalizer)

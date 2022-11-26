@@ -1,23 +1,25 @@
-import sqlalchemy
-import sqlalchemy.schema
-import sqlalchemy.orm
-import sqlalchemy.ext.asyncio
-import sqlalchemy.dialects.postgresql
 import datetime
 import json
+from typing import TYPE_CHECKING, Any, Optional, Protocol, TypedDict, Union, cast, overload
+from typing_extensions import NotRequired
+
 import discord
 import discord.ext.commands
-from typing import Optional, Union, Any, Protocol, cast, TypedDict, TYPE_CHECKING, overload
-from typing_extensions import NotRequired
-import util.discord
+import sqlalchemy
+import sqlalchemy.dialects.postgresql
+import sqlalchemy.ext.asyncio
+import sqlalchemy.orm
+import sqlalchemy.schema
+
+import bot.cogs
+import bot.commands
+import bot.locations
+import bot.privileges
+import bot.reactions
+import plugins
 import util.db
 import util.db.kv
-import plugins
-import plugins.commands
-import plugins.locations
-import plugins.privileges
-import plugins.cogs
-import plugins.reactions
+import util.discord
 
 registry: sqlalchemy.orm.registry = sqlalchemy.orm.registry()
 
@@ -93,7 +95,7 @@ async def init() -> None:
         registry.metadata.create_all))
 
 
-@plugins.cogs.cog
+@bot.cogs.cog
 class Factoids(discord.ext.commands.Cog):
     """Manage factoids."""
     @discord.ext.commands.Cog.listener()
@@ -101,7 +103,7 @@ class Factoids(discord.ext.commands.Cog):
         if msg.author.bot: return
         if not isinstance(msg.channel, (discord.abc.GuildChannel, discord.Thread)): return
         if not msg.content.startswith(conf.prefix): return
-        if not plugins.locations.in_location("factoids", msg.channel): return
+        if not bot.locations.in_location("factoids", msg.channel): return
         text = " ".join(msg.content[len(conf.prefix):].split()).lower()
         if not len(text): return
         async with sessionmaker() as session:
@@ -113,9 +115,9 @@ class Factoids(discord.ext.commands.Cog):
 
             mentions = discord.AllowedMentions.none()
             if (flags := alias.factoid.flags) is not None:
-                if "priv" in flags and not plugins.privileges.has_privilege(flags["priv"], msg.author):
+                if "priv" in flags and not bot.privileges.has_privilege(flags["priv"], msg.author):
                     return
-                if "location" in flags and not plugins.locations.in_location(flags["location"], msg.channel):
+                if "location" in flags and not bot.locations.in_location(flags["location"], msg.channel):
                     return
                 if "mentions" in flags and flags["mentions"]:
                     mentions = discord.AllowedMentions(roles=True, users=True)
@@ -145,15 +147,15 @@ class Factoids(discord.ext.commands.Cog):
             alias.used_at = datetime.datetime.utcnow()
             await session.commit()
 
-    @plugins.commands.cleanup
+    @bot.commands.cleanup
     @discord.ext.commands.group("tag")
-    async def tag_command(self, ctx: plugins.commands.Context) -> None:
+    async def tag_command(self, ctx: bot.commands.Context) -> None:
         """Manage factoids."""
         pass
 
-    @plugins.privileges.priv("factoids")
+    @bot.privileges.priv("factoids")
     @tag_command.command("add")
-    async def tag_add(self, ctx: plugins.commands.Context, *, name: str) -> None:
+    async def tag_add(self, ctx: bot.commands.Context, *, name: str) -> None:
         """Add a factoid. You will be prompted to enter the contents as a separate message."""
         name = validate_name(name)
         async with sessionmaker() as session:
@@ -177,9 +179,9 @@ class Factoids(discord.ext.commands.Cog):
             await session.commit()
         await ctx.send(util.discord.format("Factoid created, use with {!i}", conf.prefix + name))
 
-    @plugins.privileges.priv("factoids")
+    @bot.privileges.priv("factoids")
     @tag_command.command("alias")
-    async def tag_alias(self, ctx: plugins.commands.Context, name: str, *, newname: str) -> None:
+    async def tag_alias(self, ctx: bot.commands.Context, name: str, *, newname: str) -> None:
         """
         Alias a factoid. Both names will lead to the same output.
         If the original factoid contains spaces, it would need to be quoted.
@@ -202,9 +204,9 @@ class Factoids(discord.ext.commands.Cog):
             await session.commit()
         await ctx.send(util.discord.format("Aliased {!i} to {!i}", conf.prefix + newname, conf.prefix + name))
 
-    @plugins.privileges.priv("factoids")
+    @bot.privileges.priv("factoids")
     @tag_command.command("edit")
-    async def tag_edit(self, ctx: plugins.commands.Context, *, name: str) -> None:
+    async def tag_edit(self, ctx: bot.commands.Context, *, name: str) -> None:
         """
         Edit a factoid (and all factoids aliased to it).
         You will be prompted to enter the contents as a separate message.
@@ -214,7 +216,7 @@ class Factoids(discord.ext.commands.Cog):
             if (alias := await session.get(Alias, name)) is None:
                 raise util.discord.UserError(util.discord.format("The factoid {!i} does not exist", conf.prefix + name))
 
-            if alias.factoid.flags is not None and not plugins.privileges.PrivCheck("admin")(ctx):
+            if alias.factoid.flags is not None and not bot.privileges.PrivCheck("admin")(ctx):
                 raise util.discord.UserError(util.discord.format(
                     "This factoid can only be edited by admins because it has special behaviors"))
 
@@ -227,9 +229,9 @@ class Factoids(discord.ext.commands.Cog):
             await session.commit()
         await ctx.send(util.discord.format("Factoid updated, use with {!i}", conf.prefix + name))
 
-    @plugins.privileges.priv("factoids")
+    @bot.privileges.priv("factoids")
     @tag_command.command("unalias")
-    async def tag_unalias(self, ctx: plugins.commands.Context, *, name: str) -> None:
+    async def tag_unalias(self, ctx: bot.commands.Context, *, name: str) -> None:
         """
         Remove an alias for a factoid. The last name for a factoid cannot be removed (use delete instead).
         """
@@ -247,9 +249,9 @@ class Factoids(discord.ext.commands.Cog):
             await session.commit()
         await ctx.send(util.discord.format("Alias removed"))
 
-    @plugins.privileges.priv("factoids")
+    @bot.privileges.priv("factoids")
     @tag_command.command("delete")
-    async def tag_delete(self, ctx: plugins.commands.Context, *, name: str) -> None:
+    async def tag_delete(self, ctx: bot.commands.Context, *, name: str) -> None:
         """Delete a factoid and all its aliases."""
         name = validate_name(name)
         async with sessionmaker() as session:
@@ -266,7 +268,7 @@ class Factoids(discord.ext.commands.Cog):
         await ctx.send(util.discord.format("Factoid deleted"))
 
     @tag_command.command("info")
-    async def tag_info(self, ctx: plugins.commands.Context, *, name: str) -> None:
+    async def tag_info(self, ctx: bot.commands.Context, *, name: str) -> None:
         """Show information about a factoid."""
         name = validate_name(name)
         async with sessionmaker() as session:
@@ -292,7 +294,7 @@ class Factoids(discord.ext.commands.Cog):
                 allowed_mentions=discord.AllowedMentions.none())
 
     @tag_command.command("top")
-    async def tag_top(self, ctx: plugins.commands.Context) -> None:
+    async def tag_top(self, ctx: bot.commands.Context) -> None:
         """Show most used factoids."""
         async with sessionmaker() as session:
             aliases = sqlalchemy.orm.aliased(Alias)
@@ -309,9 +311,9 @@ class Factoids(discord.ext.commands.Cog):
             await ctx.send("\n".join(util.discord.format("{!i}: {} uses", conf.prefix + name, uses)
                 for name, uses in results))
 
-    @plugins.privileges.priv("admin")
+    @bot.privileges.priv("admin")
     @tag_command.command("flags")
-    async def tag_flags(self, ctx: plugins.commands.Context, name: str,
+    async def tag_flags(self, ctx: bot.commands.Context, name: str,
         flags: Optional[Union[util.discord.CodeBlock, util.discord.Inline, util.discord.Quoted]]) -> None:
         """
         Configure admin-only flags for a factoid. The flags are a JSON dictionary with the following keys:
@@ -331,9 +333,9 @@ class Factoids(discord.ext.commands.Cog):
                 await session.commit()
                 await ctx.send("\u2705")
 
-async def prompt_contents(ctx: plugins.commands.Context) -> Optional[Union[str, discord.Embed]]:
+async def prompt_contents(ctx: bot.commands.Context) -> Optional[Union[str, discord.Embed]]:
     prompt = await ctx.send("Please enter the factoid contents:")
-    response = await plugins.reactions.get_input(prompt, ctx.author, {"\u274C": None}, timeout=300)
+    response = await bot.reactions.get_input(prompt, ctx.author, {"\u274C": None}, timeout=300)
     if response is None: return None
 
     try:
@@ -341,7 +343,7 @@ async def prompt_contents(ctx: plugins.commands.Context) -> Optional[Union[str, 
     except:
         pass
     else:
-        if not plugins.privileges.PrivCheck("admin")(ctx):
+        if not bot.privileges.PrivCheck("admin")(ctx):
             raise util.discord.UserError("Creating factoids with embeds is only available for admins")
         try:
             embed = discord.Embed.from_dict(embed_data)
@@ -349,7 +351,7 @@ async def prompt_contents(ctx: plugins.commands.Context) -> Optional[Union[str, 
             raise util.discord.InvocationError("Could not parse embed data: {!r}".format(exc))
 
         prompt = await ctx.channel.send("Embed preview:", embed=embed)
-        if not await plugins.reactions.get_reaction(prompt, ctx.author, {"\u2705": True, "\u274C": False}):
+        if not await bot.reactions.get_reaction(prompt, ctx.author, {"\u2705": True, "\u274C": False}):
             await ctx.send("Cancelled.")
             return None
         return embed

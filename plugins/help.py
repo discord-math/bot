@@ -1,12 +1,14 @@
 import collections
+from typing import Any, List, Mapping, Optional, Set
+
 import discord
 import discord.ext.commands
-from typing import List, Mapping, Optional, Set, Any
-import discord_client
-import util.discord
+
+import bot.client
+import bot.commands
+import bot.privileges
 import plugins
-import plugins.commands
-import plugins.privileges
+import util.discord
 
 class HelpCommand(discord.ext.commands.HelpCommand):
     async def send_bot_help(self,
@@ -19,7 +21,7 @@ class HelpCommand(discord.ext.commands.HelpCommand):
             for cmd in cmds:
                 allowed = True
                 for check in cmd.checks:
-                    if isinstance(check, plugins.privileges.PrivCheck):
+                    if isinstance(check, bot.privileges.PrivCheck):
                         if not check(self.context): # type: ignore
                             allowed = False
                             break
@@ -46,7 +48,7 @@ class HelpCommand(discord.ext.commands.HelpCommand):
 
         allowed = True
         for check in command.checks:
-            if isinstance(check, plugins.privileges.PrivCheck):
+            if isinstance(check, bot.privileges.PrivCheck):
                 if not check(self.context): # type: ignore
                     allowed = False
                     break
@@ -81,7 +83,7 @@ class HelpCommand(discord.ext.commands.HelpCommand):
 
         allowed = True
         for check in group.checks:
-            if isinstance(check, plugins.privileges.PrivCheck):
+            if isinstance(check, bot.privileges.PrivCheck):
                 if not check(self.context): # type: ignore
                     allowed = False
                     break
@@ -92,8 +94,8 @@ class HelpCommand(discord.ext.commands.HelpCommand):
             usage, akanote, desc, "\n".join(subcommands), privnote,
             prefix + (self.invoked_with or "") + " " + group.qualified_name + " <sub-command name>"))
 
-old_help = discord_client.client.help_command
-discord_client.client.help_command = HelpCommand()
+old_help = bot.client.client.help_command
+bot.client.client.help_command = HelpCommand()
 @plugins.finalizer
 def restore_help_command() -> None:
-    discord_client.client.help_command = old_help
+    bot.client.client.help_command = old_help

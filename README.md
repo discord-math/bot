@@ -51,7 +51,7 @@ Commands:
 - ``eval ```code``` `` -- execute arbitrary Python code in the bot. The code must be wrapped in code blocks or inlines. The scope includes all imported modules, as well as `ctx` and `client`. Output is redirected to Discord. Top-level `await` can be used.
 - ``exec ```code``` `` -- synonym for the above.
 
-### `privileges`
+### `bot.privileges`
 
 Manage privilege sets for commands. Some commands are associated with specific privilege sets, and a privilege set can include a set of roles and a set of users.
 
@@ -64,7 +64,7 @@ Commands:
 - `priv remove <name> user <user>` -- remove a user from a privilege set.
 - `priv remove <name> role <role>` -- remove a role from a privilege set.
 
-### `locations`
+### `bot.locations`
 
 Manage locations for commands. Some commands are restricted to specific locations, and a location can include a set of channels and a set of categories.
 
@@ -215,9 +215,9 @@ Config:
 - ``config plugins.clopen limit <number>`` -- limit on how many channels can be occupied by a person at once.
 - ``config plugins.clopen limit_role <role id>`` -- role that is assigned when the limit is reached.
 - ``config plugins.clopen forum <channel id>`` -- id of the forum channel.
-- ``config plugins.pinned_posts [<thread id>, ...]`` -- list of thread ids in which posts should be cleaned up.
-- ``config plugins.solved_tag <tag id>`` -- the tag for solved posts.
-- ``config plugins.unsolved_tag <tag id>`` -- the tag for unsolved posts.
+- ``config plugins.clopen pinned_posts [<thread id>, ...]`` -- list of thread ids in which posts should be cleaned up.
+- ``config plugins.clopen solved_tag <tag id>`` -- the tag for solved posts.
+- ``config plugins.clopen unsolved_tag <tag id>`` -- the tag for unsolved posts.
 
 ### `factoids`
 
@@ -341,7 +341,7 @@ Config:
 - `config plugins.roles_review <roleA>,replace <roleB>` -- users applying for roleA will temporarily receive roleB while their application is under review.
 
 ### Miscellaneous Configuration
-- ``config plugins.commands prefix `"<prefix>"` `` -- set the prefix for the bot's "ordinary" commands.
+- ``config bot.commands prefix `"<prefix>"` `` -- set the prefix for the bot's "ordinary" commands.
 
 ## Running
 
@@ -358,12 +358,12 @@ the bot can respond to your commands. From the directory containing `bot.conf`
 run the following (adjust `PYTHONPATH` so that the necessary modules are in
 scope):
 ```sh
-python -m util.db.kv plugins.commands prefix '"."'
-python -m util.db.kv plugins.autoload plugins.bot_manager 'true'
+python -m util.db.kv bot.commands prefix '"."'
+python -m util.db.kv bot.autoload plugins.bot_manager 'true'
 # Create the shell and admin roles.
 # Substitute your own discord user id.
-python -m util.db.kv plugins.privileges shell,users '[207092805644845057]'
-python -m util.db.kv plugins.privileges admin,users '[207092805644845057]'
+python -m util.db.kv bot.privileges shell,users '[207092805644845057]'
+python -m util.db.kv bot.privileges admin,users '[207092805644845057]'
 ```
 Now you can run the bot by executing `main.py`. You can continue the configuration over Discord (you may find it useful to load some of the administration modules). For example:
 ```

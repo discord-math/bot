@@ -1,32 +1,33 @@
 from __future__ import annotations
-import re
-import datetime
+
 import asyncio
-import logging
 import contextlib
+import datetime
 import enum
-import sqlalchemy
-import sqlalchemy.orm
-import sqlalchemy.ext.asyncio
-from typing import (List, Dict, Set, Tuple, NamedTuple, Optional, Iterator, AsyncIterator, Sequence, Type, Union, Any,
-    Callable, Awaitable, Iterable, Protocol, TypeVar, cast, TYPE_CHECKING)
+import logging
+import re
+from typing import (TYPE_CHECKING, Any, AsyncIterator, Awaitable, Callable, Dict, Iterable, Iterator, List, NamedTuple,
+    Optional, Protocol, Sequence, Set, Tuple, Type, TypeVar, Union, cast)
+
 import discord
 import discord.abc
 import discord.ext.commands
+import sqlalchemy
+import sqlalchemy.ext.asyncio
+import sqlalchemy.orm
 
-import discord_client
+import bot.client
+import bot.cogs
+import bot.commands
+import bot.privileges
+import bot.reactions
+import plugins
+import plugins.persistence
+import util.asyncio
 import util.db
 import util.db.kv
 import util.discord
-import util.asyncio
 import util.frozen_list
-
-import plugins
-import plugins.commands
-import plugins.reactions
-import plugins.privileges
-import plugins.cogs
-import plugins.persistence
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -202,10 +203,10 @@ class TicketMod:
 
     async def try_initial_delivery(self, ticket: Ticket) -> None:
         logger.debug(util.discord.format("Delivering Ticket #{} to {!m}", ticket.id, self.modid))
-        user = discord_client.client.get_user(self.modid)
+        user = bot.client.client.get_user(self.modid)
         if user is None:
             try:
-                user = await discord_client.client.fetch_user(self.modid)
+                user = await bot.client.client.fetch_user(self.modid)
             except discord.NotFound:
                 logger.error(util.discord.format("Could not find {!m} to deliver Ticket #{}", self.modid, ticket.id))
                 self.scheduled_delivery = datetime.datetime.utcnow() + datetime.timedelta(seconds=conf.prompt_interval)
@@ -220,10 +221,10 @@ class TicketMod:
 
     async def try_redelivery(self, ticket: Ticket) -> None:
         logger.debug(util.discord.format("Re-delivering Ticket #{} to {!m}", ticket.id, self.modid))
-        user = discord_client.client.get_user(self.modid)
+        user = bot.client.client.get_user(self.modid)
         if user is None:
             try:
-                user = await discord_client.client.fetch_user(self.modid)
+                user = await bot.client.client.fetch_user(self.modid)
             except discord.NotFound:
                 logger.error(util.discord.format("Could not find {!m} to re-deliver Ticket #{}", self.modid, ticket.id))
                 return
@@ -280,7 +281,7 @@ class TicketMod:
         If there is a current active ticket, treat it as a comment.
         Either way, update the last handled message in data.
         """
-        prefix = plugins.commands.conf.prefix
+        prefix = bot.commands.conf.prefix
         if not prefix or not msg.content.startswith(prefix):
             if (ticket := await self.load_queue()) is not None:
                 logger.debug(util.discord.format("Processing message from {!m} as comment to Ticket #{}: {!r}",
@@ -403,7 +404,7 @@ class Ticket:
 
         # Post to or update the ticket list
         if conf.ticket_list:
-            channel = discord_client.client.get_channel(conf.ticket_list)
+            channel = bot.client.client.get_channel(conf.ticket_list)
             if isinstance(channel, (discord.TextChannel, discord.Thread)):
                 message = None
                 if self.list_msgid is not None:
@@ -515,10 +516,10 @@ class Ticket:
         if self.delivered_id is None:
             return None
         if user is None:
-            user = discord_client.client.get_user(self.modid)
+            user = bot.client.client.get_user(self.modid)
         if user is None:
             try:
-                user = await discord_client.client.fetch_user(self.modid)
+                user = await bot.client.client.fetch_user(self.modid)
             except discord.NotFound:
                 return None
         try:
@@ -700,7 +701,7 @@ class BanTicket(Ticket):
         return (await session.execute(stmt)).scalars().all()
 
     async def revert_action(self, reason: Optional[str] = None) -> None:
-        guild = discord_client.client.get_guild(conf.guild)
+        guild = bot.client.client.get_guild(conf.guild)
         assert guild
         async for entry in guild.bans(limit=None): # TODO: before/after?
             if entry.user.id == self.targetid:
@@ -750,7 +751,7 @@ class VCMuteTicket(Ticket):
             return ()
 
     async def revert_action(self, reason: Optional[str] = None) -> None:
-        guild = discord_client.client.get_guild(conf.guild)
+        guild = bot.client.client.get_guild(conf.guild)
         assert guild
         try:
             member = await guild.fetch_member(self.targetid)
@@ -809,7 +810,7 @@ class VCDeafenTicket(Ticket):
             return ()
 
     async def revert_action(self, reason: Optional[str] = None) -> None:
-        guild = discord_client.client.get_guild(conf.guild)
+        guild = bot.client.client.get_guild(conf.guild)
         assert guild
         try:
             member = await guild.fetch_member(self.targetid)
@@ -845,7 +846,7 @@ class AddRoleTicket(Ticket):
     def describe(self, *, dm: bool = False) -> str:
         role_desc = util.discord.format("{!M}", self.roleid)
         if dm:
-            if (guild := discord_client.client.get_guild(conf.guild)) and (role := guild.get_role(self.roleid)):
+            if (guild := bot.client.client.get_guild(conf.guild)) and (role := guild.get_role(self.roleid)):
                 role_desc = role.name
             else:
                 role_desc = str(self.roleid)
@@ -877,7 +878,7 @@ class AddRoleTicket(Ticket):
         return tickets
 
     async def revert_action(self, reason: Optional[str] = None) -> None:
-        guild = discord_client.client.get_guild(conf.guild)
+        guild = bot.client.client.get_guild(conf.guild)
         assert guild
         role = guild.get_role(self.roleid)
         assert role
@@ -980,8 +981,8 @@ async def poll_audit_log() -> None:
     """
     Whenever this task is woken up via audit_log_updated, it will read any new audit log events and process them.
     """
-    await discord_client.client.wait_until_ready()
-    if not conf.guild or not (guild := discord_client.client.get_guild(conf.guild)):
+    await bot.client.client.wait_until_ready()
+    if not conf.guild or not (guild := bot.client.client.get_guild(conf.guild)):
         logger.error("Guild not configured, or can't find the configured guild! Cannot read audit log.")
         return
 
@@ -1047,7 +1048,7 @@ def expiry_updated() -> None:
 
 # TODO: scheduling module
 async def expire_tickets() -> None:
-    await discord_client.client.wait_until_ready()
+    await bot.client.client.wait_until_ready()
 
     while True:
         try:
@@ -1096,7 +1097,7 @@ def delivery_updated() -> None:
 
 async def deliver_tickets() -> None:
     global queued_mods
-    await discord_client.client.wait_until_ready()
+    await bot.client.client.wait_until_ready()
 
     while True:
         try:
@@ -1244,9 +1245,9 @@ async def pager(dest: discord.abc.Messageable, pages: List[Page]) -> None:
     for r in reactions:
         await msg.add_reaction(r)
 
-    bot_id = discord_client.client.user.id if discord_client.client.user is not None else None
+    bot_id = bot.client.client.user.id if bot.client.client.user is not None else None
     index = 0
-    with plugins.reactions.ReactionMonitor(channel_id=msg.channel.id, message_id=msg.id, event="add",
+    with bot.reactions.ReactionMonitor(channel_id=msg.channel.id, message_id=msg.id, event="add",
         filter=lambda _, p: p.user_id != bot_id and p.emoji.name in reactions,
         timeout_each=120) as mon:
         try:
@@ -1281,19 +1282,19 @@ async def pager(dest: discord.abc.Messageable, pages: List[Page]) -> None:
 
 voice_lock: asyncio.Lock = asyncio.Lock()
 
-@plugins.cogs.cog
+@bot.cogs.cog
 class Tickets(discord.ext.commands.Cog):
     """Manage infraction history"""
-    @plugins.commands.cleanup
+    @bot.commands.cleanup
     @discord.ext.commands.command("note")
-    @plugins.privileges.priv("mod")
-    async def note_command(self, ctx: plugins.commands.Context, target: util.discord.PartialUserConverter, *,
+    @bot.privileges.priv("mod")
+    async def note_command(self, ctx: bot.commands.Context, target: util.discord.PartialUserConverter, *,
         note: Optional[str]) -> None:
         """Create a note on the target user."""
         if note is None:
             # Request the note dynamically
             prompt = await ctx.send("Please enter the note:")
-            response = await plugins.reactions.get_input(prompt, ctx.author, {"\u274C": None}, timeout=300)
+            response = await bot.reactions.get_input(prompt, ctx.author, {"\u274C": None}, timeout=300)
             if response is not None:
                 note = response.content
 
@@ -1307,14 +1308,14 @@ class Tickets(discord.ext.commands.Cog):
                 description="[#{}]({}): Note created!".format(ticket.id, ticket.jump_link)))
 
     @discord.ext.commands.group("ticket", aliases=["tickets"])
-    @plugins.privileges.priv("mod")
-    async def ticket_command(self, ctx: plugins.commands.Context) -> None:
+    @bot.privileges.priv("mod")
+    async def ticket_command(self, ctx: bot.commands.Context) -> None:
         """Manage tickets."""
         pass
 
-    @plugins.commands.cleanup
+    @bot.commands.cleanup
     @ticket_command.command("top")
-    async def ticket_top(self, ctx: plugins.commands.Context) -> None:
+    async def ticket_top(self, ctx: bot.commands.Context) -> None:
         """Re-deliver the ticket at the top of your queue to your DMs."""
         async with sessionmaker() as session:
             mod = await session.get(TicketMod, ctx.author.id,
@@ -1329,9 +1330,9 @@ class Tickets(discord.ext.commands.Cog):
 
             await session.commit()
 
-    @plugins.commands.cleanup
+    @bot.commands.cleanup
     @ticket_command.command("queue")
-    async def ticket_queue(self, ctx: plugins.commands.Context, mod: Optional[util.discord.PartialUserConverter]
+    async def ticket_queue(self, ctx: bot.commands.Context, mod: Optional[util.discord.PartialUserConverter]
         ) -> None:
         """Show the specified moderator's (or your own) ticket queue."""
         user = ctx.author if mod is None else mod
@@ -1350,7 +1351,7 @@ class Tickets(discord.ext.commands.Cog):
                 allowed_mentions=discord.AllowedMentions.none())
 
     @ticket_command.command("take")
-    async def ticket_take(self, ctx: plugins.commands.Context, ticket: Optional[Union[discord.PartialMessage, int]]
+    async def ticket_take(self, ctx: bot.commands.Context, ticket: Optional[Union[discord.PartialMessage, int]]
         ) -> None:
         """Assign the specified ticket to yourself."""
         async with sessionmaker() as session:
@@ -1365,7 +1366,7 @@ class Tickets(discord.ext.commands.Cog):
                 await ctx.send("You have claimed Ticket #{}.".format(tkt.id))
 
     @ticket_command.command("assign")
-    async def ticket_assign(self, ctx: plugins.commands.Context,
+    async def ticket_assign(self, ctx: bot.commands.Context,
         ticket: Optional[Union[discord.PartialMessage, int]], mod: util.discord.PartialUserConverter) -> None:
         """Assign the specified ticket to the specified moderator."""
         async with sessionmaker() as session:
@@ -1382,7 +1383,7 @@ class Tickets(discord.ext.commands.Cog):
                     allowed_mentions=discord.AllowedMentions.none())
 
     @ticket_command.command("set")
-    async def ticket_set(self, ctx: plugins.commands.Context,
+    async def ticket_set(self, ctx: bot.commands.Context,
         ticket: Optional[Union[discord.PartialMessage, int]], *, duration_comment: str) -> None:
         """Set the duration and comment for a ticket."""
         async with sessionmaker() as session:
@@ -1399,7 +1400,7 @@ class Tickets(discord.ext.commands.Cog):
                 tkt.id, tkt.jump_link, message)))
 
     @ticket_command.command("append")
-    async def ticket_append(self, ctx: plugins.commands.Context,
+    async def ticket_append(self, ctx: bot.commands.Context,
         ticket: Optional[Union[discord.PartialMessage, int]], *, comment: str) -> None:
         """Append to a ticket's comment."""
         async with sessionmaker() as session:
@@ -1416,7 +1417,7 @@ class Tickets(discord.ext.commands.Cog):
                 tkt.id, tkt.jump_link)))
 
     @ticket_command.command("revert")
-    async def ticket_revert(self, ctx: plugins.commands.Context,
+    async def ticket_revert(self, ctx: bot.commands.Context,
         ticket: Optional[Union[discord.PartialMessage, int]]) -> None:
         """Manually revert a ticket."""
         async with sessionmaker() as session:
@@ -1437,7 +1438,7 @@ class Tickets(discord.ext.commands.Cog):
                 description="[#{}]({}): Ticket reverted.".format(tkt.id, tkt.jump_link)))
 
     @ticket_command.command("hide")
-    async def ticket_hide(self, ctx: plugins.commands.Context,
+    async def ticket_hide(self, ctx: bot.commands.Context,
         ticket: Optional[Union[discord.PartialMessage, int]], *, comment: Optional[str]) -> None:
         """Hide (and revert) a ticket."""
         async with sessionmaker() as session:
@@ -1452,9 +1453,9 @@ class Tickets(discord.ext.commands.Cog):
 
             await ctx.send(embed=discord.Embed(description="#{}: Ticket hidden.".format(tkt.id)))
 
-    @plugins.commands.cleanup
+    @bot.commands.cleanup
     @ticket_command.command("show")
-    async def ticket_show(self, ctx: plugins.commands.Context, *,
+    async def ticket_show(self, ctx: bot.commands.Context, *,
         user_or_id: Union[util.discord.PartialUserConverter, discord.PartialMessage, int]
         ) -> None:
         """Show tickets affecting given user, or a ticket with a specific ID."""
@@ -1488,9 +1489,9 @@ class Tickets(discord.ext.commands.Cog):
                 else:
                     await ctx.send("No tickets found for this user.")
 
-    @plugins.commands.cleanup
+    @bot.commands.cleanup
     @ticket_command.command("showhidden")
-    async def ticket_showhidden(self, ctx: plugins.commands.Context, *,
+    async def ticket_showhidden(self, ctx: bot.commands.Context, *,
         user_or_id: Union[util.discord.PartialUserConverter, discord.PartialMessage, int]
         ) -> None:
         """Show hidden tickets affecting given user, or a ticket with a specific ID."""
@@ -1511,9 +1512,9 @@ class Tickets(discord.ext.commands.Cog):
                 else:
                     await ctx.send("No hidden tickets found for this user.")
 
-    @plugins.commands.cleanup
+    @bot.commands.cleanup
     @ticket_command.command("history")
-    async def ticket_history(self, ctx: plugins.commands.Context, *,
+    async def ticket_history(self, ctx: bot.commands.Context, *,
         ticket: Optional[Union[discord.PartialMessage, int]]) -> None:
         """Show revision history for a ticket."""
         async with sessionmaker() as session:

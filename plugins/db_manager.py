@@ -1,20 +1,22 @@
 import json
+from typing import List, Optional, Union
+
 import asyncpg
 import discord
 import discord.ext.commands
-from typing import List, Optional, Union
-import plugins.commands
-import plugins.privileges
-import plugins.reactions
-import util.discord
+
+import bot.commands
+import bot.privileges
+import bot.reactions
+import util.asyncio
 import util.db
 import util.db.kv
-import util.asyncio
+import util.discord
 
-@plugins.commands.cleanup
-@plugins.commands.group("config", invoke_without_command=True)
-@plugins.privileges.priv("shell")
-async def config_command(ctx: plugins.commands.Context, namespace: Optional[str], key: Optional[str],
+@bot.commands.cleanup
+@bot.commands.group("config", invoke_without_command=True)
+@bot.privileges.priv("shell")
+async def config_command(ctx: bot.commands.Context, namespace: Optional[str], key: Optional[str],
     value: Optional[Union[util.discord.CodeBlock, util.discord.Inline, util.discord.Quoted]]) -> None:
     """Edit the key-value configs."""
     if namespace is None:
@@ -38,8 +40,8 @@ async def config_command(ctx: plugins.commands.Context, namespace: Optional[str]
     await ctx.send("\u2705")
 
 @config_command.command("--delete")
-@plugins.privileges.priv("shell")
-async def config_delete(ctx: plugins.commands.Context, namespace: str, key: str) -> None:
+@bot.privileges.priv("shell")
+async def config_delete(ctx: bot.commands.Context, namespace: str, key: str) -> None:
     """Delete the provided key from the config."""
     conf = await util.db.kv.load(namespace)
     keys = key.split(",")
@@ -47,10 +49,10 @@ async def config_delete(ctx: plugins.commands.Context, namespace: str, key: str)
     await conf
     await ctx.send("\u2705")
 
-@plugins.commands.cleanup
-@plugins.commands.command("sql")
-@plugins.privileges.priv("shell")
-async def sql_command(ctx: plugins.commands.Context,
+@bot.commands.cleanup
+@bot.commands.command("sql")
+@bot.privileges.priv("shell")
+async def sql_command(ctx: bot.commands.Context,
     args: discord.ext.commands.Greedy[Union[util.discord.CodeBlock, util.discord.Inline, str]]) -> None:
     """Execute arbitrary SQL statements in the database."""
     data_outputs: List[List[str]] = []
@@ -108,7 +110,7 @@ async def sql_command(ctx: plugins.commands.Context,
         if not has_tx:
             return
 
-        if await plugins.reactions.get_reaction(reply, ctx.author, {"\u21A9": False, "\u2705": True}, timeout=60):
+        if await bot.reactions.get_reaction(reply, ctx.author, {"\u21A9": False, "\u2705": True}, timeout=60):
             await tx.commit()
         else:
             await tx.rollback()

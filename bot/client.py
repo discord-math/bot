@@ -24,7 +24,7 @@ client = discord.ext.commands.Bot(
     intents=intents,
     allowed_mentions=discord.AllowedMentions(everyone=False, roles=False))
 
-# Disable command functionality until reenabled again in plugins.commands
+# Disable command functionality until reenabled again in bot.commands
 @client.event
 async def on_message(*args: Any, **kwargs: Any) -> None:
     pass

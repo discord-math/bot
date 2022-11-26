@@ -1,20 +1,23 @@
 import asyncio
 import logging
 import re
+from typing import Awaitable, Dict, Iterable, List, Literal, Optional, Protocol, Set, Tuple, Union, cast, overload
+
 import discord
 import discord.ext.commands
 import discord.utils
-from typing import List, Dict, Tuple, Set, Optional, Union, Literal, Iterable, Awaitable, Protocol, overload, cast
+
+import bot.client
+import bot.commands
+import bot.message_tracker
+import bot.privileges
+import plugins
+import plugins.phish
+import plugins.tickets
 import util.db.kv
 import util.discord
 import util.frozen_list
-import discord_client
-import plugins
-import plugins.commands
-import plugins.tickets
-import plugins.phish
-import plugins.privileges
-import plugins.message_tracker
+
 
 class AutomodConf(Awaitable[None], Protocol):
     active: util.frozen_list.FrozenList[int]
@@ -79,12 +82,12 @@ def serialize_note(data: Dict[int, int]) -> str:
 
 async def create_automod_note(target_id: int, index: int) -> None:
     async with plugins.tickets.sessionmaker() as session:
-        assert discord_client.client.user is not None
+        assert bot.client.client.user is not None
         notes = await plugins.tickets.find_notes_prefix(session, "Automod:\n",
-            modid=discord_client.client.user.id, targetid=target_id)
+            modid=bot.client.client.user.id, targetid=target_id)
         if len(notes) == 0:
             await plugins.tickets.create_note(session, serialize_note({index: 1}),
-                modid=discord_client.client.user.id, targetid=target_id)
+                modid=bot.client.client.user.id, targetid=target_id)
         else:
             data = parse_note(notes[-1].comment)
             data[index] = 1 + data.get(index, 0)
@@ -185,20 +188,20 @@ async def init() -> None:
 
     await conf
     generate_regex()
-    await plugins.message_tracker.subscribe(__name__, None, process_messages, missing=True, retroactive=False)
-    @plugins.finalizer
+    await bot.message_tracker.subscribe(__name__, None, process_messages, missing=True, retroactive=False)
     async def unsubscribe() -> None:
-        await plugins.message_tracker.unsubscribe(__name__, None)
+        await bot.message_tracker.unsubscribe(__name__, None)
+    plugins.finalizer(unsubscribe)
 
-@plugins.commands.cleanup
-@plugins.commands.group("automod")
-@plugins.privileges.priv("mod")
-async def automod_command(ctx: plugins.commands.Context) -> None:
+@bot.commands.cleanup
+@bot.commands.group("automod")
+@bot.privileges.priv("mod")
+async def automod_command(ctx: bot.commands.Context) -> None:
     """Manage automod."""
     pass
 
 @automod_command.group("exempt", invoke_without_command=True)
-async def automod_exempt(ctx: plugins.commands.Context) -> None:
+async def automod_exempt(ctx: bot.commands.Context) -> None:
     """Manage roles exempt from automod."""
     output = []
     for id in conf.exempt_roles:
@@ -211,7 +214,7 @@ async def automod_exempt(ctx: plugins.commands.Context) -> None:
         allowed_mentions=discord.AllowedMentions.none())
 
 @automod_exempt.command("add")
-async def automod_exempt_add(ctx: plugins.commands.Context, role: util.discord.PartialRoleConverter) -> None:
+async def automod_exempt_add(ctx: bot.commands.Context, role: util.discord.PartialRoleConverter) -> None:
     """Make a role exempt from automod."""
     roles = set(conf.exempt_roles)
     roles.add(role.id)
@@ -221,7 +224,7 @@ async def automod_exempt_add(ctx: plugins.commands.Context, role: util.discord.P
         allowed_mentions=discord.AllowedMentions.none())
 
 @automod_exempt.command("remove")
-async def automod_exempt_remove(ctx: plugins.commands.Context, role: util.discord.PartialRoleConverter) -> None:
+async def automod_exempt_remove(ctx: bot.commands.Context, role: util.discord.PartialRoleConverter) -> None:
     """Make a role not exempt from automod."""
     roles = set(conf.exempt_roles)
     roles.discard(role.id)
@@ -231,7 +234,7 @@ async def automod_exempt_remove(ctx: plugins.commands.Context, role: util.discor
         allowed_mentions=discord.AllowedMentions.none())
 
 @automod_command.command("list")
-async def automod_list(ctx: plugins.commands.Context) -> None:
+async def automod_list(ctx: bot.commands.Context) -> None:
     """List all automod patterns (CW)."""
     output = "**Automod patterns**:\n"
     for i in conf.active:
@@ -250,7 +253,7 @@ async def automod_list(ctx: plugins.commands.Context) -> None:
         await ctx.send(output)
 
 @automod_command.command("add")
-async def automod_add(ctx: plugins.commands.Context, kind: Literal["substring", "word", "regex"],
+async def automod_add(ctx: bot.commands.Context, kind: Literal["substring", "word", "regex"],
     patterns: discord.ext.commands.Greedy[Union[util.discord.CodeBlock, util.discord.Inline, str]]) -> None:
     """
         Add an automod pattern with one or more keywords.
@@ -291,7 +294,7 @@ async def automod_add(ctx: plugins.commands.Context, kind: Literal["substring", 
     await ctx.send("Added as pattern **{}** with no action".format(i))
 
 @automod_command.command("remove")
-async def automod_remove(ctx: plugins.commands.Context, number: int) -> None:
+async def automod_remove(ctx: bot.commands.Context, number: int) -> None:
     """Remove an automod pattern by ID."""
     keywords = conf[number, "keyword"]
     kind = conf[number, "type"]
@@ -309,7 +312,7 @@ async def automod_remove(ctx: plugins.commands.Context, number: int) -> None:
         await ctx.send("No such pattern")
 
 @automod_command.command("action")
-async def automod_action(ctx: plugins.commands.Context, number: int,
+async def automod_action(ctx: bot.commands.Context, number: int,
     action: Literal["delete", "note", "mute", "kick", "ban"]) -> None:
     """Assign an action to an automod pattern. (All actions imply deletion)."""
     if conf[number, "keyword"] is None or conf[number, "type"] is None:

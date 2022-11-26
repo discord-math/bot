@@ -1,14 +1,17 @@
 import logging
-from typing import List, Optional, Union, Tuple, Coroutine, Literal, Callable, Awaitable, Protocol, Any, cast
+from typing import Any, Awaitable, Callable, Coroutine, List, Literal, Optional, Protocol, Tuple, Union, cast
+
 import discord
 import discord.ext.commands
 import discord.utils
-import util.db.kv
-from util.frozen_list import FrozenList
-import discord_client
-import util.discord
+
+import bot.client
+import bot.commands
 import plugins
-import plugins.commands
+import util.db.kv
+import util.discord
+from util.frozen_list import FrozenList
+
 
 class PrivilegesConf(Awaitable[None], Protocol):
     def __getitem__(self, key: Tuple[str, Literal["users", "roles"]]) -> Optional[FrozenList[int]]: ...
@@ -43,7 +46,7 @@ class PrivCheck:
     def __init__(self, priv: str):
         self.priv = priv
 
-    def __call__(self, ctx: plugins.commands.Context) -> bool:
+    def __call__(self, ctx: bot.commands.Context) -> bool:
         if has_privilege(self.priv, ctx.author):
             return True
         else:
@@ -53,13 +56,13 @@ class PrivCheck:
 def priv(name: str) -> Callable[[Callable[..., Coroutine[Any, Any, None]]], Callable[ ..., Coroutine[Any, Any, None]]]:
     return discord.ext.commands.check(PrivCheck(name))
 
-class PrivContext(plugins.commands.Context):
+class PrivContext(bot.commands.Context):
     priv: str
 
-@plugins.commands.cleanup
-@plugins.commands.group("priv")
+@bot.commands.cleanup
+@bot.commands.group("priv")
 @priv("shell")
-async def priv_command(ctx: plugins.commands.Context) -> None:
+async def priv_command(ctx: bot.commands.Context) -> None:
     """Manage privilege sets."""
     pass
 
@@ -71,7 +74,7 @@ def validate_priv(priv: str) -> None:
         raise util.discord.UserError(util.discord.format("Priv {!i} does not exist", priv))
 
 @priv_command.command("new")
-async def priv_new(ctx: plugins.commands.Context, priv: str) -> None:
+async def priv_new(ctx: bot.commands.Context, priv: str) -> None:
     """Create a new priv."""
     if priv_exists(priv):
         raise util.discord.UserError(util.discord.format("Priv {!i} already exists", priv))
@@ -83,7 +86,7 @@ async def priv_new(ctx: plugins.commands.Context, priv: str) -> None:
     await ctx.send(util.discord.format("Created priv {!i}", priv))
 
 @priv_command.command("delete")
-async def priv_delete(ctx: plugins.commands.Context, priv: str) -> None:
+async def priv_delete(ctx: bot.commands.Context, priv: str) -> None:
     """Delete a priv."""
     validate_priv(priv)
 
@@ -94,14 +97,14 @@ async def priv_delete(ctx: plugins.commands.Context, priv: str) -> None:
     await ctx.send(util.discord.format("Removed priv {!i}", priv))
 
 @priv_command.command("show")
-async def priv_show(ctx: plugins.commands.Context, priv: str) -> None:
+async def priv_show(ctx: bot.commands.Context, priv: str) -> None:
     """Show the users and roles in a priv."""
     validate_priv(priv)
     users = conf[priv, "users"]
     roles = conf[priv, "roles"]
     output = []
     for id in users or ():
-        user = await discord_client.client.fetch_user(id)
+        user = await bot.client.client.fetch_user(id)
         if user is not None:
             mtext = util.discord.format("{!m}({!i} {!i})", user, user.name, user.id)
         else:

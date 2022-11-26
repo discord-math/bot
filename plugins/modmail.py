@@ -1,22 +1,24 @@
 import asyncio
-import sqlalchemy
-import sqlalchemy.schema
-import sqlalchemy.orm
-import sqlalchemy.ext.asyncio
-import sqlalchemy.dialects.postgresql
+import datetime
+import logging
+from typing import TYPE_CHECKING, Any, Awaitable, Dict, Optional, Protocol, cast
+
 import discord
 import discord.ext.commands
-import logging
-import datetime
-from typing import Dict, Optional, Awaitable, Any, Protocol, cast, TYPE_CHECKING
-import discord_client
+import sqlalchemy
+import sqlalchemy.dialects.postgresql
+import sqlalchemy.ext.asyncio
+import sqlalchemy.orm
+import sqlalchemy.schema
+
+import bot.client
+import bot.cogs
+import bot.reactions
+import plugins
+import util.asyncio
 import util.db
 import util.db.kv
 import util.discord
-import util.asyncio
-import plugins
-import plugins.reactions
-import plugins.cogs
 
 registry: sqlalchemy.orm.registry = sqlalchemy.orm.registry()
 
@@ -118,7 +120,7 @@ class ModMailClient(discord.Client):
     async def on_message(self, msg: discord.Message) -> None:
         if not msg.guild and self.user is not None and msg.author.id != self.user.id:
             try:
-                guild = discord_client.client.get_guild(int(conf.guild))
+                guild = bot.client.client.get_guild(int(conf.guild))
                 if guild is None: return
                 channel = guild.get_channel(int(conf.channel))
                 if not isinstance(channel, (discord.TextChannel, discord.Thread)): return
@@ -163,7 +165,7 @@ class ModMailClient(discord.Client):
                 await create_thread(msg.author.id, copy_first.id)
             await msg.add_reaction("\u2709")
 
-@plugins.cogs.cog
+@bot.cogs.cog
 class Modmail(discord.ext.commands.Cog):
     """Handle modmail messages"""
     @discord.ext.commands.Cog.listener("on_message")
@@ -186,7 +188,7 @@ class Modmail(discord.ext.commands.Cog):
         except (discord.NotFound, discord.Forbidden):
             return
 
-        result = await plugins.reactions.get_reaction(query, msg.author,
+        result = await bot.reactions.get_reaction(query, msg.author,
             {anon_react: "anon", named_react: "named", cancel_react: None}, timeout=120, unreact=False)
 
         await query.delete()

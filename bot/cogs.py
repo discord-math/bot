@@ -1,7 +1,9 @@
 from typing import Type, TypeVar
+
 import discord.ext.commands
+
+import bot.client
 import plugins
-import discord_client
 
 T = TypeVar("T", bound=discord.ext.commands.Cog)
 
@@ -10,11 +12,11 @@ def cog(cls: Type[T]) -> T:
     cog_name = "{}:{}:{}".format(cog.__module__, cog.__cog_name__, hex(id(cog)))
     cog.__cog_name__ = cog_name
 
-    @plugins.init
     async def initialize_cog() -> None:
-        await discord_client.client.add_cog(cog)
-        @plugins.finalizer
+        await bot.client.client.add_cog(cog)
         async def finalize_cog() -> None:
-            await discord_client.client.remove_cog(cog_name)
+            await bot.client.client.remove_cog(cog_name)
+        plugins.finalizer(finalize_cog)
+    plugins.init(initialize_cog)
 
     return cog

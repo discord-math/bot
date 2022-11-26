@@ -3,40 +3,40 @@ import importlib
 import sys
 import traceback
 
+import bot.autoload
+import bot.commands
+import bot.privileges
 import plugins
-import plugins.autoload
-import plugins.commands
-import plugins.privileges
 import util.discord
 import util.restart
 
 manager = plugins.PluginManager.of(__name__)
 assert manager
 
-@plugins.commands.command("restart")
-@plugins.privileges.priv("admin")
-async def restart_command(ctx: plugins.commands.Context) -> None:
+@bot.commands.command("restart")
+@bot.privileges.priv("admin")
+async def restart_command(ctx: bot.commands.Context) -> None:
     """Restart the bot process."""
     await ctx.send("Restarting...")
     util.restart.restart()
 
 class PluginConverter(str):
     @classmethod
-    async def convert(cls, ctx: plugins.commands.Context, arg: str) -> str:
+    async def convert(cls, ctx: bot.commands.Context, arg: str) -> str:
         if "." not in arg:
             arg = "plugins." + arg
         return arg
 
-async def reply_exception(ctx: plugins.commands.Context) -> None:
+async def reply_exception(ctx: bot.commands.Context) -> None:
     _, exc, tb = sys.exc_info()
     text = util.discord.format("{!b:py}", "".join(traceback.format_exception(None, exc, tb)))
     del tb
     await ctx.send(text)
 
-@plugins.commands.cleanup
-@plugins.commands.command("load")
-@plugins.privileges.priv("admin")
-async def load_command(ctx: plugins.commands.Context, plugin: PluginConverter) -> None:
+@bot.commands.cleanup
+@bot.commands.command("load")
+@bot.privileges.priv("admin")
+async def load_command(ctx: bot.commands.Context, plugin: PluginConverter) -> None:
     """Load a plugin."""
     try:
         await manager.load(plugin)
@@ -45,10 +45,10 @@ async def load_command(ctx: plugins.commands.Context, plugin: PluginConverter) -
     else:
         await ctx.send("\u2705")
 
-@plugins.commands.cleanup
-@plugins.commands.command("reload")
-@plugins.privileges.priv("admin")
-async def reload_command(ctx: plugins.commands.Context, plugin: PluginConverter) -> None:
+@bot.commands.cleanup
+@bot.commands.command("reload")
+@bot.privileges.priv("admin")
+async def reload_command(ctx: bot.commands.Context, plugin: PluginConverter) -> None:
     """Reload a plugin."""
     try:
         await manager.reload(plugin)
@@ -57,10 +57,10 @@ async def reload_command(ctx: plugins.commands.Context, plugin: PluginConverter)
     else:
         await ctx.send("\u2705")
 
-@plugins.commands.cleanup
-@plugins.commands.command("unsafereload")
-@plugins.privileges.priv("admin")
-async def unsafe_reload_command(ctx: plugins.commands.Context, plugin: PluginConverter) -> None:
+@bot.commands.cleanup
+@bot.commands.command("unsafereload")
+@bot.privileges.priv("admin")
+async def unsafe_reload_command(ctx: bot.commands.Context, plugin: PluginConverter) -> None:
     """Reload a plugin without its dependents."""
     try:
         await manager.unsafe_reload(plugin)
@@ -69,10 +69,10 @@ async def unsafe_reload_command(ctx: plugins.commands.Context, plugin: PluginCon
     else:
         await ctx.send("\u2705")
 
-@plugins.commands.cleanup
-@plugins.commands.command("unload")
-@plugins.privileges.priv("admin")
-async def unload_command(ctx: plugins.commands.Context, plugin: PluginConverter) -> None:
+@bot.commands.cleanup
+@bot.commands.command("unload")
+@bot.privileges.priv("admin")
+async def unload_command(ctx: bot.commands.Context, plugin: PluginConverter) -> None:
     """Unload a plugin."""
     try:
         await manager.unload(plugin)
@@ -81,10 +81,10 @@ async def unload_command(ctx: plugins.commands.Context, plugin: PluginConverter)
     else:
         await ctx.send("\u2705")
 
-@plugins.commands.cleanup
-@plugins.commands.command("unsafeunload")
-@plugins.privileges.priv("admin")
-async def unsafe_unload_command(ctx: plugins.commands.Context, plugin: PluginConverter) -> None:
+@bot.commands.cleanup
+@bot.commands.command("unsafeunload")
+@bot.privileges.priv("admin")
+async def unsafe_unload_command(ctx: bot.commands.Context, plugin: PluginConverter) -> None:
     """Unload a plugin without its dependents."""
     try:
         await manager.unsafe_unload(plugin)
@@ -93,10 +93,10 @@ async def unsafe_unload_command(ctx: plugins.commands.Context, plugin: PluginCon
     else:
         await ctx.send("\u2705")
 
-@plugins.commands.cleanup
-@plugins.commands.command("reloadmod")
-@plugins.privileges.priv("admin")
-async def reloadmod_command(ctx: plugins.commands.Context, module: str) -> None:
+@bot.commands.cleanup
+@bot.commands.command("reloadmod")
+@bot.privileges.priv("admin")
+async def reloadmod_command(ctx: bot.commands.Context, module: str) -> None:
     """Reload a module."""
     try:
         importlib.reload(sys.modules[module])
@@ -105,31 +105,31 @@ async def reloadmod_command(ctx: plugins.commands.Context, module: str) -> None:
     else:
         await ctx.send("\u2705")
 
-@plugins.commands.cleanup
-@plugins.commands.group("autoload", invoke_without_command=True)
-@plugins.privileges.priv("admin")
-async def autoload_command(ctx: plugins.commands.Context) -> None:
+@bot.commands.cleanup
+@bot.commands.group("autoload", invoke_without_command=True)
+@bot.privileges.priv("admin")
+async def autoload_command(ctx: bot.commands.Context) -> None:
     """Manage plugins loaded at startup."""
-    await ctx.send(", ".join(util.discord.format("{!i}", name) for name in plugins.autoload.get_autoload()))
+    await ctx.send(", ".join(util.discord.format("{!i}", name) for name in bot.autoload.get_autoload()))
 
 @autoload_command.command("add")
-@plugins.privileges.priv("admin")
-async def autoload_add(ctx: plugins.commands.Context, plugin: PluginConverter) -> None:
+@bot.privileges.priv("admin")
+async def autoload_add(ctx: bot.commands.Context, plugin: PluginConverter) -> None:
     """Add a plugin to be loaded at startup."""
-    await plugins.autoload.set_autoload(plugin, True)
+    await bot.autoload.set_autoload(plugin, True)
     await ctx.send("\u2705")
 
 @autoload_command.command("remove")
-@plugins.privileges.priv("admin")
-async def autoload_remove(ctx: plugins.commands.Context, plugin: PluginConverter) -> None:
+@bot.privileges.priv("admin")
+async def autoload_remove(ctx: bot.commands.Context, plugin: PluginConverter) -> None:
     """Remove a plugin from startup loading list."""
-    await plugins.autoload.set_autoload(plugin, False)
+    await bot.autoload.set_autoload(plugin, False)
     await ctx.send("\u2705")
 
-@plugins.commands.cleanup
-@plugins.commands.command("plugins")
-@plugins.privileges.priv("mod")
-async def plugins_command(ctx: plugins.commands.Context) -> None:
+@bot.commands.cleanup
+@bot.commands.command("plugins")
+@bot.privileges.priv("mod")
+async def plugins_command(ctx: bot.commands.Context) -> None:
     """List loaded plugins."""
     output = collections.defaultdict(list)
     for name in sys.modules:

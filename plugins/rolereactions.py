@@ -1,15 +1,17 @@
+from typing import Awaitable, Iterator, Optional, Protocol, Tuple, TypedDict, Union, cast
+
 import discord
 import discord.ext.commands
 import discord.utils
-from typing import Tuple, Optional, Iterator, Union, TypedDict, Awaitable, Protocol, cast
-import discord_client
+
+import bot.client
+import bot.cogs
+import bot.commands
+import bot.privileges
+import plugins
 import util.db.kv
 import util.discord
 import util.frozen_dict
-import plugins
-import plugins.commands
-import plugins.cogs
-import plugins.privileges
 
 class MessageReactions(TypedDict):
     guild: int
@@ -37,7 +39,7 @@ async def init() -> None:
     await conf
 
 async def find_message(channel_id: int, msg_id: int) -> Optional[discord.Message]:
-    channel = discord_client.client.get_partial_messageable(channel_id)
+    channel = bot.client.client.get_partial_messageable(channel_id)
     if channel is None: return None
     try:
         return await channel.fetch_message(msg_id)
@@ -53,7 +55,7 @@ def format_role(guild: Optional[discord.Guild], role_id: int) -> str:
 
 def format_emoji(emoji_str: str) -> str:
     if emoji_str.isdigit():
-        emoji = discord_client.client.get_emoji(int(emoji_str))
+        emoji = bot.client.client.get_emoji(int(emoji_str))
         if emoji is not None and emoji.is_usable():
             return str(emoji) + util.discord.format("({!i})", emoji)
     return util.discord.format("{!i}", emoji_str)
@@ -72,7 +74,7 @@ def retrieve_msg_link(msg_id: int) -> str:
 
 def make_discord_emoji(emoji_str: str) -> Union[str, discord.Emoji, None]:
     if emoji_str.isdigit():
-        emoji = discord_client.client.get_emoji(int(emoji_str))
+        emoji = bot.client.client.get_emoji(int(emoji_str))
         if emoji is not None and emoji.is_usable():
             return emoji
         return None
@@ -103,7 +105,7 @@ def get_payload_role(guild: discord.Guild, payload: discord.RawReactionActionEve
     if (role_id := obj['rolereacts'].get(emoji)) is None: return None
     return discord.Object(role_id)
 
-@plugins.cogs.cog
+@bot.cogs.cog
 class RoleReactions(discord.ext.commands.Cog):
     """Manage role reactions."""
     @discord.ext.commands.Cog.listener()
@@ -117,7 +119,7 @@ class RoleReactions(discord.ext.commands.Cog):
     @discord.ext.commands.Cog.listener()
     async def on_raw_reaction_remove(self, payload: discord.RawReactionActionEvent) -> None:
         if payload.guild_id is None: return
-        guild = discord_client.client.get_guild(payload.guild_id)
+        guild = bot.client.client.get_guild(payload.guild_id)
         if guild is None: return
         member = guild.get_member(payload.user_id)
         if member is None: return
@@ -127,15 +129,15 @@ class RoleReactions(discord.ext.commands.Cog):
         await member.remove_roles(role, reason="Role reactions on {}".format(
             payload.message_id))
 
-    @plugins.commands.cleanup
+    @bot.commands.cleanup
     @discord.ext.commands.group("rolereact")
-    @plugins.privileges.priv("admin")
-    async def rolereact_command(self, ctx: plugins.commands.Context) -> None:
+    @bot.privileges.priv("admin")
+    async def rolereact_command(self, ctx: bot.commands.Context) -> None:
         """Manage role reactions."""
         pass
 
     @rolereact_command.command("new")
-    async def rolereact_new(self, ctx: plugins.commands.Context, message: Optional[util.discord.ReplyConverter]
+    async def rolereact_new(self, ctx: bot.commands.Context, message: Optional[util.discord.ReplyConverter]
         ) -> None:
         """Make the given message a role react message."""
         msg = util.discord.partial_from_reply(message, ctx)
@@ -149,7 +151,7 @@ class RoleReactions(discord.ext.commands.Cog):
         await ctx.send("Created role reactions on {}".format(format_partial_msg(msg)))
 
     @rolereact_command.command("delete")
-    async def rolereact_delete(self, ctx: plugins.commands.Context, message: Optional[util.discord.ReplyConverter]
+    async def rolereact_delete(self, ctx: bot.commands.Context, message: Optional[util.discord.ReplyConverter]
         ) -> None:
         """Make the given message not a role react message."""
         msg = util.discord.partial_from_reply(message, ctx)
@@ -160,12 +162,12 @@ class RoleReactions(discord.ext.commands.Cog):
         await ctx.send("Removed role reactions on {}".format(format_partial_msg(msg)))
 
     @rolereact_command.command("list")
-    async def rolereact_list(self, ctx: plugins.commands.Context) -> None:
+    async def rolereact_list(self, ctx: bot.commands.Context) -> None:
         """List role react messages."""
         await ctx.send("Role reactions exist on:\n{}".format("\n".join(retrieve_msg_link(int(id)) for id, in conf)))
 
     @rolereact_command.command("show")
-    async def rolereact_show(self, ctx: plugins.commands.Context, message: Optional[util.discord.ReplyConverter]
+    async def rolereact_show(self, ctx: bot.commands.Context, message: Optional[util.discord.ReplyConverter]
         ) -> None:
         """List roles on a role react message."""
         msg = util.discord.partial_from_reply(message, ctx)
@@ -177,7 +179,7 @@ class RoleReactions(discord.ext.commands.Cog):
             allowed_mentions=discord.AllowedMentions.none())
 
     @rolereact_command.command("add")
-    async def rolereact_add(self, ctx: plugins.commands.Context, message: util.discord.ReplyConverter,
+    async def rolereact_add(self, ctx: bot.commands.Context, message: util.discord.ReplyConverter,
         emoji: Union[discord.PartialEmoji, str], role: util.discord.PartialRoleConverter) -> None:
         """Add an emoji/role to a role react message."""
         if (obj := conf[message.id]) is None:
@@ -198,7 +200,7 @@ class RoleReactions(discord.ext.commands.Cog):
             allowed_mentions=discord.AllowedMentions.none())
 
     @rolereact_command.command("remove")
-    async def rolereact_remove(self, ctx: plugins.commands.Context, message: util.discord.ReplyConverter,
+    async def rolereact_remove(self, ctx: bot.commands.Context, message: util.discord.ReplyConverter,
         emoji: Union[discord.PartialEmoji, str]) -> None:
         """Remove an emoji from a role react message."""
         if (obj := conf[message.id]) is None:

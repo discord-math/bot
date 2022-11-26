@@ -1,19 +1,21 @@
 import asyncio
-from datetime import timezone, datetime
-import discord
-import discord.ext.commands
-from operator import itemgetter
+from datetime import datetime, timezone
 import io
 from itertools import count
-import time
-from typing import Iterator, Optional, Tuple, Protocol, TypedDict, Awaitable, cast
-import discord_client
 import logging
-import plugins.commands
-import plugins.privileges
+from operator import itemgetter
+import time
+from typing import Awaitable, Iterator, Optional, Protocol, Tuple, TypedDict, cast
+
+import discord
+import discord.ext.commands
+
+import bot.client
+import bot.commands
+import bot.privileges
 import plugins
-import util.db.kv
 import util.asyncio
+import util.db.kv
 import util.discord
 from util.frozen_list import FrozenList
 
@@ -47,7 +49,7 @@ def format_text_reminder(reminder: Reminder) -> str:
     return '"""{}""" ({}) for {}'.format(contents, format_msg(guild, channel, msg), time_str)
 
 async def send_reminder(user_id: int, reminder: Reminder) -> None:
-    guild = discord_client.client.get_guild(reminder["guild"])
+    guild = bot.client.client.get_guild(reminder["guild"])
     if guild is None:
         logger.info("Reminder {} for user {} silently removed (guild no longer exists)".format(str(reminder), user_id))
         return
@@ -78,7 +80,7 @@ async def handle_reminder(user_id: int, reminder: Reminder) -> None:
 expiration_updated = asyncio.Semaphore(value=0)
 
 async def expire_reminders() -> None:
-    await discord_client.client.wait_until_ready()
+    await bot.client.client.wait_until_ready()
 
     while True:
         try:
@@ -124,10 +126,10 @@ async def init() -> None:
     expiry_task: asyncio.Task[None] = util.asyncio.run_async(expire_reminders)
     plugins.finalizer(expiry_task.cancel)
 
-@plugins.commands.cleanup
-@plugins.commands.command("remindme", aliases=["remind"])
-@plugins.privileges.priv("remind")
-async def remindme_command(ctx: plugins.commands.Context, interval: util.discord.DurationConverter, *,
+@bot.commands.cleanup
+@bot.commands.command("remindme", aliases=["remind"])
+@bot.privileges.priv("remind")
+async def remindme_command(ctx: bot.commands.Context, interval: util.discord.DurationConverter, *,
     text: Optional[str]) -> None:
     """Set a reminder with a given message."""
     if ctx.guild is None:
@@ -147,10 +149,10 @@ async def remindme_command(ctx: plugins.commands.Context, interval: util.discord
     await ctx.send("Created reminder {}".format(format_reminder(reminder))[:2000],
         allowed_mentions=discord.AllowedMentions.none())
 
-@plugins.commands.cleanup
-@plugins.commands.group("reminder", aliases=["reminders"], invoke_without_command=True)
-@plugins.privileges.priv("remind")
-async def reminder_command(ctx: plugins.commands.Context) -> None:
+@bot.commands.cleanup
+@bot.commands.group("reminder", aliases=["reminders"], invoke_without_command=True)
+@bot.privileges.priv("remind")
+async def reminder_command(ctx: bot.commands.Context) -> None:
     """Display your reminders."""
     reminders = conf[ctx.author.id] or FrozenList()
     reminder_list_md = "Your reminders include:\n{}".format("\n".join(
@@ -166,8 +168,8 @@ async def reminder_command(ctx: plugins.commands.Context) -> None:
         await ctx.send(reminder_list_md, allowed_mentions=discord.AllowedMentions.none())
 
 @reminder_command.command("remove")
-@plugins.privileges.priv("remind")
-async def reminder_remove(ctx: plugins.commands.Context, index: int) -> None:
+@bot.privileges.priv("remind")
+async def reminder_remove(ctx: bot.commands.Context, index: int) -> None:
     """Delete a reminder."""
     reminders_optional = conf[ctx.author.id]
     reminders = reminders_optional.copy() if reminders_optional is not None else []

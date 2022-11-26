@@ -1,15 +1,17 @@
 import logging
-from typing import List, Optional, Union, Tuple, Coroutine, Literal, Callable, Awaitable, Protocol, Any, cast
+from typing import Any, Awaitable, Callable, Coroutine, List, Literal, Optional, Protocol, Tuple, Union, cast
+
 import discord
 import discord.ext.commands
 import discord.utils
-import util.db.kv
-from util.frozen_list import FrozenList
-import discord_client
-import util.discord
+
+import bot.client
+import bot.commands
+import bot.privileges
 import plugins
-import plugins.commands
-import plugins.privileges
+import util.db.kv
+import util.discord
+from util.frozen_list import FrozenList
 
 class LocationsConf(Awaitable[None], Protocol):
     def __getitem__(self, key: Tuple[str, Literal["channels", "categories"]]) -> Optional[FrozenList[int]]: ...
@@ -37,17 +39,17 @@ def in_location(loc: str, channel: Union[discord.abc.GuildChannel, discord.Threa
 
 def location(name: str) -> Callable[[Callable[..., Coroutine[Any, Any, None]]], Callable[
     ..., Coroutine[Any, Any, None]]]:
-    def command_location_check(ctx: plugins.commands.Context) -> bool:
+    def command_location_check(ctx: bot.commands.Context) -> bool:
         return isinstance(ctx.channel, (discord.abc.GuildChannel, discord.Thread)) and in_location(name, ctx.channel)
     return discord.ext.commands.check(command_location_check)
 
-class LocContext(plugins.commands.Context):
+class LocContext(bot.commands.Context):
     loc: str
 
-@plugins.commands.cleanup
-@plugins.commands.group("location")
-@plugins.privileges.priv("shell")
-async def location_command(ctx: plugins.commands.Context) -> None:
+@bot.commands.cleanup
+@bot.commands.group("location")
+@bot.privileges.priv("shell")
+async def location_command(ctx: bot.commands.Context) -> None:
     """Manage locations where a command can be invoked."""
     pass
 
@@ -59,7 +61,7 @@ def validate_location(loc: str) -> None:
         raise util.discord.UserError(util.discord.format("Location {!i} does not exist", loc))
 
 @location_command.command("new")
-async def location_new(ctx: plugins.commands.Context, loc: str) -> None:
+async def location_new(ctx: bot.commands.Context, loc: str) -> None:
     """Create a new location."""
     if location_exists(loc):
         raise util.discord.UserError(util.discord.format("Location {!i} already exists", loc))
@@ -71,7 +73,7 @@ async def location_new(ctx: plugins.commands.Context, loc: str) -> None:
     await ctx.send(util.discord.format("Created location {!i}", loc))
 
 @location_command.command("delete")
-async def location_delete(ctx: plugins.commands.Context, loc: str) -> None:
+async def location_delete(ctx: bot.commands.Context, loc: str) -> None:
     """Delete a location."""
     validate_location(loc)
 
@@ -82,21 +84,21 @@ async def location_delete(ctx: plugins.commands.Context, loc: str) -> None:
     await ctx.send(util.discord.format("Removed location {!i}", loc))
 
 @location_command.command("show")
-async def location_show(ctx: plugins.commands.Context, loc: str) -> None:
+async def location_show(ctx: bot.commands.Context, loc: str) -> None:
     """Show the channels and categories in a location."""
     validate_location(loc)
     chans = conf[loc, "channels"]
     cats = conf[loc, "categories"]
     output = []
     for id in chans or ():
-        chan = discord_client.client.get_channel(id)
+        chan = bot.client.client.get_channel(id)
         if isinstance(chan, discord.abc.GuildChannel):
             ctext = util.discord.format("{!c}({!i} {!i})", chan, chan.name, chan.id)
         else:
             ctext = util.discord.format("{!c}({!i})", id, id)
         output.append("channel {}".format(ctext))
     for id in cats or ():
-        cat = discord_client.client.get_channel(id)
+        cat = bot.client.client.get_channel(id)
         if isinstance(cat, discord.CategoryChannel):
             ctext = util.discord.format("{!c}({!i} {!i})", cat, cat.name, cat.id)
         else:

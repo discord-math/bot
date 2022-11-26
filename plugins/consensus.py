@@ -1,25 +1,27 @@
 import asyncio
-import enum
 import datetime
+import enum
 import logging
+from typing import TYPE_CHECKING, Dict, Iterable, Iterator, List, Optional, Sequence, Union, cast
+
 import discord
-import discord.ui
 import discord.app_commands
 import discord.ext.commands
-import sqlalchemy
-import sqlalchemy.orm
-import sqlalchemy.ext.asyncio
-from typing import List, Dict, Optional, Sequence, Iterable, Iterator, Union, cast, TYPE_CHECKING
-import plugins
-import plugins.commands
-import plugins.locations
-import plugins.privileges
-import plugins.cogs
-import discord_client
-import util.db
-import util.discord
 if TYPE_CHECKING:
     import discord.types.interactions
+import discord.ui
+import sqlalchemy
+import sqlalchemy.ext.asyncio
+import sqlalchemy.orm
+
+import bot.client
+import bot.cogs
+import bot.commands
+import bot.locations
+import bot.privileges
+import plugins
+import util.db
+import util.discord
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +59,7 @@ class Poll:
     async def get_votes_message(self) -> Optional[discord.PartialMessage]:
         channel_id = self.channel_id if self.thread_id is None else self.thread_id
         try:
-            if not isinstance(channel := await discord_client.client.fetch_channel(channel_id),
+            if not isinstance(channel := await bot.client.client.fetch_channel(channel_id),
                 discord.abc.Messageable):
                 return None
         except (discord.NotFound, discord.Forbidden):
@@ -107,7 +109,7 @@ def timeouts_updated() -> None:
     timeout_event.set()
 
 async def handle_timeouts() -> None:
-    await discord_client.client.wait_until_ready()
+    await bot.client.client.wait_until_ready()
 
     while True:
         try:
@@ -449,7 +451,7 @@ async def close_poll(interaction: discord.Interaction, poll_id: int) -> None:
         await session.commit()
 
 
-@plugins.cogs.cog
+@bot.cogs.cog
 class ConsensusCog(discord.ext.commands.Cog):
     @discord.ext.commands.Cog.listener()
     async def on_interaction(self, interaction: discord.Interaction) -> None:
@@ -477,10 +479,10 @@ class ConsensusCog(discord.ext.commands.Cog):
         elif action == "Close":
             await close_poll(interaction, poll_id)
 
-    @plugins.commands.cleanup
+    @bot.commands.cleanup
     @discord.ext.commands.command("poll")
-    @plugins.locations.location("poll")
-    async def poll(self, ctx: plugins.commands.Context, duration: util.discord.DurationConverter, *,
+    @bot.locations.location("poll")
+    async def poll(self, ctx: bot.commands.Context, duration: util.discord.DurationConverter, *,
         comment: str) -> None:
         """
         Create a poll with the specified timeout duration and the given message.
@@ -507,10 +509,10 @@ class ConsensusCog(discord.ext.commands.Cog):
             await session.commit()
             timeouts_updated()
 
-    @plugins.commands.cleanup
+    @bot.commands.cleanup
     @discord.ext.commands.command("polls")
-    @plugins.privileges.priv("mod")
-    async def polls(self, ctx: plugins.commands.Context) -> None:
+    @bot.privileges.priv("mod")
+    async def polls(self, ctx: bot.commands.Context) -> None:
         async with sessionmaker() as session:
             output = ""
             stmt = sqlalchemy.select(Poll)

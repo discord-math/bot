@@ -2,19 +2,22 @@
 Some common utilities for interacting with discord.
 """
 from __future__ import annotations
-import re
-import math
+
 import datetime
+import logging
+import math
+import re
+import string
+from typing import (Any, AsyncContextManager, Callable, Generic, Iterable, List, Optional, Protocol, Sequence, Type,
+    TypeVar, Union, cast)
+
 import discord
 import discord.abc
 import discord.ext.commands
 import discord.ext.commands.view
 import discord.state
-import string
-import logging
-from typing import (Any, List, Sequence, Callable, Iterable, Optional, Union, AsyncContextManager, Generic, TypeVar,
-    Type, Protocol, cast)
-import discord_client
+
+import bot.client
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -498,7 +501,7 @@ class ChannelConverter(discord.abc.GuildChannel):
         return await PCConv.convert(ctx, arg, discord.abc.GuildChannel)
 
 def partial_message(channel: discord.abc.Snowflake, id: int) -> discord.PartialMessage:
-    return discord.PartialMessage(channel=discord_client.client.get_partial_messageable(channel.id), id=id)
+    return discord.PartialMessage(channel=bot.client.client.get_partial_messageable(channel.id), id=id)
 
 def partial_from_reply(pmsg: Optional[discord.PartialMessage], ctx: discord.ext.commands.Context[Any]
     ) -> discord.PartialMessage:
@@ -507,7 +510,7 @@ def partial_from_reply(pmsg: Optional[discord.PartialMessage], ctx: discord.ext.
     if (ref := ctx.message.reference) is not None:
         if isinstance(msg := ref.resolved, discord.Message):
             return partial_message(msg.channel, msg.id)
-        if (channel := discord_client.client.get_channel(ref.channel_id)) is None:
+        if (channel := bot.client.client.get_channel(ref.channel_id)) is None:
             raise InvocationError(format("Could not find channel by ID {}", ref.channel_id))
         if ref.message_id is None:
             raise InvocationError("Referenced message has no ID")

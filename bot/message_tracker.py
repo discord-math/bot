@@ -5,22 +5,25 @@ channel history to retroactively inform new subscribers about old messages, and 
 reconnecting to catch up on what we've missed.
 """
 from __future__ import annotations
+
 import asyncio
-import logging
-import datetime
 import bisect
+import datetime
+import logging
+from typing import (TYPE_CHECKING, Any, Awaitable, Callable, Dict, Iterable, List, Optional, Sequence, Tuple, TypeVar,
+    Union, cast, overload)
+
 import discord
 import discord.ext.commands
 import sqlalchemy
-import sqlalchemy.ext.asyncio
 import sqlalchemy.dialects.postgresql
+import sqlalchemy.ext.asyncio
 import sqlalchemy.orm
-from typing import (List, Dict, Tuple, Sequence, Optional, Any, Union, Callable, Iterable, Awaitable, TypeVar, overload,
-    cast, TYPE_CHECKING)
-import util.db
+
+import bot.client
+import bot.cogs
 import plugins
-import plugins.cogs
-import discord_client
+import util.db
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -440,7 +443,7 @@ def update_fetch() -> None:
     fetch_updated.set()
 
 async def background_fetch() -> None:
-    await discord_client.client.wait_until_ready()
+    await bot.client.client.wait_until_ready()
     while True:
         try:
             await fetch_updated.wait()
@@ -456,7 +459,7 @@ async def background_fetch() -> None:
                 logger.debug("Looking at channel {} (thread={}, before={})".format(
                     channel_id, thread_id, before_snowflake))
 
-                if (guild := discord_client.client.get_guild(guild_id)) is None:
+                if (guild := bot.client.client.get_guild(guild_id)) is None:
                     logger.warning("Guild {} not found, marking unreachable".format(guild_id))
                     await mark_guild_unreachable(session, guild_id)
                     await session.commit()
@@ -534,7 +537,6 @@ executor_task: asyncio.Task[None]
 async def init_executor() -> None:
     global executor_task, fetch_task
     executor_task = asyncio.create_task(executor())
-    @plugins.finalizer
     async def cancel_executor() -> None:
         async def kill_executor() -> None:
             raise asyncio.CancelledError()
@@ -547,10 +549,11 @@ async def init_executor() -> None:
                 await executor_task
             except asyncio.CancelledError:
                 pass
+    plugins.finalizer(cancel_executor)
     fetch_task = asyncio.create_task(background_fetch())
     plugins.finalizer(fetch_task.cancel)
-    if discord_client.client.is_ready():
-        chans = [channel for guild in discord_client.client.guilds
+    if bot.client.client.is_ready():
+        chans = [channel for guild in bot.client.client.guilds
             for channel in guild.channels if isinstance(channel, (discord.TextChannel, discord.VoiceChannel))]
         last_msgs, thread_last_msgs = take_snapshot(chans)
         schedule(process_ready(last_msgs, thread_last_msgs))
@@ -571,7 +574,7 @@ async def process_ready(last_msgs: Dict[int, int], thread_last_msgs: Dict[int, D
                 chan.reachable = True
         for channel_id in last_msgs:
             if channel_id not in have_chans:
-                channel = discord_client.client.get_channel(channel_id)
+                channel = bot.client.client.get_channel(channel_id)
                 if not isinstance(channel, (discord.TextChannel, discord.VoiceChannel)): continue
                 subscribers = set()
                 for sub in events:
@@ -601,7 +604,7 @@ async def process_ready(last_msgs: Dict[int, int], thread_last_msgs: Dict[int, D
         archived_threads: Dict[int, List[discord.Thread]] = {channel_id: [] for channel_id in min_last_msgs}
         for channel_id in min_last_msgs:
             if channel_id not in last_msgs: continue
-            channel = discord_client.client.get_channel(channel_id)
+            channel = bot.client.client.get_channel(channel_id)
             if not isinstance(channel, discord.TextChannel): continue
             async for thread in channel.archived_threads(limit=None):
                 assert thread.archive_timestamp is not None
@@ -735,11 +738,11 @@ async def process_message(msg: discord.Message) -> None:
     if requests_added:
         update_fetch()
 
-@plugins.cogs.cog
+@bot.cogs.cog
 class MessageTracker(discord.ext.commands.Cog):
     @discord.ext.commands.Cog.listener()
     async def on_ready(self) -> None:
-        chans = [channel for guild in discord_client.client.guilds
+        chans = [channel for guild in bot.client.client.guilds
             for channel in guild.channels if isinstance(channel, (discord.TextChannel, discord.VoiceChannel))]
         last_msgs, thread_last_msgs = take_snapshot(chans)
         schedule(process_ready(last_msgs, thread_last_msgs))
@@ -789,7 +792,7 @@ async def process_subscription(subscriber: str, event_dict: Dict[str, Callback],
                 have_chans.add(state.channel_id)
         for channel_id in last_msgs:
             if channel_id not in have_chans:
-                channel = discord_client.client.get_channel(channel_id)
+                channel = bot.client.client.get_channel(channel_id)
                 if not isinstance(channel, (discord.TextChannel, discord.VoiceChannel)): continue
                 logger.debug("Channel {} is now subscibed for {!r}".format(channel_id, subscriber))
                 stmt = (sqlalchemy.dialects.postgresql.insert(Channel)
@@ -823,7 +826,7 @@ async def process_subscription(subscriber: str, event_dict: Dict[str, Callback],
         archived_threads: Dict[int, List[discord.Thread]] = {channel_id: [] for channel_id in last_msgs}
 
         async def find_archived_threads(channel_id: int) -> None:
-            channel = discord_client.client.get_channel(channel_id)
+            channel = bot.client.client.get_channel(channel_id)
             if not isinstance(channel, discord.TextChannel): return
             try:
                 async for thread in channel.archived_threads(limit=None):
@@ -894,7 +897,7 @@ async def subscribe(name: str, channels: Optional[Union[discord.Guild, discord.T
         event_dict = events_channel.setdefault(channels.id, {})
     if missing or retroactive:
         if channels is None:
-            chans = [channel for guild in discord_client.client.guilds
+            chans = [channel for guild in bot.client.client.guilds
                 for channel in guild.channels if isinstance(channel, (discord.TextChannel, discord.VoiceChannel))]
         elif isinstance(channels, discord.Guild):
             chans = [channel

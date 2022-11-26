@@ -1,16 +1,18 @@
-import sqlalchemy
-import sqlalchemy.schema
-import sqlalchemy.orm
-import sqlalchemy.ext.asyncio
-import sqlalchemy.dialects.postgresql
+from typing import Protocol, cast
+
 import discord
 import discord.ext.commands
-from typing import Protocol, cast
+import sqlalchemy
+import sqlalchemy.dialects.postgresql
+import sqlalchemy.ext.asyncio
+import sqlalchemy.orm
+import sqlalchemy.schema
+
+import bot.cogs
+import plugins
 import util.db
 import util.db.kv
 import util.frozen_list
-import plugins
-import plugins.cogs
 
 registry: sqlalchemy.orm.registry = sqlalchemy.orm.registry()
 
@@ -40,7 +42,7 @@ async def init() -> None:
         sqlalchemy.schema.CreateSchema("persistence"),
         registry.metadata.create_all))
 
-@plugins.cogs.cog
+@bot.cogs.cog
 class Persistence(discord.ext.commands.Cog):
     """Role persistence."""
     @discord.ext.commands.Cog.listener()

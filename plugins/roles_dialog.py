@@ -1,11 +1,13 @@
+from typing import Iterable, List, Literal, Optional, Protocol, Tuple, Union, cast, overload
+
 import discord
-import discord.ui
 import discord.app_commands
 import discord.ext.commands
-from typing import List, Tuple, Literal, Optional, Iterable, Union, Protocol, cast, overload
+import discord.ui
+
+import bot.cogs
+import bot.interactions
 import plugins
-import plugins.interactions
-import plugins.cogs
 import plugins.roles_review
 import util.db.kv
 import util.discord
@@ -151,9 +153,9 @@ class ManageRolesView(discord.ui.View):
         super().__init__(timeout=None)
         self.add_item(ManageRolesButton())
 
-plugins.interactions.persistent_view(ManageRolesView())
+bot.interactions.persistent_view(ManageRolesView())
 
-@plugins.interactions.command("roles", description="Manage self-assigned roles.")
+@bot.interactions.command("roles", description="Manage self-assigned roles.")
 async def roles_command(interaction: discord.Interaction) -> None:
     await send_roles_view(interaction)
 

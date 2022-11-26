@@ -1,25 +1,27 @@
-import io
 import ast
 import builtins
 import inspect
-import sys
-import types
-import traceback
+import io
 import itertools
+import sys
+import traceback
+import types
+from typing import Any, Callable, Dict, Iterable, Iterator, List, TypeVar, Union
+
 import discord
 import discord.ext.commands
-from typing import Dict, List, Iterator, Union, Any, Callable, Iterable, TypeVar
-import plugins.commands
-import plugins.privileges
+
+import bot.client
+import bot.commands
+import bot.privileges
 import util.discord
-import discord_client
 
 T = TypeVar("T")
 
-@plugins.commands.cleanup
-@plugins.commands.command("exec", aliases=["eval"])
-@plugins.privileges.priv("shell")
-async def exec_command(ctx: plugins.commands.Context,
+@bot.commands.cleanup
+@bot.commands.command("exec", aliases=["eval"])
+@bot.privileges.priv("shell")
+async def exec_command(ctx: bot.commands.Context,
     args: discord.ext.commands.Greedy[Union[util.discord.CodeBlock, util.discord.Inline, str]]) -> None:
     """
     Execute all code blocks in the command line as python code.
@@ -32,7 +34,7 @@ async def exec_command(ctx: plugins.commands.Context,
     code_scope["__builtins__"] = builtins
     code_scope.update(builtins.__dict__)
     code_scope["ctx"] = ctx
-    code_scope["client"] = discord_client.client
+    code_scope["client"] = bot.client.client
     def mk_code_print(fp: io.StringIO) -> Callable[..., None]:
         def code_print(*args: Any, sep: str = " ", end: str = "\n", file: Any = fp, flush: bool = False):
             return print(*args, sep=sep, end=end, file=file, flush=flush)

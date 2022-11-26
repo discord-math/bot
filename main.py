@@ -9,14 +9,14 @@ try:
 
     import plugins
 
-    manager = plugins.PluginManager(["bot", "discord_client", "plugins", "util"])
+    manager = plugins.PluginManager(["bot", "plugins", "util"])
     manager.register()
 
     async def async_main() -> None:
         main_tasks = None
         try:
             main_tasks = await manager.load("bot.main_tasks")
-            await manager.load("plugins.autoload")
+            await manager.load("bot.autoload")
             await main_tasks.wait()
         except:
             logger.critical("Exception during main event loop", exc_info=True)
