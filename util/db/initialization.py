@@ -3,10 +3,11 @@ A simple database migration manager. A module can request to initialize somethin
 and @init decorators.
 """
 
-import logging
-import static_config
 import hashlib
+import logging
+
 import plugins
+import static_config
 import util.db as db
 
 logger = logging.getLogger(__name__)
@@ -69,7 +70,5 @@ async def init_for(name: str, schema: str) -> None:
                 await conn.execute("INSERT INTO meta.schema_hashes (name, sha1) VALUES ($1, $2)", name, sha)
 
 async def init(schema: str) -> None:
-    """
-    Request database initialization for the current plugin.
-    """
+    """Request database initialization for the current plugin."""
     await init_for(plugins.current_plugin().name, schema)

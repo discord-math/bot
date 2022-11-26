@@ -4,10 +4,12 @@ Automatically load certain plugins after bot initialization.
 
 import asyncio
 import logging
-from typing import Set, Tuple, Optional, Iterator, Awaitable, Protocol, cast
+from typing import Awaitable, Iterator, Optional, Protocol, Set, Tuple, cast
+
+import bot.main_tasks
+import plugins
 import util.asyncio
 import util.db.kv
-import plugins
 
 class AutoloadConf(Awaitable[None], Protocol):
     def __getitem__(self, key: str) -> Optional[bool]: ...
@@ -32,7 +34,7 @@ async def init() -> None:
                 await manager.load(name)
             except:
                 logger.critical("Exception during autoload of {}".format(name), exc_info=True)
-    asyncio.create_task(autoload())
+    bot.main_tasks.create_task(autoload(), name="Plugin autoload")
 
 def get_autoload() -> Set[str]:
     return {plugin for plugin, in conf}

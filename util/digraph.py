@@ -1,5 +1,6 @@
 from __future__ import annotations
-from typing import TypeVar, Generic, Dict, Set, Iterator, Iterable
+
+from typing import Dict, Generic, Iterable, Iterator, Set, TypeVar
 
 T = TypeVar("T")
 
@@ -32,10 +33,34 @@ class Digraph(Generic[T]):
         """Return a (read-only) set of edges from x."""
         return self.fwd[x] if x in self.fwd else set()
 
+    def paths_from(self, x: T) -> Iterator[T]:
+        """Return vertices that can be reached from x via a path."""
+        seen: Set[T] = set()
+        def dfs(x: T) -> Iterator[T]:
+            if x in seen:
+                return
+            seen.add(x)
+            yield x
+            if x in self.fwd:
+                for y in self.fwd[x]:
+                    yield from dfs(y)
+        yield from dfs(x)
+
+    def paths_to(self, x: T) -> Iterator[T]:
+        """Return vertices that can reached x via a path."""
+        seen: Set[T] = set()
+        def dfs(x: T) -> Iterator[T]:
+            if x in seen:
+                return
+            seen.add(x)
+            yield x
+            if x in self.bck:
+                for y in self.bck[x]:
+                    yield from dfs(y)
+        yield from dfs(x)
+
     def subgraph_paths_from(self, x: T) -> Digraph[T]:
-        """
-        Return an induced subgraph of exactly those vertices that can be reached from x via a path.
-        """
+        """Return an induced subgraph of exactly those vertices that can be reached from x via a path."""
         graph: Digraph[T] = Digraph()
         seen: Set[T] = set()
         def dfs(x: T) -> None:
@@ -50,9 +75,7 @@ class Digraph(Generic[T]):
         return graph
 
     def subgraph_paths_to(self, x: T) -> Digraph[T]:
-        """
-        Return an induced subgraph of exactly those vertices that can reach x via a path.
-        """
+        """Return an induced subgraph of exactly those vertices that can reach x via a path."""
         graph: Digraph[T] = Digraph()
         seen: Set[T] = set()
         def dfs(x: T) -> None:
@@ -109,9 +132,7 @@ class Digraph(Generic[T]):
             yield from dfs(x)
 
     def del_edges_from(self, x: T) -> None:
-        """
-        Delete all edges from x.
-        """
+        """Delete all edges from x."""
         if x in self.fwd:
             for y in self.fwd[x]:
                 self.bck[y].discard(x)
@@ -120,9 +141,7 @@ class Digraph(Generic[T]):
             del self.fwd[x]
 
     def del_edges_to(self, x: T) -> None:
-        """
-        Delete all edges into x.
-        """
+        """Delete all edges into x."""
         if x in self.bck:
             for y in self.bck[x]:
                 self.fwd[y].discard(x)

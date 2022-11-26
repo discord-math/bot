@@ -1,26 +1,24 @@
-"""
-This module makes all modules in a specified namespace (plugins_namespace) behave slightly differently.
-
-We track whenever one plugin imports another, and keep a dependency graph around. We provide high level unload/reload
-functions that will unload/reload dependent plugins as well. We also provide a way for a plugin to hook a "finalizer"
-to be executed when the plugin is to be unloaded.
-"""
-
 from __future__ import annotations
-import logging
+
+import asyncio
+import builtins
+import contextlib
+import enum
 import importlib
 import importlib.machinery
 import importlib.util
-import pkgutil
-import builtins
-import asyncio
-import contextlib
 import inspect
-import types
-import enum
+import logging
+import pkgutil
 import sys
-from typing import Any, List, Dict, Optional, Union, Callable, Iterator, Iterable, Awaitable, Sequence, TypeVar, Tuple
+import types
+from typing import Any, Awaitable, Callable, Dict, Iterable, Iterator, List, Optional, Sequence, Tuple, TypeVar, Union
+
 import util.digraph
+
+# This is technically a plugin, load it properly next time
+del sys.modules["util.digraph"]
+del sys.modules["util"]
 
 # Allow importing plugins from other directories on the path
 __spec__.submodule_search_locations = __path__ = pkgutil.extend_path(__path__, __name__)
@@ -55,6 +53,13 @@ def current_plugin() -> Plugin:
     return import_stack[-1]
 
 class PluginManager:
+    """
+    A PluginManager makes all modules in its namespaces behave slightly differently.
+
+    It tracks whenever one plugin imports another, and keeps a dependency graph around. It provides high level
+    unload/reload functions that will unload/reload dependent plugins as well. It also provides a way for a plugin to
+    hook an async "initializer" and a "finalizer" to be executed when the plugin is to be loaded/unloaded.
+    """
     __slots__ = "logger", "namespaces", "plugins", "dependencies", "lock"
     logger: logging.Logger
     namespaces: List[str]
@@ -71,7 +76,8 @@ class PluginManager:
         self.lock = asyncio.Lock()
 
     def is_plugin(self, name: str) -> bool:
-        return any(name.startswith(namespace + ".") for namespace in self.namespaces)
+        """Does a given plugin name fall in our namespaces?"""
+        return any((name + ".").startswith(namespace + ".") for namespace in self.namespaces)
 
     def __str__(self) -> str:
         return "<PluginManager for {} at {:#x}>".format(
@@ -131,7 +137,11 @@ class PluginManager:
 
     def add_dependency(self, source: str, target: str) -> None:
         assert source in self.plugins
-        self.dependencies.add_edge(source, target)
+        if source in self.dependencies.paths_from(target):
+            self.logger.debug("Weak dependency: {} -> {}".format(source, target))
+        else:
+            self.logger.debug("Dependency: {} -> {}".format(source, target))
+            self.dependencies.add_edge(source, target)
 
     async def do_unload(self, name: str) -> None:
         plugin = self.plugins[name]
@@ -421,12 +431,14 @@ class PluginFinder(importlib.machinery.PathFinder):
         self.manager = manager
         super().__init__()
 
-    def find_spec(self, name: str, path: Optional[Sequence[Union[bytes, str]]] = None,
-        target: Optional[types.ModuleType] = None) -> Optional[importlib.machinery.ModuleSpec]:
+    def find_spec(self, name: str, path: Optional[Sequence[str]] = None, target: Optional[types.ModuleType] = None
+        ) -> Optional[importlib.machinery.ModuleSpec]:
         if not self.manager.is_plugin(name):
             return None
         spec = super().find_spec(name, path, target)
         if spec is None:
             return None
+        if not spec.has_location:
+            return spec
         spec.loader = PluginLoader(self.manager, spec.loader.name, spec.loader.path) # type: ignore
         return spec

@@ -1,7 +1,8 @@
+import collections
+import importlib
 import sys
 import traceback
-import importlib
-import collections
+
 import plugins
 import plugins.autoload
 import plugins.commands
@@ -22,9 +23,8 @@ async def restart_command(ctx: plugins.commands.Context) -> None:
 class PluginConverter(str):
     @classmethod
     async def convert(cls, ctx: plugins.commands.Context, arg: str) -> str:
-        assert manager
-        if not any(arg.startswith(namespace + ".") for namespace in manager.namespaces):
-            arg = manager.namespaces[0] + "." + arg
+        if "." not in arg:
+            arg = "plugins." + arg
         return arg
 
 async def reply_exception(ctx: plugins.commands.Context) -> None:

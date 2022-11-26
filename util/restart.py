@@ -1,9 +1,10 @@
-import sys
-import os
-import atexit
 import asyncio
+import atexit
 import logging
-import discord_client
+import os
+import sys
+
+import bot.main_tasks
 
 will_restart: bool = False
 
@@ -25,8 +26,4 @@ def restart() -> None:
     global will_restart
     logger.info("Restart requested", stack_info=True)
     will_restart = True
-    try: # We cannot import util.asyncio here because the atexit handler needs to be registered before that of plugins
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = asyncio.get_event_loop()
-    loop.create_task(discord_client.client.close())
+    bot.main_tasks.cancel()
