@@ -26,7 +26,7 @@ import bot.message_tracker
 import plugins
 import util.db
 import util.db.kv
-from util.discord import ChannelById, format
+from util.discord import format
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -188,7 +188,7 @@ async def process_message_edit(update: RawMessageUpdateEvent) -> None:
             if "content" in update.data and (new_content := update.data["content"]) != old_content:
                 msg.content = new_content.encode("utf8")
                 await session.commit()
-                await ChannelById(client, conf.temp_channel).send(
+                await client.get_partial_messageable(conf.temp_channel).send(
                     format("**Message edit**: {!c} {!m}({}) {}: {}", msg.channel_id, msg.author_id,
                         msg.author_id, user_nick(msg.username, msg.nick),
                         format_word_diff(old_content, new_content))[:2000], # TODO: split
@@ -203,7 +203,7 @@ async def process_message_delete(delete: RawMessageDeleteEvent) -> None:
             att_list = ""
             if len(file_urls) > 0:
                 att_list = "\n**Attachments: {}**".format(", ".join("<{}>".format(url) for url in file_urls))
-            await ChannelById(client, conf.temp_channel).send(
+            await client.get_partial_messageable(conf.temp_channel).send(
                 format("**Message delete**: {!c} {!m}({}) {}: {!i}{}", msg.channel_id, msg.author_id,
                     msg.author_id, user_nick(msg.username, msg.nick), msg.content.decode("utf8"), att_list)[:2000],
                     allowed_mentions=AllowedMentions.none())
@@ -230,7 +230,7 @@ async def process_message_bulk_delete(deletes: RawBulkMessageDeleteEvent) -> Non
             if msg.id in attms:
                 log.append("Attachments: {}".format(", ".join(attms[msg.id])))
 
-        await ChannelById(client, conf.perm_channel).send(
+        await client.get_partial_messageable(conf.perm_channel).send(
             format("**Message bulk delete**: {!c} {}", deletes.channel_id,
                 ", ".join(format("{!m}", user) for user in users)),
             file=File(BytesIO("\n".join(log).encode("utf8")), filename="log.txt"),
@@ -254,14 +254,14 @@ class MessageLog(Cog):
 
     @Cog.listener()
     async def on_member_join(self, member: Member) -> None:
-        await ChannelById(client, conf.perm_channel).send(
+        await client.get_partial_messageable(conf.perm_channel).send(
             format("**Member join**: {!m}({}) {}", member.id, member.id,
                 user_nick(member.name + "#" + member.discriminator, member.nick)),
             allowed_mentions=AllowedMentions.none())
 
     @Cog.listener()
     async def on_member_remove(self, member: Member) -> None:
-        await ChannelById(client, conf.perm_channel).send(
+        await client.get_partial_messageable(conf.perm_channel).send(
             format("**Member remove**: {!m}({}) {}", member.id, member.id,
                 user_nick(member.name + "#" + member.discriminator, member.nick)),
             allowed_mentions=AllowedMentions.none())
@@ -269,7 +269,7 @@ class MessageLog(Cog):
     @Cog.listener()
     async def on_member_update(self, before: Member, after: Member) -> None:
         if before.nick != after.nick:
-            await ChannelById(client, conf.perm_channel).send(
+            await client.get_partial_messageable(conf.perm_channel).send(
                 format("**Nick change**: {!m}({}) {}: {} -> {}", after.id, after.id,
                     after.name + "#" + after.discriminator, before.display_name, after.display_name),
                 allowed_mentions=AllowedMentions.none())
@@ -277,7 +277,7 @@ class MessageLog(Cog):
     @Cog.listener()
     async def on_user_update(self, before: User, after: User) -> None:
         if before.name != after.name or before.discriminator != after.discriminator:
-            await ChannelById(client, conf.perm_channel).send(
+            await client.get_partial_messageable(conf.perm_channel).send(
                 format("**Username change**: {!m}({}) {} -> {}", after.id, after.id,
                     before.name + "#" + before.discriminator, after.name + "#" + after.discriminator),
                 allowed_mentions=AllowedMentions.none())

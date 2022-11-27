@@ -11,7 +11,7 @@ from discord import Client, File
 from bot.client import client
 import plugins
 import util.db.kv
-from util.discord import ChannelById, format
+from util.discord import format
 
 class LoggingConf(Protocol):
     channel: Optional[str]
@@ -42,9 +42,9 @@ class DiscordHandler(logging.Handler):
                 codeblock = format("{!b:py}", text)
                 if len(message) + len(codeblock) > 2000:
                     if len(message) > 0:
-                        await ChannelById(client, chan_id).send(message)
+                        await client.get_partial_messageable(chan_id).send(message)
                     if len(codeblock) > 2000:
-                        await ChannelById(client, chan_id).send(
+                        await client.get_partial_messageable(chan_id).send(
                             file=File(BytesIO(text.encode("utf8")), filename="log.txt"))
                         message = ""
                     else:
@@ -52,7 +52,7 @@ class DiscordHandler(logging.Handler):
                 else:
                     message += codeblock
             if len(message) > 0:
-                await ChannelById(client, chan_id).send(message)
+                await client.get_partial_messageable(chan_id).send(message)
         except:
             logger.critical("Could not report exception to Discord", exc_info=True, extra={"no_discord": True})
 

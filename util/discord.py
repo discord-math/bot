@@ -12,12 +12,11 @@ from typing import (Any, AsyncContextManager, Callable, Generic, Iterable, List,
     TypeVar, Union, cast)
 
 import discord
-from discord import (CategoryChannel, Client, Member, Message, Object,
-    PartialMessage, Role, StageChannel, TextChannel, User, VoiceChannel)
+from discord import (CategoryChannel, Member, Message, Object, PartialMessage, Role, StageChannel, TextChannel, User,
+    VoiceChannel)
 from discord.abc import GuildChannel, Messageable, Snowflake
-from discord.ext.commands import (ArgumentParsingError, BadArgument,
-    CommandError, Context, NoPrivateMessage, PartialMessageConverter,
-    UserInputError)
+from discord.ext.commands import (ArgumentParsingError, BadArgument, CommandError, Context, NoPrivateMessage,
+    PartialMessageConverter, UserInputError)
 import discord.ext.commands.view
 from discord.ext.commands.view import StringView
 import discord.state
@@ -282,19 +281,6 @@ class TempMessage(AsyncContextManager[Message]):
                 await self.message.delete()
         except (discord.Forbidden, discord.NotFound):
             pass
-
-class ChannelById(Messageable):
-    """Deprecated: use Client.get_partial_messageable"""
-    __slots__ = "id", "_state"
-    id: int
-    _state: discord.state.ConnectionState
-
-    def __init__(self, client: Client, id: int):
-        self.id = id
-        self._state = client._connection
-
-    async def _get_channel(self) -> Messageable:
-        return self
 
 def nicknamed_priority(u: Union[NamedType, NicknamedType], s: str) -> Optional[int]:
     name = u.name
