@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Dict, Iterable, Iterator, List, Optional, Sequ
 import discord
 from discord import AllowedMentions, ButtonStyle, Interaction, InteractionType, PartialMessage, TextStyle, Thread
 from discord.abc import Messageable
-from discord.ext.commands import Cog, command
 if TYPE_CHECKING:
     import discord.types.interactions
 from discord.ui import Button, Modal, TextInput, View
@@ -19,7 +18,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.schema import CreateSchema
 
 from bot.client import client
-from bot.cogs import cog
+from bot.cogs import Cog, cog, command
 from bot.commands import Context, cleanup
 from bot.locations import location
 from bot.privileges import priv

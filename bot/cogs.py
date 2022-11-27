@@ -1,6 +1,6 @@
 from typing import Type, TypeVar
 
-from discord.ext.commands import Cog
+from discord.ext.commands import Cog as Cog, command as command, group as group
 
 from bot.client import client
 import plugins

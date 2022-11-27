@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Any, Awaitable, Dict, Optional, Protocol, cast
 import discord
 from discord import (Activity, ActivityType, AllowedMentions, Client, DMChannel, Intents, Message, MessageReference,
     TextChannel, Thread)
-from discord.ext.commands import Cog
 from sqlalchemy import TIMESTAMP, BigInteger, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 import sqlalchemy.orm
@@ -14,7 +13,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.schema import CreateSchema
 
 import bot.client
-from bot.cogs import cog
+from bot.cogs import Cog, cog
 from bot.reactions import get_reaction
 import plugins
 import util.db

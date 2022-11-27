@@ -1,9 +1,8 @@
 from typing import Optional, Protocol, cast
 
 from discord import Member
-from discord.ext.commands import Cog
 
-from bot.cogs import cog
+from bot.cogs import Cog, cog
 import plugins
 import util.db.kv
 from util.frozen_list import FrozenList

@@ -5,7 +5,6 @@ from typing_extensions import NotRequired
 
 from discord import AllowedMentions, Embed, Message, MessageReference, Thread
 from discord.abc import GuildChannel
-from discord.ext.commands import Cog, group
 from sqlalchemy import TEXT, TIMESTAMP, BigInteger, ForeignKey, Integer, delete, func, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -13,7 +12,7 @@ import sqlalchemy.orm
 from sqlalchemy.orm import Mapped, aliased, mapped_column, raiseload, relationship
 from sqlalchemy.schema import CreateSchema
 
-from bot.cogs import cog
+from bot.cogs import Cog, cog, group
 from bot.commands import Context, cleanup
 from bot.locations import in_location
 from bot.privileges import PrivCheck, has_privilege, priv

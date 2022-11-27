@@ -13,7 +13,6 @@ import discord
 from discord import (AllowedMentions, AuditLogAction, AuditLogEntry, ChannelType, Embed, Member, Message,
     MessageReference, Object, PartialMessage, TextChannel, Thread, User, VoiceState)
 from discord.abc import Messageable
-from discord.ext.commands import Cog, command, group
 import sqlalchemy
 from sqlalchemy import (TEXT, TIMESTAMP, BigInteger, Column, ForeignKey, Integer, MetaData, PrimaryKeyConstraint, Table,
     func, select)
@@ -23,7 +22,7 @@ from sqlalchemy.orm import Mapped, joinedload, mapped_column, relationship
 from sqlalchemy.schema import DDL, CreateSchema
 
 from bot.client import client
-from bot.cogs import cog
+from bot.cogs import Cog, cog, command, group
 import bot.commands
 from bot.commands import Context, cleanup
 from bot.privileges import priv

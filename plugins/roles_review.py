@@ -1,7 +1,6 @@
 from typing import TYPE_CHECKING, List, Literal, Optional, Protocol, Tuple, cast
 
 from discord import AllowedMentions, ButtonStyle, Interaction, InteractionType, Member, Role, TextChannel, TextStyle
-from discord.ext.commands import Cog, command
 if TYPE_CHECKING:
     import discord.types.interactions
 from discord.ui import Button, Modal, TextInput, View
@@ -11,7 +10,7 @@ import sqlalchemy.orm
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.schema import CreateSchema
 
-from bot.cogs import cog
+from bot.cogs import Cog, cog, command
 from bot.commands import Context, cleanup
 from bot.privileges import priv
 import plugins

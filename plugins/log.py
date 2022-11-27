@@ -12,7 +12,6 @@ from typing import TYPE_CHECKING, Dict, Iterable, List, Optional, Protocol, Set,
 import discord
 from discord import (AllowedMentions, Attachment, File, Member, Message, Object, RawBulkMessageDeleteEvent,
     RawMessageDeleteEvent, RawMessageUpdateEvent, TextChannel, User)
-from discord.ext.commands import Cog
 from discord.utils import time_snowflake
 from sqlalchemy import TEXT, BigInteger, ForeignKey, delete, select
 from sqlalchemy.dialects.postgresql import BYTEA
@@ -21,7 +20,7 @@ import sqlalchemy.orm
 from sqlalchemy.orm import Mapped, mapped_column
 
 from bot.client import client
-from bot.cogs import cog
+from bot.cogs import Cog, cog
 import bot.message_tracker
 import plugins
 import util.db

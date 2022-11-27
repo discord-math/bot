@@ -1,7 +1,6 @@
 from typing import Protocol, cast
 
 from discord import Member
-from discord.ext.commands import Cog
 from sqlalchemy import BigInteger, delete
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -9,7 +8,7 @@ import sqlalchemy.orm
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.schema import CreateSchema
 
-from bot.cogs import cog
+from bot.cogs import Cog, cog
 import plugins
 import util.db
 import util.db.kv

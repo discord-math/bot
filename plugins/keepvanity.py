@@ -2,10 +2,9 @@ from typing import Awaitable, Optional, Protocol, cast
 
 import discord
 from discord import Guild, Message, MessageType
-from discord.ext.commands import Cog
 
 from bot.client import client
-from bot.cogs import cog
+from bot.cogs import Cog, cog
 import plugins
 import util.db.kv
 

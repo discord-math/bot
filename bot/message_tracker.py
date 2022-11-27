@@ -16,7 +16,6 @@ from typing import (TYPE_CHECKING, Any, Awaitable, Callable, Dict, Iterable, Lis
 import discord
 from discord import Guild, Message, Object, TextChannel, Thread, VoiceChannel
 from discord.abc import GuildChannel
-from discord.ext.commands import Cog
 from discord.utils import time_snowflake
 import sqlalchemy
 from sqlalchemy import (BOOLEAN, TEXT, TIMESTAMP, BigInteger, ForeignKey, ForeignKeyConstraint, Integer, delete, func,
@@ -28,7 +27,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.schema import CreateSchema
 
 from bot.client import client
-from bot.cogs import cog
+from bot.cogs import Cog, cog
 import plugins
 import util.db
 

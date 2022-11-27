@@ -3,11 +3,10 @@ from typing import Awaitable, Iterator, Optional, Protocol, Tuple, TypedDict, Un
 import discord
 from discord import AllowedMentions, Emoji, Guild, Message, Object, PartialEmoji, PartialMessage, RawReactionActionEvent
 from discord.abc import Snowflake
-from discord.ext.commands import Cog, group
 import discord.utils
 
 from bot.client import client
-from bot.cogs import cog
+from bot.cogs import Cog, cog, group
 from bot.commands import Context, cleanup
 from bot.privileges import priv
 import plugins

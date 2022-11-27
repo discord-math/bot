@@ -10,10 +10,9 @@ import discord
 from discord import (Emoji, Message, PartialEmoji, RawReactionActionEvent, RawReactionClearEmojiEvent,
     RawReactionClearEvent)
 from discord.abc import Snowflake
-from discord.ext.commands import Cog
 
 from bot.client import client
-from bot.cogs import cog
+from bot.cogs import Cog, cog
 import util.asyncio
 
 T = TypeVar("T")

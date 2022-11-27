@@ -10,13 +10,12 @@ from discord import (AllowedMentions, ButtonStyle, CategoryChannel, Embed, Forum
     InteractionType, Member, Message, Object, PartialMessage, RawMessageDeleteEvent, RawReactionActionEvent,
     SelectOption, TextChannel, TextStyle, Thread, User)
 from discord.abc import GuildChannel
-from discord.ext.commands import Cog, command
 if TYPE_CHECKING:
     import discord.types.interactions
 from discord.ui import Button, Modal, Select, TextInput, View
 
 from bot.client import client
-from bot.cogs import cog
+from bot.cogs import Cog, cog, command
 import bot.commands
 from bot.commands import Context
 import bot.message_tracker
