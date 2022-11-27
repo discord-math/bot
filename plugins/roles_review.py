@@ -1,18 +1,18 @@
 from typing import TYPE_CHECKING, List, Literal, Optional, Protocol, Tuple, cast
 
 from discord import AllowedMentions, ButtonStyle, Interaction, InteractionType, Member, Role, TextChannel, TextStyle
-from discord.ext.commands import Cog
+from discord.ext.commands import Cog, command
 if TYPE_CHECKING:
     import discord.types.interactions
 from discord.ui import Button, Modal, TextInput, View
-from sqlalchemy import BOOLEAN, BigInteger, Integer, delete, select
+from sqlalchemy import BOOLEAN, BigInteger, ForeignKey, Integer, PrimaryKeyConstraint, delete, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 import sqlalchemy.orm
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.schema import CreateSchema
 
 from bot.cogs import cog
-from bot.commands import Context, cleanup, command
+from bot.commands import Context, cleanup
 from bot.privileges import priv
 import plugins
 import util.db
@@ -55,14 +55,12 @@ class Application:
 class Vote:
     __tablename__ = "votes"
 
-    application_id: Mapped[int] = mapped_column(Integer,
-        ForeignKey(Application.id, ondelete="CASCADE"), nullable=False) # type: ignore
+    application_id: Mapped[int] = mapped_column(Integer, ForeignKey(Application.id, ondelete="CASCADE"), nullable=False)
     voter_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     vote: Mapped[bool] = mapped_column(BOOLEAN, nullable=False)
     veto: Mapped[bool] = mapped_column(BOOLEAN, nullable=False)
 
-    __table_args__ = (PrimaryKeyConstraint(application_id, voter_id, veto), # type: ignore
-        {"schema": "roles_review"})
+    __table_args__ = (PrimaryKeyConstraint(application_id, voter_id, veto), {"schema": "roles_review"})
 
     if TYPE_CHECKING:
         def __init__(self, *, application_id: int, voter_id: int, vote: bool, veto: bool) -> None: ...

@@ -61,8 +61,7 @@ T = TypeVar("T")
 def command(name: str, description: Optional[str] = None) -> Callable[
     [Callable[Concatenate[Interaction, P], Coroutine[Any, Any, T]]], Command[Any, P, T]]:
     """Decorator for a slash command that is added/removed together with the plugin."""
-    def decorator(fun: Callable[Concatenate[Interaction, P], Coroutine[Any, Any, T]]
-        ) -> Command[Any, P, T]:
+    def decorator(fun: Callable[Concatenate[Interaction, P], Coroutine[Any, Any, T]]) -> Command[Any, P, T]:
         if description is None:
             cmd = discord.app_commands.command(name=name)(fun)
         else:

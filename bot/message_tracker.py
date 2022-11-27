@@ -19,8 +19,8 @@ from discord.abc import GuildChannel
 from discord.ext.commands import Cog
 from discord.utils import time_snowflake
 import sqlalchemy
-from sqlalchemy import (BOOLEAN, TEXT, TIMESTAMP, BigInteger, ForeignKey, Integer, delete, func, literal,
-    literal_column, null, nulls_first, select, true, union_all, update)
+from sqlalchemy import (BOOLEAN, TEXT, TIMESTAMP, BigInteger, ForeignKey, ForeignKeyConstraint, Integer, delete, func,
+    literal, literal_column, null, nulls_first, select, true, union_all, update)
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 import sqlalchemy.orm
@@ -58,8 +58,7 @@ class ChannelState:
     __tablename__ = "channel_states"
     __table_args__ = {"schema": "message_tracker"}
 
-    channel_id: Mapped[int] = mapped_column(BigInteger, ForeignKey(Channel.id), # type: ignore
-        primary_key=True, autoincrement=False)
+    channel_id: Mapped[int] = mapped_column(BigInteger, ForeignKey(Channel.id), primary_key=True, autoincrement=False)
     subscriber: Mapped[str] = mapped_column(TEXT, primary_key=True)
     # null means thread history fetch is complete
     earliest_thread_archive_ts: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP(timezone=True))
@@ -87,7 +86,7 @@ class ChannelRequest:
     state: Mapped[ChannelState] = relationship(ChannelState)
 
     # TODO: EXCLUDE constraint on the snowflake ranges? What if conflict?
-    __table_args__ = ForeignKeyConstraint([channel_id, subscriber], # type: ignore
+    __table_args__ = ForeignKeyConstraint([channel_id, subscriber],
         [ChannelState.channel_id, ChannelState.subscriber]), {"schema": "message_tracker"}
 
     if TYPE_CHECKING:
@@ -109,7 +108,7 @@ class ThreadRequest:
 
     state: Mapped[ChannelState] = relationship(ChannelState)
 
-    __table_args__ = ForeignKeyConstraint([channel_id, subscriber], # type: ignore
+    __table_args__ = ForeignKeyConstraint([channel_id, subscriber],
         [ChannelState.channel_id, ChannelState.subscriber]), {"schema": "message_tracker"}
 
     if TYPE_CHECKING:

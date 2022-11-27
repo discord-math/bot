@@ -14,7 +14,7 @@ from discord import (AllowedMentions, Attachment, File, Member, Message, Object,
     RawMessageDeleteEvent, RawMessageUpdateEvent, TextChannel, User)
 from discord.ext.commands import Cog
 from discord.utils import time_snowflake
-from sqlalchemy import TEXT, BigInteger, delete, select
+from sqlalchemy import TEXT, BigInteger, ForeignKey, delete, select
 from sqlalchemy.dialects.postgresql import BYTEA
 from sqlalchemy.ext.asyncio import async_sessionmaker
 import sqlalchemy.orm
@@ -69,8 +69,7 @@ class SavedFile:
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True,
         autoincrement=False)
-    message_id: Mapped[int] = mapped_column(BigInteger,
-        ForeignKey(SavedMessage.id), nullable=False) # type: ignore
+    message_id: Mapped[int] = mapped_column(BigInteger, ForeignKey(SavedMessage.id), nullable=False)
     filename: Mapped[str] = mapped_column(TEXT, nullable=False)
     url: Mapped[str] = mapped_column(TEXT, nullable=False)
     local_filename: Mapped[Optional[str]] = mapped_column(TEXT)

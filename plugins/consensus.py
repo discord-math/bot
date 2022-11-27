@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     import discord.types.interactions
 from discord.ui import Button, Modal, TextInput, View
 import sqlalchemy
-from sqlalchemy import BOOLEAN, TEXT, TIMESTAMP, BigInteger, Integer, nulls_first, select
+from sqlalchemy import BOOLEAN, TEXT, TIMESTAMP, BigInteger, ForeignKey, Integer, nulls_first, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 import sqlalchemy.orm
 from sqlalchemy.orm import Mapped, mapped_column
@@ -74,8 +74,7 @@ class Concern:
     __table_args__ = {"schema": "consensus"}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    poll_id: Mapped[int] = mapped_column(BigInteger,
-        ForeignKey(Poll.message_id, ondelete="CASCADE"), nullable=False) # type: ignore
+    poll_id: Mapped[int] = mapped_column(BigInteger, ForeignKey(Poll.message_id, ondelete="CASCADE"), nullable=False)
     author_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     comment: Mapped[str] = mapped_column(TEXT, nullable=False)
 
@@ -93,8 +92,7 @@ class Vote:
     __table_args__ = {"schema": "consensus"}
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    poll_id: Mapped[int] = mapped_column(BigInteger,
-        ForeignKey(Poll.message_id, ondelete="CASCADE"), nullable=False) # type: ignore
+    poll_id: Mapped[int] = mapped_column(BigInteger, ForeignKey(Poll.message_id, ondelete="CASCADE"), nullable=False)
     voter_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     vote: Mapped[VoteType] = mapped_column(sqlalchemy.Enum(VoteType, schema="consensus"), nullable=False)
     after_concern: Mapped[Optional[int]] = mapped_column(BigInteger)

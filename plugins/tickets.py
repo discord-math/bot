@@ -15,8 +15,9 @@ from discord import (AllowedMentions, AuditLogAction, AuditLogEntry, ChannelType
 from discord.abc import Messageable
 from discord.ext.commands import Cog, command, group
 import sqlalchemy
-from sqlalchemy import TEXT, TIMESTAMP, BigInteger, Column, Integer, MetaData, Table, func, select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy import (TEXT, TIMESTAMP, BigInteger, Column, ForeignKey, Integer, MetaData, PrimaryKeyConstraint, Table,
+    func, select)
+from sqlalchemy.ext.asyncio import AsyncSession, async_object_session, async_sessionmaker
 import sqlalchemy.orm
 from sqlalchemy.orm import Mapped, joinedload, mapped_column, relationship
 from sqlalchemy.schema import DDL, CreateSchema
@@ -316,7 +317,7 @@ class Ticket:
         default=TicketStage.NEW)
     status: Mapped[TicketStatus] = mapped_column(sqlalchemy.Enum(TicketStatus, schema="tickets"), nullable=False,
         default=TicketStatus.IN_EFFECT)
-    modid: Mapped[int] = mapped_column(BigInteger, ForeignKey(TicketMod.modid), nullable=False) # type: ignore
+    modid: Mapped[int] = mapped_column(BigInteger, ForeignKey(TicketMod.modid), nullable=False)
     targetid: Mapped[int] = mapped_column(BigInteger, nullable=False)
     auditid: Mapped[Optional[int]] = mapped_column(BigInteger)
     duration: Mapped[Optional[int]] = mapped_column(Integer)
@@ -530,7 +531,7 @@ class TicketHistory:
     __tablename__ = "history"
     version: Mapped[int] = mapped_column(Integer)
     last_modified_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP)
-    id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey(Ticket.id, onupdate="CASCADE")) # type: ignore
+    id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey(Ticket.id, onupdate="CASCADE"))
     type: Mapped[Optional[TicketType]] = mapped_column(sqlalchemy.Enum(TicketType, schema="tickets"))
     stage: Mapped[Optional[TicketStage]] = mapped_column(sqlalchemy.Enum(TicketStage, schema="tickets"))
     status: Mapped[Optional[TicketStatus]] = mapped_column(sqlalchemy.Enum(TicketStatus, schema="tickets"))
@@ -544,7 +545,7 @@ class TicketHistory:
     delivered_id: Mapped[Optional[int]] = mapped_column(BigInteger)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP)
     modified_by: Mapped[Optional[int]] = mapped_column(BigInteger)
-    __table_args__ = (PrimaryKeyConstraint(id, version), {"schema": "tickets"}) # type: ignore
+    __table_args__ = (PrimaryKeyConstraint(id, version), {"schema": "tickets"})
 
     @staticmethod
     async def get(session: AsyncSession, id: int) -> List[TicketHistory]:

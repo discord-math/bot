@@ -6,7 +6,7 @@ from typing_extensions import NotRequired
 from discord import AllowedMentions, Embed, Message, MessageReference, Thread
 from discord.abc import GuildChannel
 from discord.ext.commands import Cog, group
-from sqlalchemy import TEXT, TIMESTAMP, BigInteger, Integer, delete, func, select
+from sqlalchemy import TEXT, TIMESTAMP, BigInteger, ForeignKey, Integer, delete, func, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import async_sessionmaker
 import sqlalchemy.orm
@@ -60,7 +60,7 @@ class Alias:
     __table_args__ = {"schema": "factoids"}
 
     name: Mapped[str] = mapped_column(TEXT, primary_key=True)
-    id: Mapped[int] = mapped_column(Integer, ForeignKey(Factoid.id), nullable=False) # type: ignore
+    id: Mapped[int] = mapped_column(Integer, ForeignKey(Factoid.id), nullable=False)
     author_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False)
     uses: Mapped[int] = mapped_column(BigInteger, nullable=False)
