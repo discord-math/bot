@@ -218,9 +218,10 @@ class TicketMod:
             msg = await user.send("Please comment on the following:", embed=ticket.to_embed(dm=True))
         except (discord.NotFound, discord.Forbidden):
             return
+        finally:
+            self.scheduled_delivery = datetime.utcnow() + timedelta(seconds=conf.prompt_interval)
         ticket.delivered_id = msg.id
         ticket.stage = TicketStage.DELIVERED
-        self.scheduled_delivery = datetime.utcnow() + timedelta(seconds=conf.prompt_interval)
 
     async def try_redelivery(self, ticket: Ticket) -> None:
         logger.debug(format("Re-delivering Ticket #{} to {!m}", ticket.id, self.modid))
@@ -240,9 +241,10 @@ class TicketMod:
             msg = await user.send("Please comment on the following:", embed=ticket.to_embed(dm=True))
         except (discord.NotFound, discord.Forbidden):
             return
+        finally:
+            self.scheduled_delivery = datetime.utcnow() + timedelta(seconds=conf.prompt_interval)
         ticket.delivered_id = msg.id
         ticket.stage = TicketStage.DELIVERED
-        self.scheduled_delivery = datetime.utcnow() + timedelta(seconds=conf.prompt_interval)
 
     @staticmethod
     def parse_ticket_comment(ticket: Ticket, text: str) -> Tuple[Optional[int], str, str]:
