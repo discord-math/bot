@@ -58,7 +58,7 @@ class FrozenDict(Generic[K, V]):
         def get(key: K, /) -> Optional[V]: ...
         @overload
         def get(key: K, default: T, /) -> Union[V, T]: ...
-        def get(key: K, default: Optional[T] = None) -> Union[V, T]:
+        def get(key: K, default: Optional[T] = None) -> Optional[Union[V, T]]:
             return dct.get(key, default)
         self.get = get
         def items() -> Iterable[Tuple[K, V]]:
