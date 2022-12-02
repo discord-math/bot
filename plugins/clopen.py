@@ -245,12 +245,12 @@ async def enact_occupied(channel: TextChannel, owner: Union[User, Member], *,
     try:
         if old_op_id is not None:
             await PartialMessage(channel=channel, id=old_op_id).unpin()
-    except (discord.NotFound, discord.Forbidden):
+    except (discord.NotFound, discord.Forbidden, discord.HTTPException):
         pass
     try:
         if op_id is not None:
             await PartialMessage(channel=channel, id=op_id).pin()
-    except (discord.NotFound, discord.Forbidden):
+    except (discord.NotFound, discord.Forbidden, discord.HTTPException):
         pass
     try:
         await insert_chan(conf.used_category, channel, beginning=True)
@@ -289,7 +289,7 @@ async def close(id: int, reason: str, *, reopen: bool = True) -> None:
     try:
         if not reopen and old_op_id is not None:
             await PartialMessage(channel=channel, id=old_op_id).unpin()
-    except (discord.NotFound, discord.Forbidden):
+    except (discord.NotFound, discord.Forbidden, discord.HTTPException):
         pass
     try:
         if (prompt_id := conf[id, "prompt_id"]) is not None:
