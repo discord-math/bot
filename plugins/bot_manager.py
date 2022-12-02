@@ -7,7 +7,7 @@ import bot.autoload
 from bot.commands import Context, cleanup, command, group
 from bot.privileges import priv
 import plugins
-from util.discord import format
+from util.discord import Typing, format
 import util.restart
 
 manager = plugins.PluginManager.of(__name__)
@@ -39,7 +39,8 @@ async def reply_exception(ctx: Context) -> None:
 async def load_command(ctx: Context, plugin: PluginConverter) -> None:
     """Load a plugin."""
     try:
-        await manager.load(plugin)
+        async with Typing(ctx):
+            await manager.load(plugin)
     except:
         await reply_exception(ctx)
     else:
@@ -51,7 +52,8 @@ async def load_command(ctx: Context, plugin: PluginConverter) -> None:
 async def reload_command(ctx: Context, plugin: PluginConverter) -> None:
     """Reload a plugin."""
     try:
-        await manager.reload(plugin)
+        async with Typing(ctx):
+            await manager.reload(plugin)
     except:
         await reply_exception(ctx)
     else:
@@ -63,7 +65,8 @@ async def reload_command(ctx: Context, plugin: PluginConverter) -> None:
 async def unsafe_reload_command(ctx: Context, plugin: PluginConverter) -> None:
     """Reload a plugin without its dependents."""
     try:
-        await manager.unsafe_reload(plugin)
+        async with Typing(ctx):
+            await manager.unsafe_reload(plugin)
     except:
         await reply_exception(ctx)
     else:
@@ -75,7 +78,8 @@ async def unsafe_reload_command(ctx: Context, plugin: PluginConverter) -> None:
 async def unload_command(ctx: Context, plugin: PluginConverter) -> None:
     """Unload a plugin."""
     try:
-        await manager.unload(plugin)
+        async with Typing(ctx):
+            await manager.unload(plugin)
     except:
         await reply_exception(ctx)
     else:
@@ -87,7 +91,8 @@ async def unload_command(ctx: Context, plugin: PluginConverter) -> None:
 async def unsafe_unload_command(ctx: Context, plugin: PluginConverter) -> None:
     """Unload a plugin without its dependents."""
     try:
-        await manager.unsafe_unload(plugin)
+        async with Typing(ctx):
+            await manager.unsafe_unload(plugin)
     except:
         await reply_exception(ctx)
     else:

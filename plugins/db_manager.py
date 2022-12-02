@@ -9,7 +9,7 @@ from bot.privileges import priv
 from bot.reactions import get_reaction
 import util.db
 import util.db.kv
-from util.discord import CodeBlock, Inline, Quoted, format
+from util.discord import CodeBlock, Inline, Quoted, Typing, format
 
 @cleanup
 @group("config", invoke_without_command=True)
@@ -55,24 +55,25 @@ async def sql_command(ctx: Context, args: Greedy[Union[CodeBlock, Inline, str]])
     data_outputs: List[List[str]] = []
     outputs: List[Union[str, List[str]]] = []
     async with util.db.connection() as conn:
-        tx = conn.transaction()
-        await tx.start()
-        for arg in args:
-            if isinstance(arg, (CodeBlock, Inline)):
-                try:
-                    stmt = await conn.prepare(arg.text)
-                    results = (await stmt.fetch())[:1000]
-                except asyncpg.PostgresError as e:
-                    outputs.append(format("{!b}", e))
-                else:
-                    outputs.append(stmt.get_statusmsg())
-                    if results:
-                        data = [" ".join(results[0].keys())]
-                        data.extend(" ".join(repr(col) for col in result) for result in results)
-                        if len(results) == 1000:
-                            data.append("...")
-                        data_outputs.append(data)
-                        outputs.append(data)
+        async with Typing(ctx):
+            tx = conn.transaction()
+            await tx.start()
+            for arg in args:
+                if isinstance(arg, (CodeBlock, Inline)):
+                    try:
+                        stmt = await conn.prepare(arg.text)
+                        results = (await stmt.fetch())[:1000]
+                    except asyncpg.PostgresError as e:
+                        outputs.append(format("{!b}", e))
+                    else:
+                        outputs.append(stmt.get_statusmsg())
+                        if results:
+                            data = [" ".join(results[0].keys())]
+                            data.extend(" ".join(repr(col) for col in result) for result in results)
+                            if len(results) == 1000:
+                                data.append("...")
+                            data_outputs.append(data)
+                            outputs.append(data)
 
         def output_len(output: List[str]) -> int:
             return sum(len(row) + 1 for row in output)

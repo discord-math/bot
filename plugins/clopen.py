@@ -22,7 +22,7 @@ import bot.message_tracker
 from bot.privileges import PrivCheck, has_privilege, priv
 import plugins
 import util.db.kv
-from util.discord import format
+from util.discord import Typing, format
 from util.frozen_list import FrozenList
 
 def available_embed() -> Embed:
@@ -712,7 +712,8 @@ class ClopenCog(Cog):
     @command("clopen_sync")
     async def clopen_sync_command(self, ctx: Context) -> None:
         """Try and synchronize the state of clopen channels with Discord in case of errors or outages."""
-        output = await synchronize_channels()
+        async with Typing(ctx):
+            output = await synchronize_channels()
         text = ""
         for out in output:
             if len(text) + 1 + len(out) > 2000:

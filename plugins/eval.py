@@ -14,7 +14,7 @@ from discord.ext.commands import Greedy
 from bot.client import client
 from bot.commands import Context, cleanup, command
 from bot.privileges import priv
-from util.discord import CodeBlock, Inline, format
+from util.discord import CodeBlock, Inline, Typing, format
 
 T = TypeVar("T")
 
@@ -40,23 +40,24 @@ async def exec_command(ctx: Context, args: Greedy[Union[CodeBlock, Inline, str]]
         return code_print
     fp = StringIO()
     try:
-        for arg in args:
-            if isinstance(arg, (CodeBlock, Inline)):
-                fp = StringIO()
-                outputs.append(fp)
-                code_scope["print"] = mk_code_print(fp)
-                try:
-                    code = compile(arg.text, "<msg {}>".format(ctx.message.id),
-                        "eval", ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
-                except:
-                    code = compile(arg.text, "<msg {}>".format(ctx.message.id),
-                        "exec", ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
-                fun = FunctionType(code, code_scope)
-                ret = fun()
-                if inspect.iscoroutine(ret):
-                    ret = await ret
-                if ret != None:
-                    mk_code_print(fp)(repr(ret))
+        async with Typing(ctx):
+            for arg in args:
+                if isinstance(arg, (CodeBlock, Inline)):
+                    fp = StringIO()
+                    outputs.append(fp)
+                    code_scope["print"] = mk_code_print(fp)
+                    try:
+                        code = compile(arg.text, "<msg {}>".format(ctx.message.id),
+                            "eval", ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
+                    except:
+                        code = compile(arg.text, "<msg {}>".format(ctx.message.id),
+                            "exec", ast.PyCF_ALLOW_TOP_LEVEL_AWAIT)
+                    fun = FunctionType(code, code_scope)
+                    ret = fun()
+                    if inspect.iscoroutine(ret):
+                        ret = await ret
+                    if ret != None:
+                        mk_code_print(fp)(repr(ret))
     except:
         _, exc, tb = sys.exc_info()
         mk_code_print(fp)("".join(traceback.format_tb(tb)))

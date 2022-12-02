@@ -3,6 +3,7 @@ Some common utilities for interacting with discord.
 """
 from __future__ import annotations
 
+import asyncio
 from datetime import timedelta
 import logging
 import math
@@ -15,6 +16,7 @@ import discord
 from discord import (CategoryChannel, Member, Message, Object, PartialMessage, Role, StageChannel, TextChannel, User,
     VoiceChannel)
 from discord.abc import GuildChannel, Messageable, Snowflake
+import discord.context_managers
 from discord.ext.commands import (ArgumentParsingError, BadArgument, CommandError, Context, NoPrivateMessage,
     PartialMessageConverter, UserInputError)
 import discord.ext.commands.view
@@ -257,6 +259,35 @@ def priority_find(predicate: Callable[[T], Union[float, int, None]], iterable: I
         elif rank < cur_rank:
             continue
     return results
+
+class Typing(AsyncContextManager[None]):
+    """An async context manager that starts a typing indication after a short timeout."""
+    __slots__ = "typing", "timeout", "lock", "task"
+    typing: discord.context_managers.Typing
+    timeout: float
+    lock: asyncio.Lock
+    task: Optional[asyncio.Task[None]]
+
+    def __init__(self, sendable: Messageable, *, timeout: float = 1.0):
+        self.typing = sendable.typing()
+        self.timeout = timeout
+        self.lock = asyncio.Lock()
+
+    async def start_typing(self) -> None:
+        await asyncio.sleep(self.timeout)
+        async with self.lock:
+            self.task = None
+            await self.typing.__aenter__()
+
+    async def __aenter__(self) -> None:
+        self.task = asyncio.create_task(self.start_typing(), name="Typing")
+
+    async def __aexit__(self, exc_type, exc_val, tb) -> None: # type: ignore
+        async with self.lock:
+            if self.task:
+                self.task.cancel()
+            else:
+                await self.typing.__aexit__(exc_type, exc_val, tb)
 
 class TempMessage(AsyncContextManager[Message]):
     """An async context manager that sends a message upon entering, and deletes it upon exiting."""

@@ -11,7 +11,7 @@ from bot.privileges import priv
 from bot.reactions import get_input
 import plugins
 import util.db.kv
-from util.discord import CodeBlock, Inline, Quoted, format
+from util.discord import CodeBlock, Inline, Quoted, Typing, format
 from util.frozen_list import FrozenList
 
 class PhishConf(Awaitable[None], Protocol):
@@ -132,8 +132,7 @@ def link_to_domain(link: str) -> str:
         return link.strip()
 
 @phish_command.command("check")
-async def phish_check(ctx: Context, *,
-    link: Union[CodeBlock, Inline, Quoted]) -> None:
+async def phish_check(ctx: Context, *, link: Union[CodeBlock, Inline, Quoted]) -> None:
     """Check a link against the domain list."""
     domain = link_to_domain(link.text)
     checks = domain_checks(domain)
@@ -152,8 +151,7 @@ async def phish_check(ctx: Context, *,
     await ctx.send("\n".join(output))
 
 @phish_command.command("add")
-async def phish_add(ctx: Context, *,
-    link: Union[CodeBlock, Inline, Quoted]) -> None:
+async def phish_add(ctx: Context, *, link: Union[CodeBlock, Inline, Quoted]) -> None:
     """Locally mark a domain as malicious."""
     domain = link_to_domain(link.text)
     checks = domain_checks(domain)
@@ -184,12 +182,12 @@ async def phish_add(ctx: Context, *,
     if do_submit:
         reason = await get_input(msg, ctx.author, {"\u274C": None}, timeout=300)
         if reason is not None:
-            result = await submit_link(link.text, format("{!m}: {}", ctx.author, reason.content))
+            async with Typing(ctx):
+                result = await submit_link(link.text, format("{!m}: {}", ctx.author, reason.content))
             await ctx.send(format("{!i}", result))
 
 @phish_command.command("remove")
-async def phish_remove(ctx: Context, *,
-    link: Union[CodeBlock, Inline, Quoted]) -> None:
+async def phish_remove(ctx: Context, *, link: Union[CodeBlock, Inline, Quoted]) -> None:
     """Locally mark a domain as safe."""
     domain = link_to_domain(link.text)
     checks = domain_checks(domain)

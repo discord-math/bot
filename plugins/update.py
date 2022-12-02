@@ -6,8 +6,7 @@ from bot.commands import Context, cleanup, command
 from bot.privileges import priv
 import plugins
 import util.db.kv
-from util.discord import format
-
+from util.discord import Typing, format
 
 class UpdateConf(Protocol):
     def __getitem__(self, key: str) -> Optional[str]: ...
@@ -27,10 +26,12 @@ async def update_command(ctx: Context, bot_directory: Optional[str]) -> None:
     cwd = conf[bot_directory] if bot_directory is not None else None
     git_pull = await asyncio.create_subprocess_exec("git", "pull", "--ff-only", "--recurse-submodules", cwd=cwd,
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
-    try:
-        assert git_pull.stdout
-        output = (await git_pull.stdout.read()).decode("utf", "replace")
-    finally:
-        await git_pull.wait()
+
+    async with Typing(ctx):
+        try:
+            assert git_pull.stdout
+            output = (await git_pull.stdout.read()).decode("utf", "replace")
+        finally:
+            await git_pull.wait()
 
     await ctx.send(format("{!b}", output))
