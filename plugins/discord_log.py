@@ -1,17 +1,16 @@
 import asyncio
-from io import BytesIO
 import logging
 import sys
 from threading import Lock
 from types import FrameType
-from typing import List, Optional, Protocol, cast
+from typing import Iterator, List, Optional, Protocol, cast
 
-from discord import Client, File
+from discord import Client
 
 from bot.client import client
 import plugins
 import util.db.kv
-from util.discord import format
+from util.discord import CodeItem, chunk_messages
 
 class LoggingConf(Protocol):
     channel: Optional[str]
@@ -37,22 +36,12 @@ class DiscordHandler(logging.Handler):
 
     async def log_discord(self, chan_id: int, client: Client) -> None:
         try:
-            message = ""
-            while (text := self.queue_pop()) is not None:
-                codeblock = format("{!b:py}", text)
-                if len(message) + len(codeblock) > 2000:
-                    if len(message) > 0:
-                        await client.get_partial_messageable(chan_id).send(message)
-                    if len(codeblock) > 2000:
-                        await client.get_partial_messageable(chan_id).send(
-                            file=File(BytesIO(text.encode("utf8")), filename="log.txt"))
-                        message = ""
-                    else:
-                        message = codeblock
-                else:
-                    message += codeblock
-            if len(message) > 0:
-                await client.get_partial_messageable(chan_id).send(message)
+            def fill_items() -> Iterator[CodeItem]:
+                while (text := self.queue_pop()) is not None:
+                    yield CodeItem(text, language="py", filename="log.txt")
+
+            for content, files in chunk_messages(fill_items()):
+                await client.get_partial_messageable(chan_id).send(content, files=files)
         except:
             logger.critical("Could not report exception to Discord", exc_info=True, extra={"no_discord": True})
 

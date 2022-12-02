@@ -31,7 +31,7 @@ import plugins
 import plugins.persistence
 import util.db
 import util.db.kv
-from util.discord import InvocationError, PartialUserConverter, UserError, format
+from util.discord import InvocationError, PartialUserConverter, PlainItem, UserError, chunk_messages, format
 from util.frozen_list import FrozenList
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -1491,8 +1491,7 @@ class Tickets(Cog):
         async with sessionmaker() as session:
             tkt = await resolve_ticket(ctx.message.reference, ticket, session)
 
-            pages = []
-            page = ""
+            items = []
             for history in await TicketHistory.get(session, tkt.id):
                 row = []
                 if history.last_modified_at is not None:
@@ -1507,7 +1506,7 @@ class Tickets(Cog):
                 if history.status is not None:
                     row.append(history.status.value)
                 if history.modid is not None:
-                    row.append(format("moderator {!m}", history.modid))
+                    row.append(format("moderator: {!m}", history.modid))
                 if history.targetid is not None:
                     row.append(format("target: {!m}", history.targetid))
                 if history.roleid is not None:
@@ -1521,15 +1520,8 @@ class Tickets(Cog):
                         conf.guild, conf.ticket_list, history.list_msgid))
                 if history.auditid is not None:
                     row.append("from audit {}".format(history.auditid))
-
-                text = ", ".join(row)
-                if len(page) + 1 + len(text) > 2000:
-                    pages.append(page)
-                    page = text
-                else:
-                    page += "\n" + text
-            pages.append(page)
-            return await pager(ctx, [Page(content=content) for content in pages])
+                items.append(PlainItem(", ".join(row) + "\n"))
+            return await pager(ctx, [Page(content=content) for content, _ in chunk_messages(items)])
 
     @Cog.listener("on_member_ban")
     @Cog.listener("on_member_unban")

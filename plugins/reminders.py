@@ -1,21 +1,19 @@
 import asyncio
 from datetime import datetime, timezone
-from io import BytesIO
-import itertools
 import logging
 from operator import itemgetter
 import time
 from typing import Awaitable, Iterator, Optional, Protocol, Tuple, TypedDict, cast
 
 import discord
-from discord import AllowedMentions, File, MessageReference, Object, TextChannel, Thread
+from discord import AllowedMentions, MessageReference, Object, TextChannel, Thread
 
 from bot.client import client
 from bot.commands import Context, cleanup, command, group
 from bot.privileges import priv
 import plugins
 import util.db.kv
-from util.discord import DurationConverter, UserError, format
+from util.discord import DurationConverter, PlainItem, UserError, chunk_messages, format
 from util.frozen_list import FrozenList
 
 class Reminder(TypedDict):
@@ -153,17 +151,11 @@ async def remindme_command(ctx: Context, interval: DurationConverter, *, text: O
 async def reminder_command(ctx: Context) -> None:
     """Display your reminders."""
     reminders = conf[ctx.author.id] or FrozenList()
-    reminder_list_md = "Your reminders include:\n{}".format("\n".join(
-            "**{:d}.** Reminder {}".format(i, format_reminder(reminder))
-        for i, reminder in zip(itertools.count(1), reminders)))
-    if len(reminder_list_md) > 2000:
-        await ctx.send(file = File(BytesIO(
-            "Your reminders include:\n{}".format("\n".join(
-                "{:d}. Reminder {}".format(i, format_text_reminder(reminder))
-            for i, reminder in zip(itertools.count(1), reminders))
-            ).encode("utf8")), filename = "reminder_list.txt"))
-    else:
-        await ctx.send(reminder_list_md, allowed_mentions=AllowedMentions.none())
+    items = [PlainItem("Your reminders include:\n")]
+    for i, reminder in enumerate(reminders, start=1):
+        items.append(PlainItem("**{}.** Reminder {}\n".format(i, format_reminder(reminder))))
+    for content, _ in chunk_messages(items):
+        await ctx.send(content, allowed_mentions=AllowedMentions.none())
 
 @reminder_command.command("remove")
 @priv("remind")

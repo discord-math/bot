@@ -5,16 +5,17 @@ from __future__ import annotations
 
 import asyncio
 from datetime import timedelta
+from io import BytesIO
 import logging
 import math
 import re
 import string
-from typing import (Any, AsyncContextManager, Callable, Generic, Iterable, List, Optional, Protocol, Sequence, Type,
-    TypeVar, Union, cast)
+from typing import (Any, AsyncContextManager, Callable, Generic, Iterable, Iterator, List, Optional, Protocol, Sequence,
+    Tuple, Type, TypeVar, Union, cast)
 
 import discord
-from discord import (CategoryChannel, Member, Message, Object, PartialMessage, Role, StageChannel, TextChannel, User,
-    VoiceChannel)
+from discord import (CategoryChannel, File, Member, Message, Object, PartialMessage, Role, StageChannel, TextChannel,
+    User, VoiceChannel)
 from discord.abc import GuildChannel, Messageable, Snowflake
 import discord.context_managers
 from discord.ext.commands import (ArgumentParsingError, BadArgument, CommandError, Context, NoPrivateMessage,
@@ -70,7 +71,7 @@ class CodeBlock(Quoted):
     __slots__ = "language"
     language: Optional[str]
 
-    def __init__(self, text: str, language: Optional[str] = None):
+    def __init__(self, text: str, *, language: Optional[str] = None):
         self.text = text
         self.language = language
 
@@ -90,7 +91,7 @@ class CodeBlock(Quoted):
     async def convert(cls, ctx: Context[Any], arg: str) -> CodeBlock:
         if (match := cls.codeblock_re.match(ctx.view.buffer, pos=undo_get_quoted_word(ctx.view, arg))) is not None:
             ctx.view.index = match.end()
-            return cls(match["block"], match["language"] or None)
+            return cls(match["block"], language=match["language"] or None)
         raise ArgumentParsingError("Please provide a codeblock")
 
 class Inline(Quoted):
@@ -597,3 +598,65 @@ class DurationConverter(timedelta):
             raise BadArgument("Expected a duration")
         ctx.view.index = pos
         return td
+
+class PlainItem:
+    """An item that is formatted as itself, possibly split across multiple messages if too large."""
+    __slots__ = "text",
+    text: str
+    def __init__(self, text: str):
+        self.text = text
+
+class CodeItem:
+    """An item that is formatted as either a code block, or an attached file if too large."""
+    __slots__ = "text", "language", "filename"
+    text: str
+    language: Optional[str]
+    filename: Optional[str]
+    def __init__(self, text: str, *, language: Optional[str] = None, filename: Optional[str] = None):
+        self.text = text
+        self.language = language
+        self.filename = filename
+
+
+def chunk_messages(items: Iterable[Union[PlainItem, CodeItem]]) -> Iterator[Tuple[str, List[File]]]:
+    """Format a sequence of items fitting as many as possible into each message."""
+    MAX_CONTENT = 2000
+    MAX_FILES = 10
+    content, files = "", []
+    files = []
+    for item in items:
+        if isinstance(item, PlainItem):
+            text = item.text
+            if files:
+                yield content, files
+                content, files = "", []
+            if len(text) > MAX_CONTENT:
+                if len(content) and len(content) + len(text) % MAX_CONTENT <= MAX_CONTENT:
+                    offset = MAX_CONTENT - len(content)
+                else:
+                    offset = 0
+                content += text[:offset]
+                for i in range((len(text) - offset - 1) // MAX_CONTENT + 1):
+                    if content or files:
+                        yield content, files
+                        content, files = "", []
+                    content = text[offset + i * MAX_CONTENT : offset + (i + 1) * MAX_CONTENT]
+            else:
+                if len(content) + len(text) > MAX_CONTENT:
+                    yield content, files
+                    content, files = "", []
+                content += text
+        elif isinstance(item, CodeItem): # type: ignore
+            if len(item.text) > MAX_CONTENT or len(str(CodeBlock(item.text, language=item.language))) > MAX_CONTENT:
+                if len(files) >= MAX_FILES:
+                    yield content, files
+                    content, files = "", []
+                files.append(File(BytesIO(item.text.encode("utf8")), filename=item.filename))
+            else:
+                text = str(CodeBlock(item.text, language=item.language))
+                if files or len(content) + len(text) > MAX_CONTENT:
+                    yield content, files
+                    content, files = "", []
+                content += text
+    if content or files:
+        yield content, files

@@ -16,7 +16,8 @@ import plugins
 import plugins.phish
 import plugins.tickets
 import util.db.kv
-from util.discord import CodeBlock, Inline, InvocationError, PartialRoleConverter, UserError, format
+from util.discord import (CodeBlock, Inline, InvocationError, PartialRoleConverter, PlainItem, UserError,
+    chunk_messages, format)
 from util.frozen_list import FrozenList
 
 class AutomodConf(Awaitable[None], Protocol):
@@ -235,21 +236,15 @@ async def automod_exempt_remove(ctx: Context, role: PartialRoleConverter) -> Non
 @automod_command.command("list")
 async def automod_list(ctx: Context) -> None:
     """List all automod patterns (CW)."""
-    output = "**Automod patterns**:\n"
+    items = [PlainItem("**Automod patterns**:\n")]
     for i in conf.active:
         if (keywords := conf[i, "keyword"]) is not None and (kind := conf[i, "type"]) is not None and (
             action := conf[i, "action"]) is not None:
-            text = "**{}**: {} {} -> {}\n".format(i, kind,
-                ", ".join(format("||{!i}||", keyword) for keyword in keywords), action)
+            items.append(PlainItem("**{}**: {} {} -> {}\n".format(i, kind,
+                ", ".join(format("||{!i}||", keyword) for keyword in keywords), action)))
 
-            if len(output) + len(text) > 2000:
-                if len(output) > 0:
-                    await ctx.send(output)
-                output = text
-            else:
-                output += text
-    if len(output) > 0:
-        await ctx.send(output)
+    for content, _ in chunk_messages(items):
+        await ctx.send(content)
 
 @automod_command.command("add")
 async def automod_add(ctx: Context, kind: Literal["substring", "word", "regex"],

@@ -22,7 +22,7 @@ import bot.message_tracker
 from bot.privileges import PrivCheck, has_privilege, priv
 import plugins
 import util.db.kv
-from util.discord import Typing, format
+from util.discord import PlainItem, Typing, chunk_messages, format
 from util.frozen_list import FrozenList
 
 def available_embed() -> Embed:
@@ -714,14 +714,11 @@ class ClopenCog(Cog):
         """Try and synchronize the state of clopen channels with Discord in case of errors or outages."""
         async with Typing(ctx):
             output = await synchronize_channels()
-        text = ""
-        for out in output:
-            if len(text) + 1 + len(out) > 2000:
-                await ctx.send(text, allowed_mentions=AllowedMentions.none())
-                text = out
-            else:
-                text += "\n" + out
-        await ctx.send(text or "\u2705", allowed_mentions=AllowedMentions.none())
+        if output:
+            for content, _ in chunk_messages(PlainItem(text + "\n") for text in output):
+                await ctx.send(content, allowed_mentions=AllowedMentions.none())
+        else:
+            await ctx.send("\u2705", allowed_mentions=AllowedMentions.none())
 
     @command("solved")
     async def solved_command(self, ctx: Context) -> None:

@@ -34,4 +34,5 @@ async def update_command(ctx: Context, bot_directory: Optional[str]) -> None:
         finally:
             await git_pull.wait()
 
-    await ctx.send(format("{!b}", output))
+    for content, files in chunk_messages((CodeItem(output, filename="update.txt"),)):
+        await ctx.send(content, files=files)

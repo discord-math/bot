@@ -24,7 +24,7 @@ from bot.locations import location
 from bot.privileges import priv
 import plugins
 import util.db
-from util.discord import DurationConverter, UserError, format
+from util.discord import DurationConverter, PlainItem, UserError, chunk_messages, format
 
 logger = logging.getLogger(__name__)
 
@@ -224,7 +224,7 @@ def render_poll(votes: Sequence[Vote], concerns: Sequence[Concern]) -> str:
 
 async def edit_poll(poll_id: Optional[int], msg: PartialMessage, votes: Sequence[Vote],
     concerns: Sequence[Concern]) -> None:
-    await msg.edit(content=render_poll(votes, concerns)[:4000], view=PollView(poll_id) if poll_id is not None else None,
+    await msg.edit(content=render_poll(votes, concerns)[:2000], view=PollView(poll_id) if poll_id is not None else None,
         allowed_mentions=user_mentions)
 
 async def sync_poll(session: AsyncSession, poll_id: int, msg: PartialMessage):
@@ -495,17 +495,11 @@ class ConsensusCog(Cog):
     @priv("mod")
     async def polls(self, ctx: Context) -> None:
         async with sessionmaker() as session:
-            output = ""
+            items = []
             stmt = select(Poll)
             for poll in (await session.execute(stmt)).scalars():
                 channel_id = poll.channel_id if poll.thread_id is None else poll.thread_id
                 channel = ctx.bot.get_partial_messageable(channel_id, guild_id=ctx.guild and ctx.guild.id)
-                link = channel.get_partial_message(poll.message_id).jump_url + "\n"
-
-                if len(output) + len(link) > 2000:
-                    await ctx.send(output)
-                    output = link
-                else:
-                    output += link
-            if output:
-                await ctx.send(output)
+                items.append(PlainItem(channel.get_partial_message(poll.message_id).jump_url + "\n"))
+            for content, _ in chunk_messages(items):
+                await ctx.send(content)

@@ -18,7 +18,7 @@ from bot.reactions import get_reaction
 import plugins
 import util.db
 import util.db.kv
-from util.discord import format
+from util.discord import PlainItem, chunk_messages, format
 
 registry: sqlalchemy.orm.registry = sqlalchemy.orm.registry()
 
@@ -126,38 +126,34 @@ class ModMailClient(Client):
             except (ValueError, AttributeError):
                 return
             thread_id = await update_thread(msg.author.id)
-            header = format("**From {}#{}** {} {!m} on {}:\n\n",
-                msg.author.name, msg.author.discriminator, msg.author.id, msg.author, msg.created_at)
+
+            items = [PlainItem(format("**From {}#{}** {} {!m} on {}:\n\n",
+                    msg.author.name, msg.author.discriminator, msg.author.id, msg.author, msg.created_at)),
+                PlainItem(msg.content)]
             footer = "".join("\n**Attachment:** {} {}".format(att.filename, att.url) for att in msg.attachments)
             if thread_id is None:
                 footer += format("\n{!m}", role)
             if footer:
-                footer = "\n" + footer
-            text = msg.content
+                items.append(PlainItem("\n" + footer))
+
             mentions = AllowedMentions.none()
             mentions.roles = [role]
             reference = None
             if thread_id is not None:
                 reference = MessageReference(message_id=thread_id, channel_id=channel.id, fail_if_not_exists=False)
             copy_first = None
-            sent_footer = False
-            for i in range(0, len(header) + len(text), 2000):
-                part = (header + text)[i:i + 2000]
-                if len(part) + len(footer) <= 2000:
-                    part += footer
-                    sent_footer = True
+            for content, _ in chunk_messages(items):
                 if reference is not None and copy_first is None:
-                    copy = await channel.send(part, allowed_mentions=mentions, reference=reference)
+                    copy = await channel.send(content, allowed_mentions=mentions, reference=reference)
                 else:
-                    copy = await channel.send(part, allowed_mentions=mentions)
+                    copy = await channel.send(content, allowed_mentions=mentions)
                 await add_modmail(msg, copy)
                 if copy_first is None:
                     copy_first = copy
-            if not sent_footer:
-                copy = await channel.send(footer, allowed_mentions=mentions)
-                await add_modmail(msg, copy)
+
             if thread_id is None and copy_first is not None:
                 await create_thread(msg.author.id, copy_first.id)
+
             await msg.add_reaction("\u2709")
 
 @cog
@@ -190,16 +186,21 @@ class Modmail(Cog):
         if result is None:
             await msg.channel.send("Cancelled")
         else:
-            header = ""
+            items = []
             if result == "named":
-                header = format("**From {}** {!m}:\n\n", msg.author.display_name, msg.author)
+                items.append(PlainItem(format("**From {}** {!m}:\n\n", msg.author.display_name, msg.author)))
+            items.append(PlainItem(msg.content))
+            for att in msg.attachments:
+                items.append(PlainItem("\n**Attachment:** {}".format(att.url)))
+
             try:
                 chan = await client.fetch_channel(modmail.dm_channel_id)
                 if not isinstance(chan, DMChannel):
                     await msg.channel.send("Could not deliver DM (DM closed)")
                     return
-                await chan.send(header + msg.content, reference=MessageReference(message_id=modmail.dm_message_id,
-                    channel_id=modmail.dm_channel_id, fail_if_not_exists=False))
+                for content, _ in chunk_messages(items):
+                    await chan.send(content, reference=MessageReference(message_id=modmail.dm_message_id,
+                        channel_id=modmail.dm_channel_id, fail_if_not_exists=False))
             except (discord.NotFound, discord.Forbidden):
                 await msg.channel.send("Could not deliver DM (User left guild?)")
             else:

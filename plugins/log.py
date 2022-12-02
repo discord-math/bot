@@ -7,7 +7,7 @@ from io import BytesIO
 import logging
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, Iterable, List, Optional, Protocol, Set, cast
+from typing import TYPE_CHECKING, Dict, Iterable, Iterator, List, Optional, Protocol, Set, cast
 
 import discord
 from discord import (AllowedMentions, Attachment, File, Member, Message, Object, RawBulkMessageDeleteEvent,
@@ -25,7 +25,7 @@ import bot.message_tracker
 import plugins
 import util.db
 import util.db.kv
-from util.discord import format
+from util.discord import PlainItem, chunk_messages, format
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -161,18 +161,16 @@ async def init() -> None:
     cleanup_task = asyncio.create_task(clean_old_messages())
     plugins.finalizer(cleanup_task.cancel)
 
-def format_word_diff(old: str, new: str) -> str:
-    output = []
+def format_word_diff(old: str, new: str) -> Iterator[PlainItem]:
     for tag, i1, i2, j1, j2 in SequenceMatcher(None, old, new).get_opcodes():
         if tag == "replace":
-            output.append(format("~~{!i}~~**{!i}**", old[i1:i2], new[j1:j2]))
+            yield PlainItem(format("~~{!i}~~**{!i}**", old[i1:i2], new[j1:j2]))
         elif tag == "delete":
-            output.append(format("~~{!i}~~", old[i1:i2]))
+            yield PlainItem(format("~~{!i}~~", old[i1:i2]))
         elif tag == "insert":
-            output.append(format("**{!i}**", new[j1:j2]))
+            yield PlainItem(format("**{!i}**", new[j1:j2]))
         elif tag == "equal":
-            output.append(format("{!i}", new[j1:j2]))
-    return "".join(output)
+            yield PlainItem(format("{!i}", new[j1:j2]))
 
 def user_nick(user: str, nick: Optional[str]) -> str:
     if nick is None:
@@ -187,11 +185,12 @@ async def process_message_edit(update: RawMessageUpdateEvent) -> None:
             if "content" in update.data and (new_content := update.data["content"]) != old_content:
                 msg.content = new_content.encode("utf8")
                 await session.commit()
-                await client.get_partial_messageable(conf.temp_channel).send(
-                    format("**Message edit**: {!c} {!m}({}) {}: {}", msg.channel_id, msg.author_id,
-                        msg.author_id, user_nick(msg.username, msg.nick),
-                        format_word_diff(old_content, new_content))[:2000], # TODO: split
-                    allowed_mentions=AllowedMentions.none())
+                for content, _ in chunk_messages([
+                    PlainItem(format("**Message edit**: {!c} {!m}({}) {}: ", msg.channel_id, msg.author_id,
+                        msg.author_id, user_nick(msg.username, msg.nick)))] + list(
+                        format_word_diff(old_content, new_content))):
+                    await client.get_partial_messageable(conf.temp_channel).send(content,
+                        allowed_mentions=AllowedMentions.none())
             # TODO: attachment edits
 
 async def process_message_delete(delete: RawMessageDeleteEvent) -> None:
@@ -199,12 +198,12 @@ async def process_message_delete(delete: RawMessageDeleteEvent) -> None:
         if (msg := await session.get(SavedMessage, delete.message_id)) is not None:
             stmt = select(SavedFile.url).where(SavedFile.message_id == msg.id)
             file_urls = list((await session.execute(stmt)).scalars())
-            att_list = ""
-            if len(file_urls) > 0:
-                att_list = "\n**Attachments: {}**".format(", ".join("<{}>".format(url) for url in file_urls))
-            await client.get_partial_messageable(conf.temp_channel).send(
-                format("**Message delete**: {!c} {!m}({}) {}: {!i}{}", msg.channel_id, msg.author_id,
-                    msg.author_id, user_nick(msg.username, msg.nick), msg.content.decode("utf8"), att_list)[:2000],
+            for content, _ in chunk_messages([
+                PlainItem(format("**Message delete**: {!c} {!m}({}) {}: ", msg.channel_id, msg.author_id,
+                    msg.author_id, user_nick(msg.username, msg.nick))),
+                PlainItem(format("{!i}", msg.content.decode("utf8")))] + [
+                    PlainItem("\n**Attachment: <{}>**".format(url)) for url in file_urls]):
+                await client.get_partial_messageable(conf.temp_channel).send(content,
                     allowed_mentions=AllowedMentions.none())
 
 async def process_message_bulk_delete(deletes: RawBulkMessageDeleteEvent) -> None:

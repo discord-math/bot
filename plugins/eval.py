@@ -1,20 +1,18 @@
 import ast
 import builtins
 import inspect
-from io import BytesIO, StringIO
-import itertools
+from io import StringIO
 import sys
 import traceback
 from types import FunctionType
-from typing import Any, Callable, Dict, Iterable, Iterator, List, TypeVar, Union
+from typing import Any, Callable, Dict, TypeVar, Union
 
-from discord import File
 from discord.ext.commands import Greedy
 
 from bot.client import client
 from bot.commands import Context, cleanup, command
 from bot.privileges import priv
-from util.discord import CodeBlock, Inline, Typing, format
+from util.discord import CodeBlock, CodeItem, Inline, PlainItem, Typing, chunk_messages
 
 T = TypeVar("T")
 
@@ -64,46 +62,8 @@ async def exec_command(ctx: Context, args: Greedy[Union[CodeBlock, Inline, str]]
         mk_code_print(fp)(repr(exc))
         del tb
 
-    def chunk(xs: Iterable[T], n: int) -> Iterator[List[T]]:
-        acc = []
-        for x in xs:
-            acc.append(x)
-            if len(acc) >= n:
-                yield acc
-                acc = []
-        if len(acc):
-            yield acc
-
-    # greedily concatenate short strings into groups of at most a certain length
-    def chunk_concat(xss: Iterable[str], n: int) -> Iterator[str]:
-        acc = ""
-        empty = True
-        for xs in xss:
-            empty = False
-            if len(acc) + len(xs) > n:
-                yield acc
-                acc = ""
-            acc += xs
-        if not empty:
-            yield acc
-
-    def format_block(fp: StringIO) -> str:
-        text = fp.getvalue()
-        return format("{!b:py}", text) if len(text) else "\u2705"
-
-    def is_short(fp: StringIO) -> bool:
-        return len(format_block(fp)) <= 2000
-
-    def make_file_output(idx: int, fp: StringIO) -> File:
-        return File(BytesIO(fp.getvalue().encode("utf8")), filename="output{:d}.txt".format(idx))
-
-    message_outputs = chunk_concat(
-        (format_block(m) for m in outputs if is_short(m)),
-        2000)
-    file_outputs = chunk(
-        (make_file_output(idx, fp) for idx, fp in enumerate(outputs, start = 1)
-            if not is_short(fp)),
-        10)
-
-    for text, file_output in itertools.zip_longest(message_outputs, file_outputs):
-        await ctx.send(text, files=file_output)
+    for content, files in chunk_messages(
+        CodeItem(fp.getvalue(), language="py", filename="output{}.txt".format(i))
+            if fp.getvalue() else PlainItem("\u2705")
+            for i, fp in enumerate(outputs, start=1)):
+        await ctx.send(content, files=files)

@@ -7,7 +7,7 @@ import bot.autoload
 from bot.commands import Context, cleanup, command, group
 from bot.privileges import priv
 import plugins
-from util.discord import Typing, format
+from util.discord import CodeItem, Typing, chunk_messages, format
 import util.restart
 
 manager = plugins.PluginManager.of(__name__)
@@ -29,9 +29,10 @@ class PluginConverter(str):
 
 async def reply_exception(ctx: Context) -> None:
     _, exc, tb = sys.exc_info()
-    text = format("{!b:py}", "".join(traceback.format_exception(None, exc, tb)))
+    for content, files in chunk_messages((
+        CodeItem("".join(traceback.format_exception(None, exc, tb)), language="py", filename="error.txt"),)):
+        await ctx.send(content, files=files)
     del tb
-    await ctx.send(text)
 
 @cleanup
 @command("load")

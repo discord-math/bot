@@ -10,7 +10,7 @@ import discord.abc
 from bot.commands import Context, command
 from bot.privileges import priv
 from bot.reactions import get_reaction
-from util.discord import InvocationError, UserError, format
+from util.discord import InvocationError, PlainItem, UserError, chunk_messages, format
 
 def channel_sort_key(channel: discord.abc.GuildChannel) -> Tuple[int, bool, int]:
     if isinstance(channel, CategoryChannel):
@@ -269,14 +269,10 @@ async def importperms(ctx: Context) -> None:
         await ctx.send("No changes.")
         return
 
-    text = ""
-    for out in output:
-        if len(text) + 1 + len(out) > 2000:
-            await ctx.send(text, allowed_mentions=AllowedMentions.none())
-            text = out
-        else:
-            text += "\n" + out
-    msg = await ctx.send(text, allowed_mentions=AllowedMentions.none())
+    msg = None
+    for content, _ in chunk_messages(PlainItem(text + "\n") for text in output):
+        msg = await ctx.send(content, allowed_mentions=AllowedMentions.none())
+    assert msg
 
     if await get_reaction(msg, ctx.author, {"\u274C": False, "\u2705": True}, timeout=300):
         for action in actions:
