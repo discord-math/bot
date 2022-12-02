@@ -45,7 +45,8 @@ class RolePromptModal(Modal):
 
     async def on_submit(self, interaction: Interaction) -> None:
         if not isinstance(interaction.user, Member):
-            await interaction.response.send_message("This can only be done in a server.", ephemeral=True)
+            await interaction.response.send_message("This can only be done in a server.", ephemeral=True,
+                delete_after=60)
             return
 
         outputs = []
@@ -85,7 +86,8 @@ class RoleSelect(Select["RolesView"]):
 
     async def callback(self, interaction: Interaction) -> None:
         if not isinstance(interaction.user, Member):
-            await interaction.response.send_message("This can only be done in a server.", ephemeral=True)
+            await interaction.response.send_message("This can only be done in a server.", ephemeral=True,
+                delete_after=60)
             return
 
         selected_roles = set()
@@ -113,7 +115,8 @@ class RoleSelect(Select["RolesView"]):
             await interaction.response.send_modal(RolePromptModal(prompt_roles))
         else:
             await interaction.response.send_message(
-                "\u2705 Updated roles." if add_roles or remove_roles else "Roles not changed.", ephemeral=True)
+                "\u2705 Updated roles." if add_roles or remove_roles else "Roles not changed.", ephemeral=True,
+                delete_after=60)
 
 class RolesView(View):
     def __init__(self, member: Member) -> None:
@@ -133,7 +136,7 @@ class RolesView(View):
 
 async def send_roles_view(interaction: Interaction) -> None:
     if not isinstance(interaction.user, Member):
-        await interaction.response.send_message("This can only be done in a server.", ephemeral=True)
+        await interaction.response.send_message("This can only be done in a server.", ephemeral=True, delete_after=60)
         return
     await interaction.response.send_message("Select your roles:", view=RolesView(interaction.user), ephemeral=True)
 

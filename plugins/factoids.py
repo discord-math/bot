@@ -160,7 +160,7 @@ class Factoids(Cog):
                 raise UserError(format("The factoid {!i} already exists", conf.prefix + name))
 
             content = await prompt_contents(ctx)
-            if content is None: return
+            if not content: return
 
             session.add(Alias(
                 name=name,
@@ -218,7 +218,7 @@ class Factoids(Cog):
                     "This factoid can only be edited by admins because it has special behaviors"))
 
             content = await prompt_contents(ctx)
-            if content is None: return
+            if not content: return
 
             alias.factoid.message_text = content if isinstance(content, str) else None
             alias.factoid.embed_data = content.to_dict() if not isinstance(content, str) else None

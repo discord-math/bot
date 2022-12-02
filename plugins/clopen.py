@@ -221,7 +221,7 @@ async def update_owner_limit(user_id: int) -> bool:
         elif not reached_limit and has_role:
             logger.debug("Removing limiting role for {}".format(user_id))
             await user.remove_roles(Object(role_id))
-    except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+    except (discord.NotFound, discord.Forbidden):
         pass
     return reached_limit
 
@@ -245,7 +245,7 @@ async def enact_occupied(channel: TextChannel, owner: Union[User, Member], *,
     try:
         if old_op_id is not None:
             await PartialMessage(channel=channel, id=old_op_id).unpin()
-    except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+    except (discord.NotFound, discord.Forbidden):
         pass
     try:
         if op_id is not None:
@@ -289,7 +289,7 @@ async def close(id: int, reason: str, *, reopen: bool = True) -> None:
     try:
         if not reopen and old_op_id is not None:
             await PartialMessage(channel=channel, id=old_op_id).unpin()
-    except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+    except (discord.NotFound, discord.Forbidden):
         pass
     try:
         if (prompt_id := conf[id, "prompt_id"]) is not None:
@@ -495,7 +495,7 @@ async def set_solved_tags(post: Thread, new_tags: Iterable[int], reason: str) ->
     tags += [cast(ForumTag, Object(id)) for id in new_tags]
     try:
         await post.edit(applied_tags=tags, reason=reason)
-    except discord.HTTPException:
+    except (discord.Forbidden, discord.NotFound):
         logger.error(format("Could not set solved tags on {!c}", post), exc_info=True)
 
 async def solved(post: Thread, reason: str) -> None:
@@ -532,12 +532,15 @@ class PostTitleModal(Modal):
         super().__init__(title="Edit post title", timeout=600)
         self.thread = post
         self.name = TextInput(style=TextStyle.short, placeholder="Enter post title...",
-            label="Post title", default=post.name, required=True)
+            label="Post title", default=post.name, required=True, max_length=100)
         self.add_item(self.name)
 
     async def on_submit(self, interaction: Interaction) -> None:
-        await self.thread.edit(name=str(self.name), reason=format("By {!m}", interaction.user))
-        await interaction.response.send_message("\u2705", ephemeral=True)
+        try:
+            await self.thread.edit(name=str(self.name), reason=format("By {!m}", interaction.user))
+        except (discord.Forbidden, discord.NotFound):
+            return
+        await interaction.response.send_message("\u2705", ephemeral=True, delete_after=60)
 
 async def manage_title(interaction: Interaction, thread_id: int) -> None:
     try:
@@ -550,7 +553,8 @@ async def manage_title(interaction: Interaction, thread_id: int) -> None:
 
     if thread.owner_id != interaction.user.id:
         if not has_privilege("helper", interaction.user):
-            await interaction.response.send_message("You cannot edit the title on this post", ephemeral=True)
+            await interaction.response.send_message("You cannot edit the title on this post", ephemeral=True,
+                delete_after=60)
             return
 
     await interaction.response.send_modal(PostTitleModal(thread))
@@ -566,7 +570,8 @@ async def manage_tags(interaction: Interaction, thread_id: int, values: List[str
 
     if thread.owner_id != interaction.user.id:
         if not has_privilege("helper", interaction.user):
-            await interaction.response.send_message("You cannot edit tags on this post", ephemeral=True)
+            await interaction.response.send_message("You cannot edit tags on this post", ephemeral=True,
+                delete_after=60)
             return
 
     id_values = []
@@ -579,9 +584,12 @@ async def manage_tags(interaction: Interaction, thread_id: int, values: List[str
     tags = [tag for tag in thread.applied_tags if tag.id in solved_tags]
     tags += [tag for tag in thread.parent.available_tags if not tag.moderated and tag.id in id_values]
 
-    new_thread = await thread.edit(applied_tags=tags, reason=format("By {!m}", interaction.user))
+    try:
+        new_thread = await thread.edit(applied_tags=tags, reason=format("By {!m}", interaction.user))
+    except (discord.NotFound, discord.Forbidden):
+        return
     await interaction.message.edit(view=PostTagsView(new_thread))
-    await interaction.response.send_message("\u2705", ephemeral=True)
+    await interaction.response.send_message("\u2705", ephemeral=True, delete_after=60)
 
 async def process_messages(msgs: Iterable[Message]) -> None:
     for msg in msgs:
