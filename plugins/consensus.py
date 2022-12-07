@@ -263,7 +263,7 @@ async def cast_vote(interaction: Interaction, poll_id: int, vote_type: Optional[
                 text = "Vote retracted."
             else:
                 text = "Vote updated."
-        await interaction.response.send_message(text, ephemeral=True)
+        await interaction.response.send_message(text, ephemeral=True, delete_after=60)
 
 async def raise_concern(interaction: Interaction, poll_id: int, comment: str) -> None:
     async with sessionmaker() as session:
@@ -283,7 +283,7 @@ async def raise_concern(interaction: Interaction, poll_id: int, comment: str) ->
         if len(votes):
             await msg.channel.send(" ".join(format("{!m}", vote.voter_id) for vote in votes),
                 allowed_mentions=user_mentions, reference=msg)
-        await interaction.response.send_message("Concern added.", ephemeral=True)
+        await interaction.response.send_message("Concern added.", ephemeral=True, delete_after=60)
         timeouts_updated()
 
 async def retract_concern(interaction: Interaction, poll_id: int, id: int) -> None:
@@ -300,7 +300,7 @@ async def retract_concern(interaction: Interaction, poll_id: int, id: int) -> No
         await session.delete(concern)
         await session.commit()
         await sync_poll(session, poll_id, msg)
-        await interaction.response.send_message("Concern retracted.", ephemeral=True)
+        await interaction.response.send_message("Concern retracted.", ephemeral=True, delete_after=60)
 
 class VoteModal(Modal):
     def __init__(self, poll_id: int, concerns: List[str], vote: Optional[VoteType], comment: str,

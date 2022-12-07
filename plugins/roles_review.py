@@ -118,7 +118,8 @@ async def cast_vote(interaction: Interaction, msg_id: int, dir: Optional[bool], 
 
         if (role_id := conf[app.role_id, "role"]) is not None:
             if not isinstance(interaction.user, Member) or not any(role.id == role_id for role in interaction.user.roles):
-                await interaction.response.send_message("You are not allowed to vote on this application.", ephemeral=True)
+                await interaction.response.send_message("You are not allowed to vote on this application.",
+                    ephemeral=True)
                 return
 
         stmt = select(Vote).where(Vote.application_id == app.id)
@@ -167,7 +168,7 @@ async def cast_vote(interaction: Interaction, msg_id: int, dir: Optional[bool], 
                 app.resolved = True
             await session.commit()
 
-        await interaction.response.send_message("Vote recorded.", ephemeral=True)
+        await interaction.response.send_message("Vote recorded.", ephemeral=True, delete_after=60)
 
         if decision == True:
             if (user := interaction.guild.get_member(app.user_id)) is not None:
