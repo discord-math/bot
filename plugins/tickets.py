@@ -179,13 +179,27 @@ class TicketMod:
             new_mod.scheduled_delivery = None
 
     @staticmethod
-    def format_delivery(ticket: Ticket) -> Tuple[str, Embed]:
-        return ("Set a duration and a comment (e.g. 1 day 8 hours, breaking rules) on the following:",
-            ticket.to_embed(dm=True))
+    def format_delivery(ticket: Ticket, related: Sequence[Ticket]) -> Tuple[str, list[Embed]]:
+        embeds = [ticket.to_embed(dm=True)]
+
+        def item_gen() -> Iterator[PlainItem]:
+            first = True
+            for ticket in related:
+                if first:
+                    yield PlainItem("User has outstanding tickets: ")
+                else:
+                    yield PlainItem(", ")
+                first = False
+                yield PlainItem(format("[#{}]({}): {} ({})", ticket.id, ticket.jump_link,
+                    ticket.describe_action(dm=True), ticket.status_line))
+
+        for content, _ in chunk_messages(item_gen()):
+            embeds.append(Embed(description=content, color=0xFF9900))
+        return "Set a duration and a comment (e.g. 1 day 8 hours, breaking rules) on the following:", embeds
 
     delivery_comment = "Please set a duration/comment on the following:"
 
-    async def try_initial_delivery(self, ticket: Ticket) -> None:
+    async def try_initial_delivery(self, ticket: Ticket, related: Sequence[Ticket]) -> None:
         logger.debug(format("Delivering Ticket #{} to {!m}", ticket.id, self.modid))
         user = client.get_user(self.modid)
         if user is None:
@@ -196,8 +210,8 @@ class TicketMod:
                 self.scheduled_delivery = datetime.utcnow() + timedelta(seconds=conf.prompt_interval)
                 return
         try:
-            content, embed = self.format_delivery(ticket)
-            msg = await user.send(content, embed=embed)
+            content, embeds = self.format_delivery(ticket, related)
+            msg = await user.send(content, embeds=embeds)
         except (discord.NotFound, discord.Forbidden):
             return
         finally:
@@ -205,7 +219,7 @@ class TicketMod:
         ticket.delivered_id = msg.id
         ticket.stage = TicketStage.DELIVERED
 
-    async def try_redelivery(self, ticket: Ticket) -> None:
+    async def try_redelivery(self, ticket: Ticket, related: Sequence[Ticket]) -> None:
         logger.debug(format("Re-delivering Ticket #{} to {!m}", ticket.id, self.modid))
         user = client.get_user(self.modid)
         if user is None:
@@ -220,8 +234,8 @@ class TicketMod:
             except (discord.NotFound, discord.Forbidden):
                 pass
         try:
-            content, embed = self.format_delivery(ticket)
-            msg = await user.send(content, embed=embed)
+            content, embeds = self.format_delivery(ticket, related)
+            msg = await user.send(content, embeds=embeds)
         except (discord.NotFound, discord.Forbidden):
             return
         finally:
@@ -340,6 +354,9 @@ class Ticket:
     def describe(self, *, dm: bool = False) -> str:
         raise NotImplementedError
 
+    def describe_action(self, *, dm: bool = False) -> str:
+        raise NotImplementedError
+
     def append_comment(self, comment: str) -> None:
         if self.comment is None:
             self.comment = comment
@@ -431,6 +448,11 @@ class Ticket:
         yield None
         for ticket in tickets:
             await ticket.publish()
+
+    async def get_related(self, session: AsyncSession) -> Sequence[Ticket]:
+        stmt = select(Ticket).where(Ticket.targetid == self.targetid, Ticket.id != self.id,
+            Ticket.status != TicketStatus.HIDDEN)
+        return (await session.execute(stmt)).scalars().all()
 
     @staticmethod
     async def create_from_audit(session: AsyncSession, audit: AuditLogEntry) -> Sequence[Ticket]:
@@ -566,6 +588,9 @@ class NoteTicket(Ticket):
     def describe(self, *, dm: bool = False) -> str:
         return format("**Note** for {!m}", self.targetid)
 
+    def describe_action(self, *, dm: bool = False) -> str:
+        return "**Note**"
+
     async def revert_action(self, reason: Optional[str] = None) -> None:
         pass
 
@@ -621,6 +646,9 @@ class KickTicket(Ticket):
     def describe(self, *, dm: bool = False) -> str:
         return format("**Kicked** {!m}", self.targetid)
 
+    def describe_action(self, *, dm: bool = False) -> str:
+        return "**Kick**"
+
     @staticmethod
     async def create_from_audit(session: AsyncSession, audit: AuditLogEntry) -> Sequence[Ticket]:
         return (KickTicket(**await audit_ticket_data(session, audit)),)
@@ -650,6 +678,9 @@ class BanTicket(Ticket):
 
     def describe(self, *, dm: bool = False) -> str:
         return format("**Banned** {!m}", self.targetid)
+
+    def describe_action(self, *, dm: bool = False) -> str:
+        return "**Ban**"
 
     @staticmethod
     async def create_from_audit(session: AsyncSession, audit: AuditLogEntry) -> Sequence[Ticket]:
@@ -692,6 +723,9 @@ class VCMuteTicket(Ticket):
 
     def describe(self, *, dm: bool = False) -> str:
         return format("**VC Muted** {!m}", self.targetid)
+
+    def describe_action(self, *, dm: bool = False) -> str:
+        return "**VC Mute**"
 
     @staticmethod
     async def create_from_audit(session: AsyncSession, audit: AuditLogEntry) -> Sequence[Ticket]:
@@ -749,6 +783,9 @@ class VCDeafenTicket(Ticket):
 
     def describe(self, *, dm: bool = False) -> str:
         return format("**VC Deafened** {!m}", self.targetid)
+
+    def describe_action(self, *, dm: bool = False) -> str:
+        return "**VC Deafen**"
 
     @staticmethod
     async def create_from_audit(session: AsyncSession, audit: AuditLogEntry) -> Sequence[Ticket]:
@@ -813,6 +850,15 @@ class AddRoleTicket(Ticket):
             else:
                 role_desc = str(self.roleid)
         return format("**Added Role** {} to {!m}", role_desc, self.targetid)
+
+    def describe_action(self, *, dm: bool = False) -> str:
+        role_desc = format("{!M}", self.roleid)
+        if dm:
+            if (guild := client.get_guild(conf.guild)) and (role := guild.get_role(self.roleid)):
+                role_desc = role.name
+            else:
+                role_desc = str(self.roleid)
+        return "**Role** {}".format(role_desc)
 
     @staticmethod
     async def create_from_audit(session: AsyncSession, audit: AuditLogEntry) -> Sequence[Ticket]:
@@ -1071,14 +1117,15 @@ async def deliver_tickets() -> None:
                 min_delivery = None
                 now = datetime.utcnow()
                 for mod in mods:
-                    if mod.queue_top is None:
+                    if (ticket := mod.queue_top) is None:
                         continue
                     if mod.scheduled_delivery is None or mod.scheduled_delivery <= now:
                         try:
-                            if mod.queue_top.stage == TicketStage.NEW:
-                                await mod.try_initial_delivery(mod.queue_top)
+                            related = await ticket.get_related(session)
+                            if ticket.stage == TicketStage.NEW:
+                                await mod.try_initial_delivery(ticket, related)
                             else:
-                                await mod.try_redelivery(mod.queue_top)
+                                await mod.try_redelivery(ticket, related)
                         except asyncio.CancelledError:
                             raise
                         except:
@@ -1280,7 +1327,8 @@ class Tickets(Cog):
             if mod is None or mod.queue_top is None:
                 await ctx.send("Your queue is empty, good job!")
             else:
-                await mod.try_redelivery(mod.queue_top)
+                ticket = mod.queue_top
+                await mod.try_redelivery(ticket, await ticket.get_related(session))
                 if ctx.channel.type != ChannelType.private:
                     await ctx.send("Ticket #{} has been delivered to your DMs.".format(mod.queue_top.id))
 
