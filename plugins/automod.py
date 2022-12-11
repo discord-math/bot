@@ -285,7 +285,8 @@ async def automod_add(ctx: Context, kind: Literal["substring", "word", "regex"],
         conf[i, "type"] = kind
         conf[i, "action"] = None
         await conf
-    await ctx.send("Added as pattern **{}** with no action".format(i))
+    await ctx.send("Added {} as pattern **{}** with no action".format(
+        ", ".join(format("||{!i}||", keyword) for keyword in keywords), i))
 
 @automod_command.command("remove")
 async def automod_remove(ctx: Context, number: int) -> None:
