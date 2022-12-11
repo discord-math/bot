@@ -209,9 +209,9 @@ class TicketMod:
                 logger.error(format("Could not find {!m} to deliver Ticket #{}", self.modid, ticket.id))
                 self.scheduled_delivery = datetime.utcnow() + timedelta(seconds=conf.prompt_interval)
                 return
-        if user.bot:
-            return
         try:
+            if user.bot:
+                return
             content, embeds = self.format_delivery(ticket, related)
             msg = await user.send(content, embeds=embeds)
         except (discord.NotFound, discord.Forbidden):
@@ -235,9 +235,9 @@ class TicketMod:
                 await msg.delete()
             except (discord.NotFound, discord.Forbidden):
                 pass
-        if user.bot:
-            return
         try:
+            if user.bot:
+                return
             content, embeds = self.format_delivery(ticket, related)
             msg = await user.send(content, embeds=embeds)
         except (discord.NotFound, discord.Forbidden):
