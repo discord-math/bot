@@ -580,41 +580,51 @@ class ReplyConverter(PartialMessage):
         except MessageNotFound:
             raise BadArgument("Expected either a message link or channel ID - message ID")
 
+duration_re = re.compile(
+    r"""
+    \s*(-?\d+)\s*(?:
+    (?P<seconds> s(?:ec(?:ond)?s?)?) |
+    (?P<minutes> min(?:ute)?s? | (?!mo)(?-i:m)) |
+    (?P<hours> h(?:(?:ou)?rs?)?) |
+    (?P<days> d(?:ays?)?) |
+    (?P<weeks> w(?:(?:ee)?ks?)?) |
+    (?P<months> months? | (?-i:M)) |
+    (?P<years> y(?:(?:ea)?rs?)?)
+    )[^\w'"]*
+    """,
+    re.VERBOSE | re.IGNORECASE)
+duration_expansion = {
+    "seconds": timedelta(seconds=1),
+    "minutes": timedelta(minutes=1),
+    "hours": timedelta(hours=1),
+    "days": timedelta(days=1),
+    "weeks": timedelta(days=7),
+    "months": timedelta(days=30),
+    "years": timedelta(days=365)}
+
+def parse_duration(text: str) -> Tuple[timedelta, int]:
+    """
+    Parse zero or more duration items from the provided string, returning the total duration and offset into the string
+    where the parse ended.
+    """
+    pos = 0
+    delta = timedelta()
+    while (match := duration_re.match(text, pos=pos)) is not None:
+        pos = match.end()
+        assert match.lastgroup is not None
+        delta += int(match[1]) * duration_expansion[match.lastgroup]
+    return delta, pos
+
 class DurationConverter(timedelta):
-    time_re = re.compile(
-        r"""
-        \s*(-?\d+)\s*(?:
-        (?P<seconds> s(?:ec(?:ond)?s?)?) |
-        (?P<minutes> min(?:ute)?s? | (?!mo)(?-i:m)) |
-        (?P<hours> h(?:(?:ou)?rs?)?) |
-        (?P<days> d(?:ays?)?) |
-        (?P<weeks> w(?:(?:ee)?ks?)?) |
-        (?P<months> months? | (?-i:M)) |
-        (?P<years> y(?:(?:ea)?rs?)?))\W*
-        """,
-        re.VERBOSE | re.IGNORECASE
-    )
-    time_expansion = {
-        "seconds": timedelta(seconds=1),
-        "minutes": timedelta(minutes=1),
-        "hours": timedelta(hours=1),
-        "days": timedelta(days=1),
-        "weeks": timedelta(days=7),
-        "months": timedelta(days=30),
-        "years": timedelta(days=365)
-    }
     @classmethod
     async def convert(cls, ctx: Context[Any], arg: str) -> timedelta:
         pos = undo_get_quoted_word(ctx.view, arg)
-        td = timedelta()
-        while (match := cls.time_re.match(ctx.view.buffer, pos=pos)) is not None:
-            pos = match.end()
-            assert match.lastgroup is not None
-            td += int(match[1]) * cls.time_expansion[match.lastgroup]
-        if pos == undo_get_quoted_word(ctx.view, arg):
-            raise BadArgument("Expected a duration")
-        ctx.view.index = pos
-        return td
+        delta, offset = parse_duration(ctx.view.buffer[pos:])
+        if offset:
+            ctx.view.index = pos + offset
+            return delta
+        else:
+            raise BadArgument("Expected a duration (e.g. 1 day 6 hours)")
 
 class PlainItem:
     """An item that is formatted as itself, possibly split across multiple messages if too large."""

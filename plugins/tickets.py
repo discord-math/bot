@@ -31,36 +31,11 @@ import plugins
 import plugins.persistence
 import util.db
 import util.db.kv
-from util.discord import InvocationError, PartialUserConverter, PlainItem, UserError, chunk_messages, format
+from util.discord import (InvocationError, PartialUserConverter, PlainItem, UserError, chunk_messages, format,
+    parse_duration)
 from util.frozen_list import FrozenList
 
 logger: logging.Logger = logging.getLogger(__name__)
-
-# ---------- Constants ----------
-ticket_comment_re = re.compile(
-    r"""
-    (?:
-    \s*([\d.]+)\s*
-    (s(?:ec(?:ond)?s?)?
-    |(?-i:m)|min(?:ute)?s?
-    |h(?:(?:ou)?rs?)?
-    |d(?:ays?)?
-    |w(?:(?:ee)?ks?)?
-    |(?-i:M)|months?
-    |y(?:(?:ea)?rs?)?
-    )
-    |p(?:erm(?:anent)?)?
-    )\b\W*
-    """, re.VERBOSE | re.IGNORECASE)
-
-time_expansion = {
-    's': 1,
-    'm': 60,
-    'h': 60 * 60,
-    'd': 60 * 60 * 24,
-    'w': 60 * 60 * 24 * 7,
-    'M': 60 * 60 * 24 * 30,
-    'y': 60 * 60 * 24 * 365}
 
 # ----------- Config -----------
 class TicketsConf(Awaitable[None], Protocol):
@@ -203,6 +178,13 @@ class TicketMod:
                 old_top.delivered_id = None
             new_mod.scheduled_delivery = None
 
+    @staticmethod
+    def format_delivery(ticket: Ticket) -> Tuple[str, Embed]:
+        return ("Set a duration and a comment (e.g. 1 day 8 hours, breaking rules) on the following:",
+            ticket.to_embed(dm=True))
+
+    delivery_comment = "Please set a duration/comment on the following:"
+
     async def try_initial_delivery(self, ticket: Ticket) -> None:
         logger.debug(format("Delivering Ticket #{} to {!m}", ticket.id, self.modid))
         user = client.get_user(self.modid)
@@ -214,7 +196,8 @@ class TicketMod:
                 self.scheduled_delivery = datetime.utcnow() + timedelta(seconds=conf.prompt_interval)
                 return
         try:
-            msg = await user.send("Please comment on the following:", embed=ticket.to_embed(dm=True))
+            content, embed = self.format_delivery(ticket)
+            msg = await user.send(content, embed=embed)
         except (discord.NotFound, discord.Forbidden):
             return
         finally:
@@ -237,7 +220,8 @@ class TicketMod:
             except (discord.NotFound, discord.Forbidden):
                 pass
         try:
-            msg = await user.send("Please comment on the following:", embed=ticket.to_embed(dm=True))
+            content, embed = self.format_delivery(ticket)
+            msg = await user.send(content, embed=embed)
         except (discord.NotFound, discord.Forbidden):
             return
         finally:
@@ -247,20 +231,13 @@ class TicketMod:
 
     @staticmethod
     def parse_ticket_comment(ticket: Ticket, text: str) -> Tuple[Optional[int], str, str]:
-        duration: Optional[int]
-        if match := ticket_comment_re.match(text):
-            # Extract duration
-            if match[1]:
-                d = int(match[1])
-                token = match[2][0]
-                token = token.lower() if token != 'M' else token
-                duration = d * time_expansion[token]
-            else:
-                duration = None
-            comment = text[match.end():]
+        delta, offset = parse_duration(text)
+        if offset:
+            comment = text[offset:]
+            duration = delta // timedelta(seconds=1)
         else:
-            duration = None
             comment = text
+            duration = None
 
         msg = ""
         if duration:
