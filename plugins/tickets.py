@@ -209,6 +209,8 @@ class TicketMod:
                 logger.error(format("Could not find {!m} to deliver Ticket #{}", self.modid, ticket.id))
                 self.scheduled_delivery = datetime.utcnow() + timedelta(seconds=conf.prompt_interval)
                 return
+        if user.bot:
+            return
         try:
             content, embeds = self.format_delivery(ticket, related)
             msg = await user.send(content, embeds=embeds)
@@ -233,6 +235,8 @@ class TicketMod:
                 await msg.delete()
             except (discord.NotFound, discord.Forbidden):
                 pass
+        if user.bot:
+            return
         try:
             content, embeds = self.format_delivery(ticket, related)
             msg = await user.send(content, embeds=embeds)
@@ -1616,7 +1620,7 @@ class Tickets(Cog):
     @Cog.listener("on_message")
     async def moderator_message(self, msg: Message) -> None:
         if msg.channel.type == ChannelType.private:
-            if msg.author.id in queued_mods:
+            if msg.author != client.user and msg.author.id in queued_mods:
                 async with sessionmaker() as session:
                     mod = await session.get(TicketMod, msg.author.id,
                         options=(joinedload(TicketMod.queue_top),))
