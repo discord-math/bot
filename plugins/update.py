@@ -6,7 +6,7 @@ from bot.commands import Context, cleanup, command
 from bot.privileges import priv
 import plugins
 import util.db.kv
-from util.discord import CodeItem, Typing, chunk_messages, format
+from util.discord import CodeItem, Typing, chunk_messages
 
 class UpdateConf(Protocol):
     def __getitem__(self, key: str) -> Optional[str]: ...

@@ -10,16 +10,16 @@ import logging
 import math
 import re
 import string
-from typing import (Any, AsyncContextManager, Callable, Generic, Iterable, Iterator, List, Optional, Protocol, Sequence,
-    Tuple, Type, TypeVar, Union, cast)
+from typing import (Any, AsyncContextManager, Callable, Dict, Generic, Iterable, Iterator, List, Optional, Protocol,
+    Sequence, Tuple, Type, TypeVar, Union, cast)
 
 import discord
-from discord import (CategoryChannel, File, Member, Message, Object, PartialMessage, Role, StageChannel, TextChannel,
-    User, VoiceChannel)
+from discord import (CategoryChannel, File, ForumChannel, Member, Message, Object, PartialMessage, Role, StageChannel,
+    TextChannel, User, VoiceChannel)
 from discord.abc import GuildChannel, Messageable, Snowflake
 import discord.context_managers
-from discord.ext.commands import (ArgumentParsingError, BadArgument, CommandError, Context, NoPrivateMessage,
-    PartialMessageConverter, UserInputError)
+from discord.ext.commands import (ArgumentParsingError, BadArgument, CommandError, Context, MessageNotFound,
+    NoPrivateMessage, PartialMessageConverter, UserInputError)
 import discord.ext.commands.view
 from discord.ext.commands.view import StringView
 import discord.state
@@ -368,42 +368,44 @@ class PartialUserConverter(Snowflake):
         user_list: Sequence[Union[User, Member]]
         if ctx.guild is not None:
             user_list = ctx.guild.members
+            where = "on this server"
         else:
             user_list = [cast(User, ctx.bot.user), ctx.author]
+            where = "in this DM"
         if match := cls.discrim_re.fullmatch(arg):
             name, discrim = match[1], match[2]
             matches = list(filter(lambda u: u.name == name and u.discriminator == discrim, user_list))
             if len(matches) > 1:
-                raise BadArgument(format("Multiple results for {}#{}", name, discrim))
+                raise BadArgument(format("Multiple users match {}#{} {}", name, discrim, where))
             elif len(matches) == 1:
                 return matches[0]
 
         matches = priority_find(lambda u: nicknamed_priority(u, arg), user_list)
         if len(matches) > 1:
-            raise BadArgument(format("Multiple results for {}", arg))
+            raise BadArgument(format("Multiple users match {} {}", arg, where))
         elif len(matches) == 1:
             return matches[0]
         else:
-            raise BadArgument(format("No results for {}", arg))
+            raise BadArgument(format("Could not find user {} {}", arg, where))
 
 class MemberConverter(User):
     @classmethod
     async def convert(cls, ctx: Context[Any], arg: str) -> Optional[Member]:
         if ctx.guild is None:
-            raise NoPrivateMessage(format("Cannot obtain member outside guild"))
+            raise NoPrivateMessage(format("Cannot obtain member outside a server"))
 
         obj = await PartialUserConverter.convert(ctx, arg)
         if isinstance(obj, Member):
             return obj
         elif isinstance(obj, User):
-            raise BadArgument(format("No member found by ID {}", obj.id))
+            raise BadArgument(format("Found a user with ID {}, but they are not on this server", obj.id))
 
         member = ctx.guild.get_member(obj.id)
         if member is not None: return member
         try:
             return await ctx.guild.fetch_member(obj.id)
         except discord.NotFound:
-            raise BadArgument(format("No member found by ID {}", obj.id))
+            raise BadArgument(format("Could not find member with ID {} on this server", obj.id))
 
 class UserConverter(User):
     @classmethod
@@ -417,7 +419,7 @@ class UserConverter(User):
         try:
             return await ctx.bot.fetch_user(obj.id)
         except discord.NotFound:
-            raise BadArgument(format("No user found by ID {}", obj.id))
+            raise BadArgument(format("Could not find user with ID {}", obj.id))
 
 class PartialRoleConverter(Snowflake):
     id: int
@@ -432,15 +434,15 @@ class PartialRoleConverter(Snowflake):
             return Object(int(match[0]))
 
         if ctx.guild is None:
-            raise NoPrivateMessage(format("Outside a guild a role can only be specified by ID"))
+            raise NoPrivateMessage(format("Outside a server a role can only be specified by ID"))
 
         matches = priority_find(lambda r: named_priority(r, arg), ctx.guild.roles)
         if len(matches) > 1:
-            raise BadArgument(format("Multiple results for {}", arg))
+            raise BadArgument(format("Multiple roles match {} on this server", arg))
         elif len(matches) == 1:
             return matches[0]
         else:
-            raise BadArgument(format("No results for {}", arg))
+            raise BadArgument(format("Could not find role {} on this server", arg))
 
 class RoleConverter(Role):
     @classmethod
@@ -457,13 +459,21 @@ class RoleConverter(Role):
             if role is not None:
                 return role
         else:
-            raise BadArgument(format("No role found by ID {}", obj.id))
+            raise BadArgument(format("Could not find role with ID {} in any server", obj.id))
 
 C = TypeVar("C", bound=GuildChannel)
 
 class PCConv(Generic[C]):
     mention_re: re.Pattern[str] = re.compile(r"<#(\d+)>")
     id_re: re.Pattern[str] = re.compile(r"\d{15,}")
+    kind_map: Dict[Type[GuildChannel], str] = {
+        GuildChannel: "channel",
+        TextChannel: "text channel",
+        VoiceChannel: "voice channel",
+        CategoryChannel: "category channel",
+        StageChannel: "stage channel",
+        ForumChannel: "forum"}
+
 
     @classmethod
     async def partial_convert(cls, ctx: Context[Any], arg: str, ty: Type[C]) -> Snowflake:
@@ -473,7 +483,7 @@ class PCConv(Generic[C]):
             return Object(int(match[0]))
 
         if ctx.guild is None:
-            raise NoPrivateMessage(format("Outside a guild a channel can only be specified by ID"))
+            raise NoPrivateMessage(format("Outside a server a channel can only be specified by ID"))
 
         chan_list: Sequence[GuildChannel] = ctx.guild.channels
         if ty == TextChannel:
@@ -484,34 +494,38 @@ class PCConv(Generic[C]):
             chan_list = ctx.guild.categories
         elif ty == StageChannel:
             chan_list = ctx.guild.stage_channels
+        elif ty == ForumChannel:
+            chan_list = ctx.guild.forums
+        kind = cls.kind_map.get(ty, "channel")
 
         matches = priority_find(lambda c: named_priority(c, arg), chan_list)
         if len(matches) > 1:
-            raise BadArgument(format("Multiple results for {}", arg))
+            raise BadArgument(format("Multiple {}s match {} on this server", kind, arg))
         elif len(matches) == 1:
             return matches[0]
         else:
-            raise BadArgument(format("No results {}", arg))
+            raise BadArgument(format("Could not find {} {} on this server", kind, arg))
 
     @classmethod
     async def convert(cls, ctx: Context[Any], arg: str, ty: Type[C]) -> C:
         obj = await cls.partial_convert(ctx, arg, ty)
         if isinstance(obj, ty):
             return obj
+        kind = cls.kind_map.get(ty, "channel")
         if ctx.guild is not None:
             chan = ctx.guild.get_channel(obj.id)
             if chan is not None:
                 if not isinstance(chan, ty):
-                    raise BadArgument(format("{!c} is not a {}", chan.id, ty))
+                    raise BadArgument(format("{!c} is not a {}", chan.id, kind))
                 return chan
         for guild in ctx.bot.guilds:
             chan = guild.get_channel(obj.id)
             if chan is not None:
                 if not isinstance(chan, ty):
-                    raise BadArgument(format("{!c} is not a {}", chan.id, ty))
+                    raise BadArgument(format("{!c} is not a {}", chan.id, kind))
                 return chan
         else:
-            raise BadArgument(format("No {} found by ID {}", obj.id))
+            raise BadArgument(format("Could not find {} by ID {} on any server", kind, obj.id))
 
 class PartialChannelConverter(GuildChannel):
     @classmethod
@@ -547,7 +561,7 @@ def partial_from_reply(pmsg: Optional[PartialMessage], ctx: Context[Any]) -> Par
         if ref.message_id is None:
             raise InvocationError("Referenced message has no ID")
         return partial_message(channel, ref.message_id)
-    raise InvocationError("Expected either a message link, channel-message ID, or a reply to a message")
+    raise InvocationError("Expected either a message link, channel ID - message ID, or a reply to a message")
 
 class ReplyConverter(PartialMessage):
     """
@@ -561,7 +575,10 @@ class ReplyConverter(PartialMessage):
         if ctx.message.reference is not None:
             ctx.view.index = pos
             return partial_from_reply(None, ctx)
-        return await PartialMessageConverter().convert(ctx, arg)
+        try:
+            return await PartialMessageConverter().convert(ctx, arg)
+        except MessageNotFound:
+            raise BadArgument("Expected either a message link or channel ID - message ID")
 
 class DurationConverter(timedelta):
     time_re = re.compile(

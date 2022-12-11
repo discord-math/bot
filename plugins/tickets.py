@@ -1289,7 +1289,7 @@ class Tickets(Cog):
     @group("ticket", aliases=["tickets"])
     @priv("mod")
     async def ticket_command(self, ctx: Context) -> None:
-        """Manage tickets."""
+        """Manage tickets. A ticket can be specified by ID, by Discord message link, or by replying to it."""
         pass
 
     @cleanup
@@ -1429,7 +1429,7 @@ class Tickets(Cog):
             await ctx.send(embed=Embed(description="#{}: Ticket hidden.".format(tkt.id)))
 
     @cleanup
-    @ticket_command.command("show")
+    @ticket_command.command("show", usage="<user | ticket>")
     async def ticket_show(self, ctx: Context, *, user_or_id: Union[PartialUserConverter, PartialMessage, int]) -> None:
         """Show tickets affecting given user, or a ticket with a specific ID."""
         async with sessionmaker() as session:
@@ -1463,7 +1463,7 @@ class Tickets(Cog):
                     await ctx.send("No tickets found for this user.")
 
     @cleanup
-    @ticket_command.command("showhidden")
+    @ticket_command.command("showhidden", usage="<user | ticket>")
     async def ticket_showhidden(self, ctx: Context, *, user_or_id: Union[PartialUserConverter, PartialMessage, int]
         ) -> None:
         """Show hidden tickets affecting given user, or a ticket with a specific ID."""

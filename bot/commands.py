@@ -11,7 +11,7 @@ import discord
 from discord import AllowedMentions, Client, Message, PartialMessage
 import discord.ext.commands
 from discord.ext.commands import (BadUnionArgument, Bot, CheckFailure, Cog, Command, CommandError, CommandInvokeError,
-    CommandNotFound, Group, UserInputError)
+    CommandNotFound, Group, NoPrivateMessage, PrivateMessageOnly, UserInputError)
 
 from bot.client import client
 from bot.cogs import cog
@@ -51,7 +51,7 @@ class Commands(Cog):
         try:
             if isinstance(exc, CommandNotFound):
                 return
-            elif isinstance(exc, CheckFailure):
+            elif isinstance(exc, CheckFailure) and not isinstance(exc, (NoPrivateMessage, PrivateMessageOnly)):
                 return
             elif isinstance(exc, UserInputError):
                 if isinstance(exc, BadUnionArgument):
