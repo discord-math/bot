@@ -331,6 +331,9 @@ class Ticket:
     # Action triggering automatic ticket reversal
     revert_trigger_action: Optional[AuditLogAction] = None
 
+    # The uncommented/in action/expired colors of the ticket embed
+    colors: Tuple[int, int, int]
+
     @property
     def hidden(self) -> bool:
         return self.status == TicketStatus.HIDDEN
@@ -371,10 +374,21 @@ class Ticket:
         """
         The discord embed describing this ticket.
         """
+        if self.status == TicketStatus.EXPIRE_FAILED:
+            color = 0x0000FF
+        elif self.status == TicketStatus.HIDDEN:
+            color = 0x000000
+        elif self.status in (TicketStatus.EXPIRED, TicketStatus.REVERTED):
+            color = self.colors[2]
+        elif self.stage == TicketStage.COMMENTED:
+            color = self.colors[1]
+        else:
+            color = self.colors[0]
+
         embed = Embed(
             title="Ticket #{}".format(self.id),
             description="{} ({})\n{}".format(self.describe(dm=dm), self.status_line, self.comment or ""),
-            timestamp=self.created_at)
+            timestamp=self.created_at, color=color)
         embed.add_field(name="Moderator", value=format("{!m}", self.modid))
 
         if self.can_revert:
@@ -585,6 +599,8 @@ class NoteTicket(Ticket):
     trigger_action = None
     revert_trigger_action = None
 
+    colors = 0xFFFFFF, 0xFFFFFF, 0x666666
+
     def describe(self, *, dm: bool = False) -> str:
         return format("**Note** for {!m}", self.targetid)
 
@@ -643,6 +659,8 @@ class KickTicket(Ticket):
     trigger_action = AuditLogAction.kick
     revert_trigger_action = None
 
+    colors = 0xFFBB55, 0xFF9900, 0x995500
+
     def describe(self, *, dm: bool = False) -> str:
         return format("**Kicked** {!m}", self.targetid)
 
@@ -675,6 +693,8 @@ class BanTicket(Ticket):
 
     trigger_action = AuditLogAction.ban
     revert_trigger_action = AuditLogAction.unban
+
+    colors = 0xFF6666, 0xFF0000, 0x990000
 
     def describe(self, *, dm: bool = False) -> str:
         return format("**Banned** {!m}", self.targetid)
@@ -720,6 +740,8 @@ class VCMuteTicket(Ticket):
 
     trigger_action = AuditLogAction.member_update
     revert_trigger_action = AuditLogAction.member_update
+
+    colors = 0xFF55BB, 0xFF0099, 0x990055
 
     def describe(self, *, dm: bool = False) -> str:
         return format("**VC Muted** {!m}", self.targetid)
@@ -781,6 +803,8 @@ class VCDeafenTicket(Ticket):
     trigger_action = AuditLogAction.member_update
     revert_trigger_action = AuditLogAction.member_update
 
+    colors = 0xCC66FF, 0x9900FF, 0x550099
+
     def describe(self, *, dm: bool = False) -> str:
         return format("**VC Deafened** {!m}", self.targetid)
 
@@ -841,6 +865,8 @@ class AddRoleTicket(Ticket):
 
     trigger_action = AuditLogAction.member_role_update
     revert_trigger_action = AuditLogAction.member_role_update
+
+    colors = 0xFFFF99, 0xFFFF00, 0x999900
 
     def describe(self, *, dm: bool = False) -> str:
         role_desc = format("{!M}", self.roleid)
