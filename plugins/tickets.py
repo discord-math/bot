@@ -1648,9 +1648,12 @@ async def find_notes_prefix(session: AsyncSession, prefix: str, *, modid: int, t
         NoteTicket.comment.startswith(prefix)).order_by(NoteTicket.id)
     return list((await session.execute(stmt)).scalars())
 
+async def visible_tickets(session: AsyncSession, targetid: int) -> Sequence[Ticket]:
+    stmt = select(Ticket).where(Ticket.targetid == targetid, Ticket.status != TicketStatus.HIDDEN)
+    return (await session.execute(stmt)).scalars().all()
+
 async def any_visible_tickets(session: AsyncSession, targetid: int) -> bool:
-    stmt = select(func.count(Ticket.id)).where(
-        Ticket.targetid == targetid, Ticket.status != TicketStatus.HIDDEN)
+    stmt = select(func.count(Ticket.id)).where(Ticket.targetid == targetid, Ticket.status != TicketStatus.HIDDEN)
     return bool((await session.execute(stmt)).scalar())
 
 async def create_note(session: AsyncSession, note: str, *, modid: int, targetid: int) -> NoteTicket:
