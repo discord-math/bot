@@ -90,13 +90,14 @@ APPEAL_FORM_URL = URL("https://mathematics.gg/appeals/form")
 # https://github.com/discord-math/discord-math.github.io/blob/main/_appeals/success.md
 APPEAL_SUCCESS_URL = URL("https://mathematics.gg/appeals/success")
 
+CALLBACK_URL = URL("https://api.mathematics.gg/appeals/callback")
+
 routes = RouteTableDef()
 
 @routes.get("/auth")
 async def get_auth(request: Request) -> NoReturn:
-    callback_url = request.url.with_path(request.app.router["callback"].url_for().path)
     query = {"client_id": conf.client_id, "response_type": "code", "scope": "identify",
-        "redirect_uri": str(callback_url)}
+        "redirect_uri": str(CALLBACK_URL)}
     raise HTTPSeeOther(location=AUTHORIZE_URL.with_query(query))
 
 async def get_user_id(token: str) -> int:
@@ -108,7 +109,7 @@ async def get_user_id(token: str) -> int:
     except (KeyError, ValueError):
         raise HTTPInternalServerError(text="No user id")
 
-@routes.get("/callback", name="callback")
+@routes.get("/callback")
 async def get_callback(request: Request) -> NoReturn:
     if "error" in request.query:
         raise HTTPForbidden(text=request.query["error"])
@@ -116,7 +117,7 @@ async def get_callback(request: Request) -> NoReturn:
         raise HTTPBadRequest(text="No access code provided")
 
     body = {"client_id": conf.client_id, "client_secret": conf.client_secret, "grant_type": "authorization_code",
-        "code": request.query["code"], "redirect_uri": str(request.url.with_query(None))}
+        "code": request.query["code"], "redirect_uri": str(CALLBACK_URL)}
     async with http.post(TOKEN_URL, headers={"Accept": "application/json"}, data=FormData(body)) as r:
         result = await r.json()
 
