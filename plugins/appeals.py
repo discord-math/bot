@@ -142,7 +142,7 @@ async def get_callback(request: Request) -> NoReturn:
         in_guild = False
         in_banlist = False
         if guild := client.get_guild(conf.guild):
-            async for entry in guild.bans(after=discord.Object(user_id), limit=1):
+            async for entry in guild.bans(after=discord.Object(user_id - 1), limit=1):
                 if entry.user.id == user_id:
                     in_banlist = True
             else:
