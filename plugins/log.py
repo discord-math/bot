@@ -5,6 +5,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 from difflib import SequenceMatcher
 from io import BytesIO
+from itertools import zip_longest
 import logging
 import os
 from pathlib import Path
@@ -333,27 +334,32 @@ async def sync_single_name(id: int, username: str, discrim: str, nick: Optional[
 async def sync_names(members: Sequence[Member]) -> None:
     now = datetime.utcnow()
     async with sessionmaker() as session:
-        user_map = defaultdict(list)
-        stmt = select(SavedUser).where(SavedUser.unset_at == None)
-        for user in (await session.execute(stmt)).scalars():
-            user_map[user.id].append(user)
-        nick_map = defaultdict(list)
-        stmt = select(SavedNick).where(SavedNick.unset_at == None)
-        for nick in (await session.execute(stmt)).scalars():
-            nick_map[nick.id].append(nick)
+        for chunk in zip_longest(*([iter(members)] * 1024)):
+            member_ids = [member.id for member in chunk if member]
 
-        for member in members:
-            users = user_map[member.id]
-            if len(users) != 1 or users[0].username != member.name or users[0].discrim != member.discriminator:
-                for user in users:
-                    user.unset_at = now
-                session.add(SavedUser(id=member.id, set_at=now, username=member.name, discrim=member.discriminator))
-            nicks = nick_map[member.id]
-            if len(nicks) != 1 or nicks[0].nick != member.nick:
-                for nick in nicks:
-                    nick.unset_at = now
-                session.add(SavedNick(id=member.id, set_at=now, nick=member.nick))
-        await session.commit()
+            user_map = defaultdict(list)
+            stmt = select(SavedUser).where(SavedUser.unset_at == None, SavedUser.id.in_(member_ids))
+            for user in (await session.execute(stmt)).scalars():
+                user_map[user.id].append(user)
+            nick_map = defaultdict(list)
+            stmt = select(SavedNick).where(SavedNick.unset_at == None, SavedNick.id.in_(member_ids))
+            for nick in (await session.execute(stmt)).scalars():
+                nick_map[nick.id].append(nick)
+
+            for member in chunk:
+                if member:
+                    users = user_map[member.id]
+                    if len(users) != 1 or users[0].username != member.name or users[0].discrim != member.discriminator:
+                        for user in users:
+                            user.unset_at = now
+                        session.add(SavedUser(id=member.id, set_at=now, username=member.name,
+                            discrim=member.discriminator))
+                    nicks = nick_map[member.id]
+                    if len(nicks) != 1 or nicks[0].nick != member.nick:
+                        for nick in nicks:
+                            nick.unset_at = now
+                        session.add(SavedNick(id=member.id, set_at=now, nick=member.nick))
+            await session.commit()
 
 @cog
 class MessageLog(Cog):
