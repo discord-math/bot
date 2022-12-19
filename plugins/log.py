@@ -1,23 +1,25 @@
 from __future__ import annotations
 
 import asyncio
+from collections import defaultdict
 from datetime import datetime, timedelta
 from difflib import SequenceMatcher
 from io import BytesIO
 import logging
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, Iterable, Iterator, List, Optional, Protocol, Set, cast
+from typing import TYPE_CHECKING, Dict, Iterable, Iterator, List, Optional, Protocol, Sequence, Set, cast
 
 import discord
-from discord import (AllowedMentions, Attachment, File, Member, Message, Object, RawBulkMessageDeleteEvent,
+from discord import (AllowedMentions, Attachment, File, Guild, Member, Message, Object, RawBulkMessageDeleteEvent,
     RawMessageDeleteEvent, RawMessageUpdateEvent, TextChannel, User)
 from discord.utils import time_snowflake
-from sqlalchemy import TEXT, BigInteger, ForeignKey, delete, select
+from sqlalchemy import CHAR, TEXT, TIMESTAMP, BigInteger, ForeignKey, delete, select, update
 from sqlalchemy.dialects.postgresql import BYTEA
 from sqlalchemy.ext.asyncio import async_sessionmaker
 import sqlalchemy.orm
 from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.schema import CreateSchema
 
 from bot.client import client
 from bot.cogs import Cog, cog
@@ -47,7 +49,8 @@ sessionmaker = async_sessionmaker(engine, future=True, expire_on_commit=False)
 
 @registry.mapped
 class SavedMessage:
-    __tablename__ = "saved_messages"
+    __tablename__ = "messages"
+    __table_args__ = {"schema": "log"}
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True,
         autoincrement=False)
@@ -64,7 +67,8 @@ class SavedMessage:
 
 @registry.mapped
 class SavedFile:
-    __tablename__ = "saved_files"
+    __tablename__ = "files"
+    __table_args__ = {"schema": "log"}
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True,
         autoincrement=False)
@@ -75,6 +79,36 @@ class SavedFile:
 
     if TYPE_CHECKING:
         def __init__(self, *, id: int, message_id: int, filename: str, url: str, local_filename: Optional[str] = ...
+            ) -> None: ...
+
+@registry.mapped
+class SavedUser:
+    __tablename__ = "users"
+    __table_args__ = {"schema": "log"}
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    set_at: Mapped[datetime] = mapped_column(TIMESTAMP, primary_key=True)
+    username: Mapped[str] = mapped_column(TEXT, nullable=False)
+    discrim: Mapped[str] = mapped_column(CHAR(4), nullable=False)
+    unset_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP)
+
+    if TYPE_CHECKING:
+        def __init__(self, *, id: int, set_at: datetime, username: str, discrim: str, unset_at: Optional[datetime] = ...
+            ) -> None: ...
+
+# This schema assumes single guild
+@registry.mapped
+class SavedNick:
+    __tablename__ = "nicks"
+    __table_args__ = {"schema": "log"}
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    set_at: Mapped[datetime] = mapped_column(TIMESTAMP, primary_key=True)
+    nick: Mapped[Optional[str]] = mapped_column(TEXT)
+    unset_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP)
+
+    if TYPE_CHECKING:
+        def __init__(self, *, id: int, set_at: datetime, nick: Optional[str], unset_at: Optional[datetime] = ...
             ) -> None: ...
 
 def path_for(attm: Attachment) -> Path:
@@ -125,7 +159,8 @@ async def clean_old_messages() -> None:
     while True:
         try:
             await asyncio.sleep(conf.interval)
-            cutoff = time_snowflake(datetime.now() - timedelta(seconds=conf.keep))
+            cutoff_time = datetime.utcnow() - timedelta(seconds=conf.keep)
+            cutoff = time_snowflake(cutoff_time)
             async with sessionmaker() as session:
                 stmt = (delete(SavedFile)
                     .where(SavedFile.id < cutoff)
@@ -136,10 +171,18 @@ async def clean_old_messages() -> None:
                             os.unlink(filepath)
                         except FileNotFoundError:
                             pass
-                stmt = (delete(SavedMessage)
-                    .where(SavedMessage.id < cutoff))
+
+                stmt = delete(SavedMessage).where(SavedMessage.id < cutoff)
                 await session.execute(stmt)
+
+                stmt = delete(SavedUser).where(SavedUser.unset_at < cutoff_time)
+                await session.execute(stmt)
+
+                stmt = delete(SavedNick).where(SavedNick.unset_at < cutoff_time)
+                await session.execute(stmt)
+
                 await session.commit()
+
             if isinstance(channel := client.get_channel(conf.temp_channel), TextChannel):
                 await channel.purge(before=Object(cutoff), limit=None)
         except asyncio.CancelledError:
@@ -152,7 +195,9 @@ cleanup_task: asyncio.Task[None]
 @plugins.init
 async def init() -> None:
     global conf, cleanup_task
-    await util.db.init(util.db.get_ddl(registry.metadata.create_all))
+    await util.db.init(util.db.get_ddl(
+        CreateSchema("log"),
+        registry.metadata.create_all))
     conf = cast(LoggerConf, await util.db.kv.load(__name__))
     await bot.message_tracker.subscribe(__name__, None, register_messages, missing=True, retroactive=False)
     async def unsubscribe() -> None:
@@ -234,6 +279,82 @@ async def process_message_bulk_delete(deletes: RawBulkMessageDeleteEvent) -> Non
             file=File(BytesIO("\n".join(log).encode("utf8")), filename="log.txt"),
             allowed_mentions=AllowedMentions.none())
 
+async def process_user_change(id: int, before_name: str, before_discr: str, after_name: str, after_discr: str) -> None:
+    now = datetime.utcnow()
+    async with sessionmaker() as session:
+        stmt = (update(SavedUser)
+            .values(unset_at=now)
+            .where(SavedUser.id == id, SavedUser.unset_at == None)
+            .returning(SavedUser.username, SavedUser.discrim))
+        uds = await session.execute(stmt)
+        if not any(before_name == username and before_discr == discr for username, discr in uds):
+            session.add(SavedUser(id=id, set_at=now, unset_at=now, username=before_name, discrim=before_discr))
+        session.add(SavedUser(id=id, set_at=now, username=after_name, discrim=after_discr))
+        await session.commit()
+
+async def process_nick_change(id: int, before: Optional[str], after: Optional[str]) -> None:
+    now = datetime.utcnow()
+    async with sessionmaker() as session:
+        stmt = (update(SavedNick)
+            .values(unset_at=now)
+            .where(SavedNick.id == id, SavedNick.unset_at == None)
+            .returning(SavedNick.nick))
+        nicks = (await session.execute(stmt)).scalars()
+        if before not in nicks:
+            session.add(SavedNick(id=id, set_at=now, unset_at=now, nick=before))
+        session.add(SavedNick(id=id, set_at=now, nick=after))
+        await session.commit()
+
+async def sync_single_name(id: int, username: str, discrim: str, nick: Optional[str]) -> None:
+    now = datetime.utcnow()
+    async with sessionmaker() as session:
+        stmt = (update(SavedUser)
+            .values(unset_at=now)
+            .where(SavedUser.id == id, SavedUser.unset_at == None)
+            .returning(SavedUser.username, SavedUser.discrim))
+        uds = (await session.execute(stmt)).all()
+        if len(uds) == 1 and uds[0][0] == username and uds[0][1] == discrim:
+            await session.rollback()
+        else:
+            session.add(SavedUser(id=id, set_at=now, username=username, discrim=discrim))
+            await session.commit()
+        stmt = (update(SavedNick)
+            .values(unset_at=now)
+            .where(SavedNick.id == id, SavedNick.unset_at == None)
+            .returning(SavedNick.nick))
+        nicks = (await session.execute(stmt)).scalars().all()
+        if len(nicks) == 1 and nicks[0] == nick:
+            await session.rollback()
+        else:
+            session.add(SavedNick(id=id, set_at=now, nick=nick))
+            await session.commit()
+
+async def sync_names(members: Sequence[Member]) -> None:
+    member_ids = [member.id for member in members]
+    now = datetime.utcnow()
+    async with sessionmaker() as session:
+        user_map = defaultdict(list)
+        stmt = select(SavedUser).where(SavedUser.unset_at == None, SavedUser.id.in_(member_ids))
+        for user in (await session.execute(stmt)).scalars():
+            user_map[user.id].append(user)
+        nick_map = defaultdict(list)
+        stmt = select(SavedNick).where(SavedNick.unset_at == None, SavedNick.id.in_(member_ids))
+        for nick in (await session.execute(stmt)).scalars():
+            nick_map[nick.id].append(nick)
+
+        for member in members:
+            users = user_map[member.id]
+            if len(users) != 1 or users[0].username != member.name or users[0].discrim != member.discriminator:
+                for user in users:
+                    user.unset_at = now
+                session.add(SavedUser(id=member.id, set_at=now, username=member.name, discrim=member.discriminator))
+            nicks = nick_map[member.id]
+            if len(nicks) != 1 or nicks[0].nick != member.nick:
+                for nick in nicks:
+                    nick.unset_at = now
+                session.add(SavedNick(id=member.id, set_at=now, nick=member.nick))
+        await session.commit()
+
 @cog
 class MessageLog(Cog):
     @Cog.listener()
@@ -250,32 +371,54 @@ class MessageLog(Cog):
         if deletes.channel_id == conf.temp_channel: return
         bot.message_tracker.schedule(process_message_bulk_delete(deletes))
 
-    @Cog.listener()
-    async def on_member_join(self, member: Member) -> None:
+    @Cog.listener("on_member_join")
+    async def log_member_join(self, member: Member) -> None:
         await client.get_partial_messageable(conf.perm_channel).send(
             format("**Member join**: {!m}({}) {}", member.id, member.id,
                 user_nick(member.name + "#" + member.discriminator, member.nick)),
             allowed_mentions=AllowedMentions.none())
 
-    @Cog.listener()
-    async def on_member_remove(self, member: Member) -> None:
+    @Cog.listener("on_member_join")
+    async def sync_member_join(self, member: Member) -> None:
+        await sync_single_name(member.id, member.name, member.discriminator, member.nick)
+
+    @Cog.listener("on_member_remove")
+    async def log_member_remove(self, member: Member) -> None:
         await client.get_partial_messageable(conf.perm_channel).send(
             format("**Member remove**: {!m}({}) {}", member.id, member.id,
                 user_nick(member.name + "#" + member.discriminator, member.nick)),
             allowed_mentions=AllowedMentions.none())
 
-    @Cog.listener()
-    async def on_member_update(self, before: Member, after: Member) -> None:
+    @Cog.listener("on_member_remove")
+    async def sync_member_remove(self, member: Member) -> None:
+        await sync_single_name(member.id, member.name, member.discriminator, member.nick)
+
+    @Cog.listener("on_member_update")
+    async def log_member_update(self, before: Member, after: Member) -> None:
         if before.nick != after.nick:
             await client.get_partial_messageable(conf.perm_channel).send(
                 format("**Nick change**: {!m}({}) {}: {} -> {}", after.id, after.id,
                     after.name + "#" + after.discriminator, before.display_name, after.display_name),
                 allowed_mentions=AllowedMentions.none())
 
-    @Cog.listener()
-    async def on_user_update(self, before: User, after: User) -> None:
+    @Cog.listener("on_member_update")
+    async def sync_member_update(self, before: Member, after: Member) -> None:
+        if before.nick != after.nick:
+            await process_nick_change(after.id, before.nick, after.nick)
+
+    @Cog.listener("on_user_update")
+    async def log_user_update(self, before: User, after: User) -> None:
         if before.name != after.name or before.discriminator != after.discriminator:
             await client.get_partial_messageable(conf.perm_channel).send(
                 format("**Username change**: {!m}({}) {} -> {}", after.id, after.id,
                     before.name + "#" + before.discriminator, after.name + "#" + after.discriminator),
                 allowed_mentions=AllowedMentions.none())
+
+    @Cog.listener("on_user_update")
+    async def sync_user_update(self, before: User, after: User) -> None:
+        if before.name != after.name or before.discriminator != after.discriminator:
+            await process_user_change(after.id, before.name, before.discriminator, after.name, after.discriminator)
+
+    @Cog.listener()
+    async def on_guild_available(self, guild: Guild) -> None:
+        await sync_names(guild.members)
