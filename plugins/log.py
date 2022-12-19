@@ -288,7 +288,8 @@ async def process_user_change(id: int, before_name: str, before_discr: str, afte
             .returning(SavedUser.username, SavedUser.discrim))
         uds = await session.execute(stmt)
         if not any(before_name == username and before_discr == discr for username, discr in uds):
-            session.add(SavedUser(id=id, set_at=now, unset_at=now, username=before_name, discrim=before_discr))
+            session.add(SavedUser(id=id, set_at=now - timedelta(microseconds=1), unset_at=now, username=before_name,
+                discrim=before_discr))
         session.add(SavedUser(id=id, set_at=now, username=after_name, discrim=after_discr))
         await session.commit()
 
@@ -301,7 +302,7 @@ async def process_nick_change(id: int, before: Optional[str], after: Optional[st
             .returning(SavedNick.nick))
         nicks = (await session.execute(stmt)).scalars()
         if before not in nicks:
-            session.add(SavedNick(id=id, set_at=now, unset_at=now, nick=before))
+            session.add(SavedNick(id=id, set_at=now - timedelta(microseconds=1), unset_at=now, nick=before))
         session.add(SavedNick(id=id, set_at=now, nick=after))
         await session.commit()
 
@@ -330,15 +331,14 @@ async def sync_single_name(id: int, username: str, discrim: str, nick: Optional[
             await session.commit()
 
 async def sync_names(members: Sequence[Member]) -> None:
-    member_ids = [member.id for member in members]
     now = datetime.utcnow()
     async with sessionmaker() as session:
         user_map = defaultdict(list)
-        stmt = select(SavedUser).where(SavedUser.unset_at == None, SavedUser.id.in_(member_ids))
+        stmt = select(SavedUser).where(SavedUser.unset_at == None)
         for user in (await session.execute(stmt)).scalars():
             user_map[user.id].append(user)
         nick_map = defaultdict(list)
-        stmt = select(SavedNick).where(SavedNick.unset_at == None, SavedNick.id.in_(member_ids))
+        stmt = select(SavedNick).where(SavedNick.unset_at == None)
         for nick in (await session.execute(stmt)).scalars():
             nick_map[nick.id].append(nick)
 
