@@ -8,6 +8,7 @@ from bot.interactions import command, persistent_view
 import plugins
 import plugins.roles_review
 import util.db.kv
+from util.discord import format
 from util.frozen_list import FrozenList
 
 class RolesDialogConf(Protocol):
@@ -15,7 +16,7 @@ class RolesDialogConf(Protocol):
 
     @overload
     def __getitem__(self, index: Tuple[int, Literal["desc"]]) -> Optional[str]: ...
-    @overload
+    @overload # TODO: move this conf into roles_review
     def __getitem__(self, index: Tuple[int, Literal["prompt"]]) -> Optional[FrozenList[str]]: ...
 
 conf: RolesDialogConf
@@ -53,11 +54,14 @@ class RolePromptModal(Modal):
         for role, inputs in self.inputs.items():
             output = await plugins.roles_review.apply(interaction.user, role,
                 [(input.label, str(input)) for input in inputs])
-            if output is not None:
-                outputs.append(output)
+            if output is True:
+                outputs.append(format("{!M} assigned.", role))
+            elif output is False:
+                outputs.append(format("You have already applied for {!M}.", role))
+            elif output is None:
+                outputs.append(format("Your application for {!M} has been submitted for review.", role))
 
-        await interaction.response.send_message(
-            "\n".join(outputs) if outputs else "Your input has been submitted for review.", ephemeral=True)
+        await interaction.response.send_message("\n".join(outputs), ephemeral=True)
 
 class RoleSelect(Select["RolesView"]):
     def __init__(self, boolean: bool, role_items: Iterable[Union[int, str]], member: Member, row: Optional[int] = None
@@ -102,7 +106,12 @@ class RoleSelect(Select["RolesView"]):
                 remove_roles.add(role)
             if role not in interaction.user.roles and role in selected_roles:
                 if conf[role.id, "prompt"] is not None:
-                    prompt_roles.append(role)
+                    pre = await plugins.roles_review.pre_apply(interaction.user, role)
+                    if pre is True:
+                        add_roles.add(role)
+                    elif pre is None:
+                        prompt_roles.append(role)
+                    # TODO: tell them if False?
                 else:
                     add_roles.add(role)
 

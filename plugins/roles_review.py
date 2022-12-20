@@ -1,11 +1,13 @@
+import logging
 from typing import TYPE_CHECKING, List, Literal, Optional, Protocol, Tuple, cast
 
+import discord
 from discord import AllowedMentions, ButtonStyle, Interaction, InteractionType, Member, Role, TextChannel, TextStyle
 if TYPE_CHECKING:
     import discord.types.interactions
 from discord.ui import Button, Modal, TextInput, View
 from sqlalchemy import BOOLEAN, BigInteger, ForeignKey, Integer, PrimaryKeyConstraint, delete, select
-from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 import sqlalchemy.orm
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.schema import CreateSchema
@@ -17,6 +19,8 @@ import plugins
 import util.db
 import util.db.kv
 from util.discord import PartialRoleConverter, PartialUserConverter, format
+
+logger = logging.getLogger(__name__)
 
 class RolesReviewConf(Protocol):
     review_channel: int
@@ -42,13 +46,14 @@ class Application:
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     listing_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    voting_id: Mapped[Optional[int]] = mapped_column(BigInteger)
     user_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     role_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    resolved: Mapped[bool] = mapped_column(BOOLEAN, nullable=False)
+    decision: Mapped[Optional[bool]] = mapped_column(BOOLEAN)
 
     if TYPE_CHECKING:
-        def __init__(self, *, listing_id: int, user_id: int, role_id: int, resolved: bool, id: Optional[int] = None
-            ) -> None: ...
+        def __init__(self, *, listing_id: int, user_id: int, role_id: int, id: Optional[int] = None,
+            voting_id: Optional[int] = None, decision: Optional[bool] = None) -> None: ...
 
 @registry.mapped
 class Vote:
@@ -84,20 +89,25 @@ class ApproveRoleView(View):
         self.add_item(Button(style=ButtonStyle.secondary, label="Veto",
             custom_id="{}:{}:Veto".format(__name__, msg_id)))
 
-def voting_decision(votes: List[Vote]) -> Optional[bool]:
+def voting_decision(app_id: int, votes: List[Vote]) -> Optional[bool]:
+    logger.debug("Calculating votes for {}".format(app_id))
     up_total = 0
     down_total = 0
     for vote in votes:
         if vote.veto:
+            logger.debug(format("Veto {} by {!m} decides vote on {}", vote.vote, vote.voter_id, app_id))
             return vote.vote
         if vote.vote:
             up_total += 1
         else:
             down_total += 1
         if up_total >= conf.upvote_limit:
+            logger.debug(format("Vote on {} decided by reaching {} upvotes", app_id, up_total))
             return True
         elif down_total >= conf.downvote_limit:
+            logger.debug(format("Vote on {} decided by reaching {} downvotes", app_id, down_total))
             return False
+    logger.debug("Vote on {} undecided".format(app_id))
     return None
 
 async def cast_vote(interaction: Interaction, msg_id: int, dir: Optional[bool], veto: Optional[str] = None) -> None:
@@ -112,7 +122,10 @@ async def cast_vote(interaction: Interaction, msg_id: int, dir: Optional[bool], 
             await interaction.response.send_message("No such application.", ephemeral=True)
             return
 
-        if app.resolved:
+        logger.debug(format("Vote {!r} from {!m} for {!m} {!M} veto={!r}", dir, interaction.user, app.user_id,
+            app.role_id, bool(veto)))
+
+        if app.decision is not None:
             await interaction.response.send_message("This application is already resolved.", ephemeral=True)
             return
 
@@ -144,7 +157,7 @@ async def cast_vote(interaction: Interaction, msg_id: int, dir: Optional[bool], 
 
         await session.commit()
 
-        decision = voting_decision(votes)
+        decision = voting_decision(app.id, votes)
 
         if dir is None:
             comment = "\u21A9"
@@ -161,11 +174,7 @@ async def cast_vote(interaction: Interaction, msg_id: int, dir: Optional[bool], 
             allowed_mentions=AllowedMentions.none())
 
         if decision is not None:
-            if decision == True:
-                stmt = delete(Application).where(Application.id == app.id)
-                await session.execute(stmt)
-            else:
-                app.resolved = True
+            app.decision = decision
             await session.commit()
 
         await interaction.response.send_message("Vote recorded.", ephemeral=True, delete_after=60)
@@ -174,6 +183,7 @@ async def cast_vote(interaction: Interaction, msg_id: int, dir: Optional[bool], 
             if (user := interaction.guild.get_member(app.user_id)) is not None:
                 if (role := interaction.guild.get_role(app.role_id)) is not None:
                     await user.add_roles(role, reason="By vote")
+        # TODO: if decision is False?
 
 class VetoModal(Modal):
     reason = TextInput(style=TextStyle.paragraph, required=False, label="Reason for the veto")
@@ -235,23 +245,68 @@ class RolesReviewCog(Cog):
         """
         async with sessionmaker() as session:
             stmt = (delete(Application)
-                .where(Application.user_id == user.id, Application.role_id == role.id, Application.resolved == True)
-                .returning(True))
-            if (await session.execute(stmt)).first():
+                .where(Application.user_id == user.id, Application.role_id == role.id)
+                .returning(Application.listing_id, Application.voting_id))
+            seen = False
+            chan = ctx.bot.get_partial_messageable(conf.review_channel)
+            for listing_id, voting_id in await session.execute(stmt):
+                seen = True
+                try:
+                    await chan.get_partial_message(listing_id).delete()
+                except (discord.NotFound, discord.Forbidden):
+                    pass
+                try:
+                    if voting_id is not None:
+                        await chan.get_partial_message(voting_id).delete()
+                except (discord.NotFound, discord.Forbidden):
+                    pass
+
+            if seen:
+                await session.commit()
                 await ctx.send(format("Reset {!m}'s application status for {!M}.", user, role),
                     allowed_mentions=AllowedMentions.none())
-                await session.commit()
             else:
                 await ctx.send(format("{!m} has no resolved applications for {!M}.", user, role),
                     allowed_mentions=AllowedMentions.none())
 
-async def apply(member: Member, role: Role, inputs: List[Tuple[str, str]]) -> Optional[str]:
+async def check_applications(member: Member, role: Role, session: AsyncSession) -> Optional[bool]:
+    """
+    If the user wants the role, depending on whether they have previous applications:
+    - the role can be just given to them, returning True,
+    - we can deny it, returning False,
+    - if they had no previous applications, we can direct them to answer the questions, returning None
+    """
+    stmt = (select(Application.decision)
+        .where(Application.user_id == member.id, Application.role_id == role.id)
+        .limit(1))
+    for decision in (await session.execute(stmt)).scalars():
+        logger.debug(format("Found old application {!m} {!M} with decision={!r}", member, role, decision))
+        return bool(decision)
+    return None
+
+
+async def pre_apply(member: Member, role: Role) -> Optional[bool]:
     async with sessionmaker() as session:
-        stmt = (select(Application.id)
-            .where(Application.user_id == member.id, Application.role_id == role.id)
-            .limit(1))
-        if (await session.execute(stmt)).first() is not None:
-            return "You have already applied for {}.".format(role.name)
+        pre = await check_applications(member, role, session)
+        logger.debug(format("Pre-application {!m} {!M}: {}", member, role,
+            "grant" if pre else "prompt" if pre is None else "deny"))
+        return pre
+
+async def apply(member: Member, role: Role, inputs: List[Tuple[str, str]]) -> Optional[bool]:
+    """
+    If somehow the previous application status has changed while they were filling out the answers:
+    - we can just give them the role (actually do it), returning True,
+    - we can deny it, returning False,
+    - we can submit it for review, returning None.
+    """
+    async with sessionmaker() as session:
+        pre = await check_applications(member, role, session)
+        logger.debug(format("Application {!m} {!M}: {}", member, role,
+            "give" if pre else "review" if pre is None else "deny"))
+        if pre:
+            await member.add_roles(role)
+        if pre is not None:
+            return pre
 
         channel = member.guild.get_channel(conf.review_channel)
         assert isinstance(channel, TextChannel)
@@ -260,9 +315,12 @@ async def apply(member: Member, role: Role, inputs: List[Tuple[str, str]]) -> Op
                 member.discriminator, member.id, role,
                 "\n\n".join("**{}**: {}".format(question, answer) for question, answer in inputs)),
             allowed_mentions=AllowedMentions.none())
-        session.add(Application(listing_id=msg.id, user_id=member.id, role_id=role.id, resolved=False))
+        app = Application(listing_id=msg.id, user_id=member.id, role_id=role.id)
+        session.add(app)
         await session.commit()
-        await channel.send("Votes:", view=ApproveRoleView(msg.id), allowed_mentions=AllowedMentions.none())
+        voting = await channel.send("Votes:", view=ApproveRoleView(msg.id), allowed_mentions=AllowedMentions.none())
+        app.voting_id = voting.id
+        await session.commit()
 
         if (repl_id := conf[role.id, "replace"]) is not None:
             if (repl := member.guild.get_role(repl_id)) is not None:
