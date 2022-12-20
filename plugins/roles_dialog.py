@@ -1,23 +1,18 @@
-from typing import Iterable, List, Literal, Optional, Protocol, Tuple, Union, cast, overload
+from typing import Iterable, List, Literal, Optional, Protocol, Tuple, Union, cast
 
-from discord import ButtonStyle, Interaction, Member, Role, SelectOption, TextStyle
+from discord import ButtonStyle, Interaction, Member, SelectOption
 from discord.abc import Messageable
-from discord.ui import Button, Modal, Select, TextInput, View
+from discord.ui import Button, Select, View
 
 from bot.interactions import command, persistent_view
 import plugins
 import plugins.roles_review
 import util.db.kv
-from util.discord import format
 from util.frozen_list import FrozenList
 
 class RolesDialogConf(Protocol):
     roles: FrozenList[FrozenList[Union[int, str]]]
-
-    @overload
     def __getitem__(self, index: Tuple[int, Literal["desc"]]) -> Optional[str]: ...
-    @overload # TODO: move this conf into roles_review
-    def __getitem__(self, index: Tuple[int, Literal["prompt"]]) -> Optional[FrozenList[str]]: ...
 
 conf: RolesDialogConf
 
@@ -25,43 +20,6 @@ conf: RolesDialogConf
 async def init() -> None:
     global conf
     conf = cast(RolesDialogConf, await util.db.kv.load(__name__))
-
-class RolePromptModal(Modal):
-    def __init__(self, prompt_roles: List[Role]) -> None:
-        super().__init__(title="Additional information", timeout=1200)
-        self.inputs = {}
-        for role in prompt_roles:
-            self.inputs[role] = []
-            for prompt in conf[role.id, "prompt"] or ():
-                if "\n" in prompt:
-                    prompt, placeholder = prompt.split("\n", 1)
-                    placeholder = placeholder[:100]
-                else:
-                    placeholder = None
-                prompt = prompt[:45]
-                input = TextInput(label=prompt, style=TextStyle.paragraph, max_length=600,
-                    placeholder=placeholder)
-                self.inputs[role].append(input)
-                self.add_item(input)
-
-    async def on_submit(self, interaction: Interaction) -> None:
-        if not isinstance(interaction.user, Member):
-            await interaction.response.send_message("This can only be done in a server.", ephemeral=True,
-                delete_after=60)
-            return
-
-        outputs = []
-        for role, inputs in self.inputs.items():
-            output = await plugins.roles_review.apply(interaction.user, role,
-                [(input.label, str(input)) for input in inputs])
-            if output is True:
-                outputs.append(format("{!M} assigned.", role))
-            elif output is False:
-                outputs.append(format("You have already applied for {!M}.", role))
-            elif output is None:
-                outputs.append(format("Your application for {!M} has been submitted for review.", role))
-
-        await interaction.response.send_message("\n".join(outputs), ephemeral=True)
 
 class RoleSelect(Select["RolesView"]):
     def __init__(self, boolean: bool, role_items: Iterable[Union[int, str]], member: Member, row: Optional[int] = None
@@ -105,15 +63,12 @@ class RoleSelect(Select["RolesView"]):
             if role in interaction.user.roles and role not in selected_roles:
                 remove_roles.add(role)
             if role not in interaction.user.roles and role in selected_roles:
-                if conf[role.id, "prompt"] is not None:
-                    pre = await plugins.roles_review.pre_apply(interaction.user, role)
-                    if pre is True:
-                        add_roles.add(role)
-                    elif pre is None:
-                        prompt_roles.append(role)
-                    # TODO: tell them if False?
-                else:
+                pre = await plugins.roles_review.pre_apply(interaction.user, role)
+                if pre is True:
                     add_roles.add(role)
+                elif pre is None:
+                    prompt_roles.append(role)
+                # TODO: tell them if False?
 
         if add_roles:
             await interaction.user.add_roles(*add_roles, reason="Role dialog")
@@ -121,7 +76,7 @@ class RoleSelect(Select["RolesView"]):
             await interaction.user.remove_roles(*remove_roles, reason="Role dialog")
 
         if prompt_roles:
-            await interaction.response.send_modal(RolePromptModal(prompt_roles))
+            await interaction.response.send_modal(plugins.roles_review.RolePromptModal(prompt_roles))
         else:
             await interaction.response.send_message(
                 "\u2705 Updated roles." if add_roles or remove_roles else "Roles not changed.", ephemeral=True,

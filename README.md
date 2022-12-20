@@ -323,7 +323,6 @@ A button and a `/roles` slash-command for managing self-assigned roles.
 Config:
 - ``config plugins.roles_dialog roles `[[<role id|text>, ...], ...]` `` -- the self-assignable roles. Lists with multiple elements correspond to choosing one of the roles. A string instead of a role ID corresponds to an option that doesn't assign any role (e.g. "None of the above"). Lists with one element are grouped together and correspond to choosing any subset of the roles.
 - ``config plugins.roles_dialog <role id>,desc `"<text>"` `` -- extended description for the role.
-- ``config plugins.roles_dialog <role id>,prompt `["<question>", ...]` `` -- instead of assigning the role, prompt the user to answer questions and put up the answers for review via `roles_review`.
 
 ### `roles_review`
 
@@ -333,12 +332,15 @@ Commands:
 - `review_reset <user> <role>` -- when a user's application is denied, they are not allowed to submit another until this command is invoked on them.
 
 Config:
-- `config plugins.roles_review review_channel <channel id>` -- where the applications for the roles will be posted.
-- `config plugins.roles_review upvote_limit <number>` -- how many upvotes are needed to accept an application.
-- `config plugins.roles_review downvote_limit <number>` -- how many downvotes are needed to deny an application.
-- `config plugins.roles_review veto_role <role id>` -- the role that is allowed to veto applicatios.
-- `config plugins.roles_review <roleA>,role <roleB>` -- roleB is requried to vote on applications for roleA.
-- `config plugins.roles_review <roleA>,replace <roleB>` -- users applying for roleA will temporarily receive roleB while their application is under review.
+- ``config plugins.roles_review <role> `{...}` `` -- attempting to self-assign the role will instead make the user go through the application process. The keys in the object are as followws:
+    - `"prompt": ["<question>[\n<placeholder>]", ...]` -- list of questions to ask an applicant.
+    - `"review_channel": <channel id>` -- channel where the applications will be posted and voted on.
+    - `"review_role": <role id>` -- (optional) the role that is allowed to vote on applications.
+    - `"veto_role": <role id>` -- (optional) the role that is allowed to veto applications.
+    - `"upvote_limit": <number>` -- how many upvotes are needed to accept an application.
+    - `"downvote_limit": <number>` -- how many downvotes are needed to accept an application.
+    - `"pending_role": <role id>` -- (optional) role given to the applying user while the application is pending.
+    - `"denied_role": <role id>` -- (optional) role given to the applying user if their application is denied.
 
 ### Miscellaneous Configuration
 - ``config bot.commands prefix `"<prefix>"` `` -- set the prefix for the bot's "ordinary" commands.
