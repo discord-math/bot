@@ -1,5 +1,5 @@
 import logging
-from typing import TYPE_CHECKING, List, Optional, Protocol, Tuple, TypedDict, cast
+from typing import TYPE_CHECKING, Iterator, List, Optional, Protocol, Tuple, TypedDict, cast
 from typing_extensions import NotRequired
 
 import discord
@@ -20,7 +20,7 @@ from bot.privileges import priv
 import plugins
 import util.db
 import util.db.kv
-from util.discord import PartialRoleConverter, PartialUserConverter, format, retry
+from util.discord import PartialRoleConverter, PartialUserConverter, PlainItem, chunk_messages, format, retry
 from util.frozen_list import FrozenList
 
 logger = logging.getLogger(__name__)
@@ -303,6 +303,29 @@ class RolesReviewCog(Cog):
             await cast_vote(interaction, msg_id, None)
         elif action == "Veto":
             await interaction.response.send_modal(VetoModal(msg_id))
+
+    @cleanup
+    @command("review_queue")
+    @priv("mod")
+    async def review_queue(self, ctx: Context) -> None:
+        """List unresolved applications."""
+        async with sessionmaker() as session:
+            stmt = select(Application).where(Application.decision == None).order_by(Application.listing_id)
+            apps = (await session.execute(stmt)).scalars()
+
+            def generate_links() -> Iterator[PlainItem]:
+                yield PlainItem("Applications:\n")
+                for app in apps:
+                    if (review := conf[app.role_id]) is None:
+                        yield PlainItem("{} (?)".format(app.listing_id))
+                        continue
+                    chan = ctx.bot.get_partial_messageable(review["review_channel"],
+                        guild_id=ctx.guild.id if ctx.guild else None)
+                    msg = chan.get_partial_message(app.listing_id)
+                    yield PlainItem("{}\n".format(msg.jump_url))
+
+            for content, _ in chunk_messages(generate_links()):
+                await ctx.send(content)
 
     @cleanup
     @command("review_reset")
