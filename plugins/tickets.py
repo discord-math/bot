@@ -195,7 +195,10 @@ class TicketMod:
 
         for content, _ in chunk_messages(item_gen()):
             embeds.append(Embed(description=content, color=0xFF9900))
-        return "Set a duration and a comment (e.g. 1 day 8 hours, breaking rules) on the following:", embeds
+        if ticket.can_revert:
+            return "Set a duration and a comment (e.g. 1 day 8 hours, breaking rules) on the following:", embeds
+        else:
+            return "Set a comment on the following:", embeds
 
     delivery_comment = "Please set a duration/comment on the following:"
 
