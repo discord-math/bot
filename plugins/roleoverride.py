@@ -5,6 +5,7 @@ from discord import Member
 from bot.cogs import Cog, cog
 import plugins
 import util.db.kv
+from util.discord import retry
 from util.frozen_list import FrozenList
 
 class RoleOverrideConf(Protocol):
@@ -29,4 +30,4 @@ class RoleOverride(Cog):
                     if r.id in masked:
                         removed.add(r)
         if len(removed):
-            await after.remove_roles(*removed)
+            await retry(lambda: after.remove_roles(*removed))

@@ -18,7 +18,7 @@ from bot.reactions import get_reaction
 import plugins
 import util.db
 import util.db.kv
-from util.discord import PlainItem, chunk_messages, format
+from util.discord import PlainItem, chunk_messages, format, retry
 
 registry: sqlalchemy.orm.registry = sqlalchemy.orm.registry()
 
@@ -144,15 +144,16 @@ class ModMailClient(Client):
             copy_first = None
             for content, _ in chunk_messages(items):
                 if reference is not None and copy_first is None:
-                    copy = await channel.send(content, allowed_mentions=mentions, reference=reference)
+                    copy = await retry(lambda: channel.send(content, allowed_mentions=mentions, reference=reference),
+                        attempts=10)
                 else:
-                    copy = await channel.send(content, allowed_mentions=mentions)
+                    copy = await retry(lambda: channel.send(content, allowed_mentions=mentions), attempts=10)
                 await add_modmail(msg, copy)
                 if copy_first is None:
                     copy_first = copy
 
             if thread_id is None and copy_first is not None:
-                await create_thread(msg.author.id, copy_first.id)
+                await retry(lambda: create_thread(msg.author.id, copy_first.id), attempts=10)
 
             await msg.add_reaction("\u2709")
 

@@ -4,7 +4,8 @@ import re
 from typing import Awaitable, Dict, Iterable, List, Literal, Optional, Protocol, Set, Tuple, Union, cast, overload
 
 import discord
-from discord import AllowedMentions, Member, Message, Object
+from discord import AllowedMentions, Guild, Member, Message, Object
+from discord.abc import Snowflake
 from discord.ext.commands import Greedy
 import discord.utils
 
@@ -17,7 +18,7 @@ import plugins.phish
 import plugins.tickets
 import util.db.kv
 from util.discord import (CodeBlock, Inline, InvocationError, PartialRoleConverter, PlainItem, UserError,
-    chunk_messages, format)
+    chunk_messages, format, retry)
 from util.frozen_list import FrozenList
 
 class AutomodConf(Awaitable[None], Protocol):
@@ -81,7 +82,7 @@ def parse_note(text: Optional[str]) -> Dict[int, int]:
 def serialize_note(data: Dict[int, int]) -> str:
     return "Automod:\n" + "\n".join("pattern {} matched {} times".format(index, value) for index, value in data.items())
 
-async def create_automod_note(target_id: int, index: int) -> None:
+async def do_create_automod_note(target_id: int, index: int) -> None:
     async with plugins.tickets.sessionmaker() as session:
         assert client.user is not None
         notes = await plugins.tickets.find_notes_prefix(session, "Automod:\n", modid=client.user.id, targetid=target_id)
@@ -96,26 +97,69 @@ async def create_automod_note(target_id: int, index: int) -> None:
             await session.commit()
         await session.commit()
 
+def fork_create_automod_note(target_id: int, index: int) -> None:
+    asyncio.create_task(do_create_automod_note(target_id, index), name=format("Automod note {!m}", target_id))
+
 URL_regex: re.Pattern[str] = re.compile(r"https?://([^/]*)/?\S*", re.I)
 
-async def phish_match(msg: Message, text: str) -> None:
+async def do_delete_message(msg: Message) -> None:
+    try:
+        await retry(lambda: msg.delete(), attempts=10)
+    except discord.NotFound:
+        pass
+    except discord.Forbidden:
+        logger.error("Could not delete message {}".format(msg.jump_url), exc_info=True)
+
+def fork_delete_message(msg: Message) -> None:
+    asyncio.create_task(do_delete_message(msg), name="Automod cleanup {}".format(msg.id))
+
+async def do_kick_user(guild: Guild, user: Snowflake, reason: str) -> None:
+    try:
+        await retry(lambda: guild.kick(user, reason=reason), attempts=10)
+    except discord.NotFound:
+        pass
+    except discord.Forbidden:
+        logger.error(format("Could not kick user {!m} ({})", user, reason), exc_info=True)
+
+def fork_kick_user(guild: Guild, user: Snowflake, reason: str) -> None:
+    asyncio.create_task(do_kick_user(guild, user, reason), name=format("Automod kick {!m}", user))
+
+async def do_ban_user(guild: Guild, user: Snowflake, reason: str) -> None:
+    try:
+        await retry(lambda: guild.ban(user, reason=reason, delete_message_days=0), attempts=10)
+    except discord.NotFound:
+        pass
+    except discord.Forbidden:
+        logger.error(format("Could not ban user {!m} ({})", user, reason), exc_info=True)
+
+def fork_ban_user(guild: Guild, user: Snowflake, reason: str) -> None:
+    asyncio.create_task(do_ban_user(guild, user, reason), name=format("Automod ban {!m}", user))
+
+async def do_add_muted(member: Member, reason: str) -> None:
+    try:
+        await retry(lambda: member.add_roles(Object(conf.mute_role), reason=reason), attempts=10)
+    except discord.NotFound:
+        pass
+    except discord.Forbidden:
+        logger.error(format("Could not mute member {!m} ({})", member, reason), exc_info=True)
+
+def fork_add_muted(member: Member, reason: str) -> None:
+    asyncio.create_task(do_add_muted(member, reason), name=format("Automod mute {!m}", member))
+
+def phish_match(msg: Message, text: str) -> None:
     assert msg.guild is not None
     logger.info("Message {} contains phishing: {}".format(msg.id, text))
     if isinstance(msg.author, Member):
         if any(role.id in conf.exempt_roles for role in msg.author.roles):
             return
-    try:
-        reason = "Automatic action: found phishing domain: {}".format(text)
-        await asyncio.gather(msg.delete(),
-            msg.guild.ban(msg.author, reason=reason, delete_message_days=0))
-    except (discord.Forbidden, discord.NotFound):
-        logger.error("Could not moderate {}".format(msg.jump_url), exc_info=True)
+        fork_ban_user(msg.guild, msg.author, "Automatic action: found phishing domain: {}".format(text))
+    fork_delete_message(msg)
 
 async def resolve_link(msg: Message, link: str) -> None:
     if (target := await plugins.phish.resolve_link(link)) is not None:
         if (match := URL_regex.match(target)) is not None:
             if plugins.phish.is_bad_domain(match.group(1)):
-                await phish_match(msg, format("{!i} -> {!i}", link, match.group(1)))
+                phish_match(msg, format("{!i} -> {!i}", link, match.group(1)))
 
 async def process_messages(msgs: Iterable[Message]) -> None:
     for msg in msgs:
@@ -127,12 +171,12 @@ async def process_messages(msgs: Iterable[Message]) -> None:
             resolve_links: Set[str] = set()
             for match in URL_regex.finditer(msg.content):
                 if plugins.phish.is_bad_domain(match.group(1).lower()):
-                    await phish_match(msg, format("{!i}", match.group(1)))
+                    phish_match(msg, format("{!i}", match.group(1)))
                     break
                 elif plugins.phish.should_resolve_domain(match.group(1)):
                     resolve_links.add(match.group(0))
             for link in resolve_links:
-                asyncio.create_task(resolve_link(msg, link))
+                asyncio.create_task(resolve_link(msg, link), name="phish link resolver")
 
             if (match := regex.search(msg.content)) is not None:
                 for key, value in match.groupdict().items():
@@ -145,33 +189,27 @@ async def process_messages(msgs: Iterable[Message]) -> None:
                     if any(role.id in conf.exempt_roles for role in msg.author.roles):
                         continue
                 if (action := conf[index, "action"]) is not None:
-                    try:
-                        reason = "Automatic action: message matches pattern {}".format(index)
+                    reason = "Automatic action: message matches pattern {}".format(index)
 
-                        if action == "delete":
-                            await msg.delete()
+                    if action == "delete":
+                        fork_delete_message(msg)
 
-                        elif action == "note":
-                            await asyncio.gather(msg.delete(),
-                                create_automod_note(msg.author.id, index))
+                    elif action == "note":
+                        fork_delete_message(msg)
+                        fork_create_automod_note(msg.author.id, index)
 
-                        elif action == "mute":
-                            if isinstance(msg.author, Member):
-                                await asyncio.gather(msg.delete(),
-                                    msg.author.add_roles(Object(conf.mute_role), reason=reason))
-                            else:
-                                await msg.delete()
+                    elif action == "mute":
+                        fork_delete_message(msg)
+                        if isinstance(msg.author, Member):
+                            fork_add_muted(msg.author, reason)
 
-                        elif action == "kick":
-                            await asyncio.gather(msg.delete(),
-                                msg.guild.kick(msg.author, reason=reason))
+                    elif action == "kick":
+                        fork_delete_message(msg)
+                        fork_kick_user(msg.guild, msg.author, reason)
 
-                        elif action == "ban":
-                            await asyncio.gather(msg.delete(),
-                                msg.guild.ban(msg.author, reason=reason, delete_message_days=0))
-
-                    except (discord.HTTPException, AssertionError):
-                        logger.error("Could not moderate {}".format(msg.jump_url), exc_info=True)
+                    elif action == "ban":
+                        fork_delete_message(msg)
+                        fork_ban_user(msg.guild, msg.author, reason)
         except:
             logger.error("Could not automod scan {}".format(msg.jump_url), exc_info=True)
 

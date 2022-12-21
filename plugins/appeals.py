@@ -26,7 +26,7 @@ import plugins
 import plugins.tickets
 import util.db
 import util.db.kv
-from util.discord import PlainItem, chunk_messages, format
+from util.discord import PlainItem, chunk_messages, format, retry
 
 logger = logging.getLogger(__name__)
 
@@ -197,16 +197,17 @@ async def post_submit(request: Request) -> NoReturn:
         for content, _ in chunk_messages([PlainItem(format("**Ban Appeal from** {!m}:\n\n", user_id)),
             PlainItem("**Type:** {}\n".format(kind)), PlainItem("**Reason:** "), PlainItem(reason),
             PlainItem("\n**Appeal:** "), PlainItem(appeal)]):
-            last_message = await channel.send(content, allowed_mentions=AllowedMentions.none())
+            last_message = await retry(lambda: channel.send(content, allowed_mentions=AllowedMentions.none()),
+                attempts=10)
         assert last_message
 
-        thread = await last_message.create_thread(name=str(user_id))
+        thread = await retry(lambda: last_message.create_thread(name=str(user_id)), attempts=10)
 
         appeal = Appeal(user_id=user_id, channel_id=channel.id, thread_id=thread.id)
         session.add(appeal)
         await session.commit()
 
-        msg = await thread.send(view=AppealView(appeal.id))
+        msg = await retry(lambda: thread.send(view=AppealView(appeal.id)), attempts=10)
         appeal.message_id = msg.id
         await session.commit()
 
@@ -263,7 +264,8 @@ async def close_appeal(interaction: Interaction, appeal_id: int) -> None:
         await session.delete(appeal)
         if (msg := await appeal.get_message()):
             try:
-                await msg.edit(content="Appeal handled (user may create new ones).", view=None)
+                await retry(lambda: msg.edit(content="Appeal handled (user may create new ones).", view=None),
+                    attempts=10)
             except discord.HTTPException:
                 pass
         await session.commit()
@@ -289,4 +291,3 @@ class AppealsCog(Cog):
             return
         if action == "Close":
             await close_appeal(interaction, appeal_id)
-

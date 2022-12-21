@@ -6,6 +6,7 @@ import discord
 from discord import AllowedMentions, ButtonStyle, Interaction, InteractionType, Member, Role, TextChannel, TextStyle
 if TYPE_CHECKING:
     import discord.types.interactions
+from discord.abc import Messageable
 from discord.ui import Button, Modal, TextInput, View
 from sqlalchemy import BOOLEAN, BigInteger, ForeignKey, Integer, PrimaryKeyConstraint, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -19,7 +20,7 @@ from bot.privileges import priv
 import plugins
 import util.db
 import util.db.kv
-from util.discord import PartialRoleConverter, PartialUserConverter, format
+from util.discord import PartialRoleConverter, PartialUserConverter, format, retry
 from util.frozen_list import FrozenList
 
 logger = logging.getLogger(__name__)
@@ -109,6 +110,7 @@ class RolePromptModal(Modal):
             await interaction.response.send_message("This can only be done in a server.", ephemeral=True,
                 delete_after=60)
             return
+        await interaction.response.defer(ephemeral=True)
 
         outputs = []
         for role, inputs in self.inputs.items():
@@ -120,7 +122,7 @@ class RolePromptModal(Modal):
             elif output is None:
                 outputs.append(format("Your application for {!M} has been submitted for review.", role))
 
-        await interaction.response.send_message("\n".join(outputs), ephemeral=True)
+        await interaction.followup.send("\n".join(outputs), ephemeral=True)
 
 class ApproveRoleView(View):
     def __init__(self, msg_id: int) -> None:
@@ -158,6 +160,7 @@ def voting_decision(app_id: int, review: ReviewedRole, votes: List[Vote]) -> Opt
 async def cast_vote(interaction: Interaction, msg_id: int, dir: Optional[bool], veto: Optional[str] = None) -> None:
     assert interaction.message
     assert interaction.guild
+    assert isinstance(interaction.channel, Messageable)
     assert dir is not None or veto is None
     async with sessionmaker() as session:
         stmt = select(Application).where(Application.listing_id == msg_id).limit(1)
@@ -215,6 +218,7 @@ async def cast_vote(interaction: Interaction, msg_id: int, dir: Optional[bool], 
             session.add(vote)
             votes.append(vote)
 
+        await interaction.response.defer(ephemeral=True)
         await session.commit()
 
         decision = voting_decision(app.id, review, votes)
@@ -227,28 +231,31 @@ async def cast_vote(interaction: Interaction, msg_id: int, dir: Optional[bool], 
             comment = "\u274C"
         if veto is not None:
             comment = "veto {}: {}".format(comment, veto)
-        await interaction.message.edit(
-            content=format("{}\n{!m}: {}{}", interaction.message.content, interaction.user, comment,
+
+        voting_id = interaction.message.id
+        channel = interaction.channel
+        async def update_message():
+            msg = await channel.fetch_message(voting_id)
+            await msg.edit(content=format("{}\n{!m}: {}{}", msg.content, interaction.user, comment,
                 "" if decision is None else "\nDecision: \u2705" if decision else "\nDecision: \u274C"),
-            view=ApproveRoleView(msg_id) if decision is None else None,
-            allowed_mentions=AllowedMentions.none())
+                view=ApproveRoleView(msg_id) if decision is None else None,
+                allowed_mentions=AllowedMentions.none())
+        await retry(update_message, attempts=10)
 
         if decision is not None:
             app.decision = decision
             await session.commit()
 
-        await interaction.response.send_message("Vote recorded.", ephemeral=True, delete_after=60)
-
         if decision is not None and (user := interaction.guild.get_member(app.user_id)) is not None:
             if "pending_role" in review:
-                if (role := interaction.guild.get_role(review["pending_role"])):
-                    await user.remove_roles(role, reason=format("Granted {!m}", app.role_id))
+                if (p_role := interaction.guild.get_role(review["pending_role"])):
+                    await retry(lambda: user.remove_roles(p_role, reason=format("Granted {!m}", app.role_id)))
             if decision == True:
                 if (role := interaction.guild.get_role(app.role_id)) is not None:
-                    await user.add_roles(role, reason="By vote")
+                    await retry(lambda: user.add_roles(role, reason="By vote"))
             elif "denied_role" in review:
-                if (role := interaction.guild.get_role(review["denied_role"])):
-                    await user.add_roles(role, reason=format("Denied {!m}", app.role_id))
+                if (d_role := interaction.guild.get_role(review["denied_role"])):
+                    await retry(lambda: user.add_roles(d_role, reason=format("Denied {!m}", app.role_id)))
 
 class VetoModal(Modal):
     reason = TextInput(style=TextStyle.paragraph, required=False, label="Reason for the veto")
@@ -367,31 +374,32 @@ async def apply(member: Member, role: Role, inputs: List[Tuple[str, str]]) -> Op
     """
     if (review := conf[role.id]) is None:
         logger.debug(format("Application from {!m} for a non-reviewed role {!M}", member, role))
-        await member.add_roles(role, reason="Application for non-reviewed role")
+        await retry(lambda: member.add_roles(role, reason="Application for non-reviewed role"))
         return True
     async with sessionmaker() as session:
         pre = await check_applications(member, role, session)
         logger.debug(format("Application {!m} {!M}: {}", member, role,
             "give" if pre else "review" if pre is None else "deny"))
         if pre:
-            await member.add_roles(role, reason="Previously approved")
+            await retry(lambda: member.add_roles(role, reason="Previously approved"))
         if pre is not None:
             return pre
 
         channel = member.guild.get_channel(review["review_channel"])
         assert isinstance(channel, TextChannel)
 
-        msg = await channel.send(format("{!m} ({}#{} {}) requested {!M}:\n\n{}", member, member.name,
+        msg = await retry(lambda: channel.send(format("{!m} ({}#{} {}) requested {!M}:\n\n{}", member, member.name,
                 member.discriminator, member.id, role,
                 "\n\n".join("**{}**: {}".format(question, answer) for question, answer in inputs)),
-            allowed_mentions=AllowedMentions.none())
+            allowed_mentions=AllowedMentions.none()))
         app = Application(listing_id=msg.id, user_id=member.id, role_id=role.id)
         session.add(app)
         await session.commit()
-        voting = await channel.send("Votes:", view=ApproveRoleView(msg.id), allowed_mentions=AllowedMentions.none())
+        voting = await retry(lambda: channel.send("Votes:",
+            view=ApproveRoleView(msg.id), allowed_mentions=AllowedMentions.none()))
         app.voting_id = voting.id
         await session.commit()
 
         if "pending_role" in review:
             if (repl := member.guild.get_role(review["pending_role"])) is not None:
-                await member.add_roles(repl, reason="Awaiting {}".format(role.name))
+                await retry(lambda: member.add_roles(repl, reason="Awaiting {}".format(role.name)))

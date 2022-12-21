@@ -11,7 +11,8 @@ from bot.commands import Context, cleanup
 from bot.privileges import priv
 import plugins
 import util.db.kv
-from util.discord import InvocationError, PartialRoleConverter, ReplyConverter, UserError, format, partial_from_reply
+from util.discord import (InvocationError, PartialRoleConverter, ReplyConverter, UserError, format, partial_from_reply,
+    retry)
 from util.frozen_dict import FrozenDict
 
 class MessageReactions(TypedDict):
@@ -114,7 +115,8 @@ class RoleReactions(Cog):
         if payload.member.bot: return
         role = get_payload_role(payload.member.guild, payload)
         if role is None: return
-        await payload.member.add_roles(role, reason="Role reactions on {}".format(payload.message_id))
+        member = payload.member
+        await retry(lambda: member.add_roles(role, reason="Role reactions on {}".format(payload.message_id)))
 
     @Cog.listener()
     async def on_raw_reaction_remove(self, payload: RawReactionActionEvent) -> None:
@@ -126,8 +128,7 @@ class RoleReactions(Cog):
         if member.bot: return
         role = get_payload_role(guild, payload)
         if role is None: return
-        await member.remove_roles(role, reason="Role reactions on {}".format(
-            payload.message_id))
+        await retry(lambda: member.remove_roles(role, reason="Role reactions on {}".format(payload.message_id)))
 
     @cleanup
     @group("rolereact")

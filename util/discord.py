@@ -11,7 +11,7 @@ import math
 import re
 import string
 from typing import (Any, AsyncContextManager, Callable, Dict, Generic, Iterable, Iterator, List, Optional, Protocol,
-    Sequence, Tuple, Type, TypeVar, Union, cast)
+    Sequence, Tuple, Type, TypeVar, Union, cast, Awaitable)
 
 import discord
 from discord import (CategoryChannel, File, ForumChannel, Member, Message, Object, PartialMessage, Role, StageChannel,
@@ -687,3 +687,30 @@ def chunk_messages(items: Iterable[Union[PlainItem, CodeItem]]) -> Iterator[Tupl
                 content += text
     if content or files:
         yield content, files
+
+def HTTPMeta(status: int) -> Type[type]:
+    class HTTPMeta(type):
+        @staticmethod
+        def __instancecheck__(instance: Any) -> bool:
+            return isinstance(instance, discord.HTTPException) and instance.status == status
+    return HTTPMeta
+
+class TooManyRequests(discord.HTTPException, metaclass=HTTPMeta(429)):
+    pass
+
+class InternalServerError(discord.HTTPException, metaclass=HTTPMeta(500)):
+    pass
+
+async def retry(call: Callable[[], Awaitable[T]], delay: float = 1, attempts: Optional[int] = None,
+    exceptions: Tuple[Type[Exception], ...] = (TooManyRequests, InternalServerError, discord.RateLimited)) -> T:
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            return await call()
+        except Exception as e:
+            if attempt == attempts or not isinstance(e, exceptions):
+                raise
+            await asyncio.sleep(delay)
+            delay *= 2
+            continue

@@ -495,7 +495,7 @@ async def set_solved_tags(post: Thread, new_tags: Iterable[int], reason: str) ->
     tags += [cast(ForumTag, Object(id)) for id in new_tags]
     try:
         await post.edit(applied_tags=tags, reason=reason)
-    except (discord.Forbidden, discord.NotFound):
+    except discord.HTTPException:
         logger.error(format("Could not set solved tags on {!c}", post), exc_info=True)
 
 async def solved(post: Thread, reason: str) -> None:
@@ -538,7 +538,7 @@ class PostTitleModal(Modal):
     async def on_submit(self, interaction: Interaction) -> None:
         try:
             await self.thread.edit(name=str(self.name), reason=format("By {!m}", interaction.user))
-        except (discord.Forbidden, discord.NotFound):
+        except discord.HTTPException:
             return
         await interaction.response.send_message("\u2705", ephemeral=True, delete_after=60)
 
@@ -586,7 +586,7 @@ async def manage_tags(interaction: Interaction, thread_id: int, values: List[str
 
     try:
         new_thread = await thread.edit(applied_tags=tags, reason=format("By {!m}", interaction.user))
-    except (discord.NotFound, discord.Forbidden):
+    except discord.HTTPException:
         return
     await interaction.message.edit(view=PostTagsView(new_thread))
     await interaction.response.send_message("\u2705", ephemeral=True, delete_after=60)

@@ -8,6 +8,7 @@ from bot.interactions import command, persistent_view
 import plugins
 import plugins.roles_review
 import util.db.kv
+from util.discord import retry
 from util.frozen_list import FrozenList
 
 class RolesDialogConf(Protocol):
@@ -51,6 +52,7 @@ class RoleSelect(Select["RolesView"]):
             await interaction.response.send_message("This can only be done in a server.", ephemeral=True,
                 delete_after=60)
             return
+        member = interaction.user
 
         selected_roles = set()
         for index in self.values:
@@ -60,27 +62,29 @@ class RoleSelect(Select["RolesView"]):
         remove_roles = set()
         prompt_roles = []
         for role in self.roles.values():
-            if role in interaction.user.roles and role not in selected_roles:
+            if role in member.roles and role not in selected_roles:
                 remove_roles.add(role)
-            if role not in interaction.user.roles and role in selected_roles:
-                pre = await plugins.roles_review.pre_apply(interaction.user, role)
+            if role not in member.roles and role in selected_roles:
+                pre = await plugins.roles_review.pre_apply(member, role)
                 if pre is True:
                     add_roles.add(role)
                 elif pre is None:
                     prompt_roles.append(role)
                 # TODO: tell them if False?
 
-        if add_roles:
-            await interaction.user.add_roles(*add_roles, reason="Role dialog")
-        if remove_roles:
-            await interaction.user.remove_roles(*remove_roles, reason="Role dialog")
-
         if prompt_roles:
             await interaction.response.send_modal(plugins.roles_review.RolePromptModal(prompt_roles))
         else:
-            await interaction.response.send_message(
-                "\u2705 Updated roles." if add_roles or remove_roles else "Roles not changed.", ephemeral=True,
-                delete_after=60)
+            await interaction.response.defer(ephemeral=True)
+
+        if add_roles:
+            await retry(lambda: member.add_roles(*add_roles, reason="Role dialog"))
+        if remove_roles:
+            await retry(lambda: member.remove_roles(*remove_roles, reason="Role dialog"))
+
+        if not prompt_roles:
+            await interaction.followup.send(
+                "\u2705 Updated roles." if add_roles or remove_roles else "Roles not changed.", ephemeral=True)
 
 class RolesView(View):
     def __init__(self, member: Member) -> None:

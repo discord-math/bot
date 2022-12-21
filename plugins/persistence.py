@@ -12,6 +12,7 @@ from bot.cogs import Cog, cog
 import plugins
 import util.db
 import util.db.kv
+from util.discord import retry
 from util.frozen_list import FrozenList
 
 registry: sqlalchemy.orm.registry = sqlalchemy.orm.registry()
@@ -65,7 +66,7 @@ class Persistence(Cog):
                 if (role := member.guild.get_role(role_id)) is not None:
                     roles.append(role)
             if len(roles) == 0: return
-            await member.add_roles(*roles, reason="Role persistence", atomic=False)
+            await retry(lambda: member.add_roles(*roles, reason="Role persistence", atomic=False))
             await session.commit()
 
 async def drop_persistent_role(*, user_id: int, role_id: int) -> None:

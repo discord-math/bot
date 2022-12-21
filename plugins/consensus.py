@@ -24,7 +24,7 @@ from bot.locations import location
 from bot.privileges import priv
 import plugins
 import util.db
-from util.discord import DurationConverter, PlainItem, UserError, chunk_messages, format
+from util.discord import DurationConverter, PlainItem, UserError, chunk_messages, format, retry
 
 logger = logging.getLogger(__name__)
 
@@ -124,8 +124,10 @@ async def handle_timeouts() -> None:
                                 await session.delete(poll)
                             else:
                                 try:
-                                    await msg.channel.send(format("Poll timed out {!m}", poll.author_id),
-                                        allowed_mentions=user_mentions, reference=msg)
+                                    reference = msg
+                                    channel = msg.channel
+                                    await retry(lambda: channel.send(format("Poll timed out {!m}", poll.author_id),
+                                        allowed_mentions=user_mentions, reference=reference), attempts=10)
                                 except discord.HTTPException:
                                     pass
                             poll.timeout_notified = True
@@ -224,8 +226,8 @@ def render_poll(votes: Sequence[Vote], concerns: Sequence[Concern]) -> str:
 
 async def edit_poll(poll_id: Optional[int], msg: PartialMessage, votes: Sequence[Vote],
     concerns: Sequence[Concern]) -> None:
-    await msg.edit(content=render_poll(votes, concerns)[:2000], view=PollView(poll_id) if poll_id is not None else None,
-        allowed_mentions=user_mentions)
+    await retry(lambda: msg.edit(content=render_poll(votes, concerns)[:2000],
+        view=PollView(poll_id) if poll_id is not None else None, allowed_mentions=user_mentions))
 
 async def sync_poll(session: AsyncSession, poll_id: int, msg: PartialMessage):
     stmt = select(Vote).where(Vote.poll_id == poll_id).order_by(nulls_first(Vote.after_concern), Vote.id)
@@ -233,7 +235,6 @@ async def sync_poll(session: AsyncSession, poll_id: int, msg: PartialMessage):
     stmt = select(Concern).where(Concern.poll_id == poll_id).order_by(Concern.id)
     concerns = (await session.execute(stmt)).scalars().all()
     await edit_poll(poll_id, msg, votes, concerns)
-
 
 async def cast_vote(interaction: Interaction, poll_id: int, vote_type: Optional[VoteType], comment: str,
     after_concern: Optional[int]) -> None:
@@ -281,8 +282,8 @@ async def raise_concern(interaction: Interaction, poll_id: int, comment: str) ->
         stmt = select(Vote).where(Vote.poll_id == poll_id).order_by(Vote.id)
         votes = (await session.execute(stmt)).scalars().all()
         if len(votes):
-            await msg.channel.send(" ".join(format("{!m}", vote.voter_id) for vote in votes),
-                allowed_mentions=user_mentions, reference=msg)
+            await retry(lambda: msg.channel.send(" ".join(format("{!m}", vote.voter_id) for vote in votes),
+                allowed_mentions=user_mentions, reference=msg))
         await interaction.response.send_message("Concern added.", ephemeral=True, delete_after=60)
         timeouts_updated()
 
