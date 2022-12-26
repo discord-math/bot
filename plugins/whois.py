@@ -262,21 +262,31 @@ async def whois_command(interaction: Interaction, user: str) -> None:
             yield PlainItem(format("{!c} <t:{}:R> [{!i}{}]({})", msg.channel_id, created_at, content[:100],
                 "..." if len(content) > 100 else "", link))
         first = True
+        seen = set()
+        if m:
+            seen.add((m.name, m.discriminator))
         for user in users:
-            if first:
-                yield PlainItem("\n\n**Past usernames**\n")
-            else:
-                yield PlainItem("\n")
-            first = False
-            yield PlainItem(format("{!i}#{!i}", user.username, user.discrim))
+            if (user.username, user.discrim) not in seen:
+                seen.add((user.username, user.discrim))
+                if first:
+                    yield PlainItem("\n\n**Past usernames**\n")
+                else:
+                    yield PlainItem(", ")
+                first = False
+                yield PlainItem(format("{!i}#{!i}", user.username, user.discrim))
         first = True
+        seen = set()
+        if isinstance(m, Member) and m.nick is not None:
+            seen.add(m.nick)
         for nick in nicks:
-            if first:
-                yield PlainItem("\n\n**Past nicknames**\n")
-            else:
-                yield PlainItem("\n")
-            first = False
-            yield PlainItem(format("{!i}", nick))
+            if not nick in seen:
+                seen.add(nick)
+                if first:
+                    yield PlainItem("\n\n**Past nicknames**\n")
+                else:
+                    yield PlainItem(", ")
+                first = False
+                yield PlainItem(format("{!i}", nick))
 
     for content, _ in chunk_messages(item_gen()):
         await interaction.followup.send(content, suppress_embeds=True, ephemeral=True)
