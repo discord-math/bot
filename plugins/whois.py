@@ -5,7 +5,6 @@ import enum
 from functools import total_ordering
 from heapq import heappop, heappush, heappushpop
 import logging
-from time import time
 from typing import Awaitable, Callable, Iterator, List, Literal, Optional, Sequence, Tuple, Union
 
 import discord
@@ -123,32 +122,38 @@ async def select_candidates(limit: int, text: str, id_lookup: Callable[[int], Op
             heapfill((MatchType.EXACT_ID,), m)
 
     if len(candidates) < limit:
+        logger.debug("candidates: Iterating members")
         for m in member_source():
             if (rank := rank_member_match(text, m)) is not None:
                 heapfill(rank, m)
 
     if len(candidates) < limit or candidates[0].rank[0] <= MatchType.EXACT_RECENT_USER:
+        logger.debug("candidates: Iterating recent users")
         for recent in await recent_source(text, NickOrUser.USER, False):
             server_status = rank_server_status(id_lookup(recent[0]))
             rank = rank_recent_match(text, recent, server_status)
             heapfill(rank, recent)
 
     if len(candidates) < limit or candidates[0].rank[0] <= MatchType.EXACT_RECENT_NICK:
+        logger.debug("candidates: Iterating recent nicks")
         for recent in await recent_source(text, NickOrUser.NICK, False):
             server_status = rank_server_status(id_lookup(recent[0]))
             rank = rank_recent_match(text, recent, server_status)
             heapfill(rank, recent)
 
     if len(candidates) < limit or candidates[0].rank[0] <= MatchType.INFIX_RECENT:
+        logger.debug("candidates: Iterating recent users (infix)")
         for recent in await recent_source(text, NickOrUser.USER, True):
             server_status = rank_server_status(id_lookup(recent[0]))
             rank = rank_recent_match(text, recent, server_status)
             heapfill(rank, recent)
+        logger.debug("candidates: Iterating recent nicks (infix)")
         for recent in await recent_source(text, NickOrUser.NICK, True):
             server_status = rank_server_status(id_lookup(recent[0]))
             rank = rank_recent_match(text, recent, server_status)
             heapfill(rank, recent)
 
+    logger.debug("candidates: Done")
     return [heappop(candidates) for _ in range(min(limit, len(candidates)))]
 
 async def match_recents(session: AsyncSession, text: str, nu: NickOrUser, infix: bool) -> Sequence[Recent]:
@@ -337,8 +342,8 @@ def format_match(rank: MatchRank, match: Union[Member, Recent], lookup_id: Calla
 
 @whois_command.autocomplete("user")
 async def whois_autocomplete(interaction: Interaction, input: str) -> List[Choice[str]]:
-    start_t = time()
     assert (guild := interaction.guild) is not None
+    logger.debug("Start autocomplete")
     async with plugins.log.sessionmaker() as session:
         lookup_id = guild.get_member
         member_source = lambda: guild.members
@@ -347,6 +352,5 @@ async def whois_autocomplete(interaction: Interaction, input: str) -> List[Choic
 
         results = [Choice(name=format_match(c.rank, c.match, lookup_id), value=str(match_id(c.match)))
             for c in reversed(await select_candidates(25, input, lookup_id, member_source, recent_source))]
-    end_t = time()
-    logger.debug("Autocomplete took {}".format(end_t - start_t))
+    logger.debug("End autocomplete")
     return results
