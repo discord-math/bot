@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 import enum
 from functools import total_ordering
 from heapq import heappop, heappush, heappushpop
@@ -91,19 +92,23 @@ def rank_recent_match(text: str, recent: Recent, server_status: ServerStatus) ->
 def match_id(match: Union[Member, Recent]):
     return match.id if isinstance(match, Member) else match[0]
 
+@dataclass(order=True)
+class Candidate:
+    rank: MatchRank
+    match: Union[Member, Recent] = field(compare=False)
+
 async def select_candidates(limit: int, text: str, id_lookup: Callable[[int], Optional[Member]],
     member_source: Callable[[], Sequence[Member]],
-    recent_source: Callable[[str, NickOrUser, bool], Awaitable[Sequence[Recent]]],
-    ) -> Sequence[Tuple[MatchRank, Union[Member, Recent]]]:
+    recent_source: Callable[[str, NickOrUser, bool], Awaitable[Sequence[Recent]]]) -> Sequence[Candidate]:
 
-    candidates: List[Tuple[MatchRank, Union[Member, Recent]]] = []
+    candidates: List[Candidate] = []
     def heapfill(rank: MatchRank, match: Union[Member, Recent]) -> None:
         id = match_id(match)
-        if not any(match_id(m) == id for _, m in candidates):
+        if not any(match_id(c.match) == id for c in candidates):
             if len(candidates) >= limit:
-                heappushpop(candidates, (rank, match))
+                heappushpop(candidates, Candidate(rank, match))
             else:
-                heappush(candidates, (rank, match))
+                heappush(candidates, Candidate(rank, match))
 
     try:
         int_text = int(text)
@@ -118,19 +123,19 @@ async def select_candidates(limit: int, text: str, id_lookup: Callable[[int], Op
             if (rank := rank_member_match(text, m)) is not None:
                 heapfill(rank, m)
 
-    if len(candidates) < limit or candidates[0][0][0] <= MatchType.EXACT_RECENT_USER:
+    if len(candidates) < limit or candidates[0].rank[0] <= MatchType.EXACT_RECENT_USER:
         for recent in await recent_source(text, NickOrUser.USER, False):
             server_status = rank_server_status(id_lookup(recent[0]))
             rank = rank_recent_match(text, recent, server_status)
             heapfill(rank, recent)
 
-    if len(candidates) < limit or candidates[0][0][0] <= MatchType.EXACT_RECENT_NICK:
+    if len(candidates) < limit or candidates[0].rank[0] <= MatchType.EXACT_RECENT_NICK:
         for recent in await recent_source(text, NickOrUser.NICK, False):
             server_status = rank_server_status(id_lookup(recent[0]))
             rank = rank_recent_match(text, recent, server_status)
             heapfill(rank, recent)
 
-    if len(candidates) < limit or candidates[0][0][0] <= MatchType.INFIX_RECENT:
+    if len(candidates) < limit or candidates[0].rank[0] <= MatchType.INFIX_RECENT:
         for recent in await recent_source(text, NickOrUser.USER, True):
             server_status = rank_server_status(id_lookup(recent[0]))
             rank = rank_recent_match(text, recent, server_status)
@@ -180,7 +185,7 @@ async def whois_command(interaction: Interaction, user: str) -> None:
             await interaction.response.send_message("No matches.", ephemeral=True, delete_after=60)
             return
     else:
-        id = match_id(candidates[0][1])
+        id = match_id(candidates[0].match)
 
     content = format("{!m}", id)
     embed = Embed()
@@ -336,8 +341,8 @@ async def whois_autocomplete(interaction: Interaction, input: str) -> List[Choic
         recent_source: Callable[[str, NickOrUser, bool], Awaitable[Sequence[Recent]]]
         recent_source = lambda text, nu, infix: match_recents(session, text, nu, infix)
 
-        results = [Choice(name=format_match(rank, match, lookup_id), value=str(match_id(match)))
-            for rank, match in reversed(await select_candidates(25, input, lookup_id, member_source, recent_source))]
+        results = [Choice(name=format_match(c.rank, c.match, lookup_id), value=str(match_id(c.match)))
+            for c in reversed(await select_candidates(25, input, lookup_id, member_source, recent_source))]
     end_t = time()
     logger.debug("Autocomplete took {}".format(end_t - start_t))
     return results
