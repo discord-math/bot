@@ -39,9 +39,13 @@ class MatchType(enum.Enum):
     def __lt__(self, other: MatchType) -> bool:
         return self.value < other.value
 
+@total_ordering
 class NickOrUser(enum.Enum):
     NICK = 0
     USER = 1
+
+    def __lt__(self, other: MatchType) -> bool:
+        return self.value < other.value
 
 ServerStatus = int
 MatchRank = Union[
