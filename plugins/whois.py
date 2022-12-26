@@ -161,14 +161,14 @@ async def select_candidates(limit: int, text: str, id_lookup: Callable[[int], Op
 async def match_recents(session: AsyncSession, text: str, nu: NickOrUser, infix: bool) -> Sequence[Recent]:
     if nu == NickOrUser.NICK:
         idcol = plugins.log.SavedNick.id
-        matchcol = plugins.log.SavedNick.nick
+        matchcol = func.lower(plugins.log.SavedNick.nick)
     else:
         idcol = plugins.log.SavedUser.id
-        matchcol = plugins.log.SavedUser.username + "#" + plugins.log.SavedUser.discrim
+        matchcol = func.lower(plugins.log.SavedUser.username + "#" + plugins.log.SavedUser.discrim)
     if infix:
-        matchcond = func.strpos(matchcol, text) > 0
+        matchcond = func.strpos(matchcol, text.lower()) > 0
     else:
-        matchcond = func.substring(matchcol, 1, len(text)) == text
+        matchcond = func.substring(matchcol, 1, len(text)) == text.lower()
 
     stmt = select(idcol, matchcol).where(matchcond)
     results = []
@@ -358,6 +358,7 @@ def format_match(rank: MatchRank, match: Union[Member, Recent], lookup_id: Calla
 async def whois_autocomplete(interaction: Interaction, input: str) -> List[Choice[str]]:
     assert (guild := interaction.guild) is not None
     logger.debug("Start autocomplete")
+    if not input: return []
     async with plugins.log.sessionmaker() as session:
         lookup_id = guild.get_member
         member_source = lambda: guild.members
