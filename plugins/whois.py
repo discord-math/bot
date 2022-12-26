@@ -5,7 +5,7 @@ import enum
 from functools import total_ordering
 from heapq import heappop, heappush, heappushpop
 import logging
-from typing import Awaitable, Callable, Iterator, List, Literal, Optional, Sequence, Tuple, Union
+from typing import Awaitable, Callable, Iterator, List, Literal, Optional, Sequence, Set, Tuple, Union
 
 import discord
 from discord import Embed, Interaction, Member
@@ -105,11 +105,13 @@ async def select_candidates(limit: int, text: str, id_lookup: Callable[[int], Op
     recent_source: Callable[[str, NickOrUser, bool], Awaitable[Sequence[Recent]]]) -> Sequence[Candidate]:
 
     candidates: List[Candidate] = []
+    ids: Set[int] = set()
     def heapfill(rank: MatchRank, match: Union[Member, Recent]) -> None:
         id = match_id(match)
-        if not any(match_id(c.match) == id for c in candidates):
+        if id not in ids:
+            ids.add(id)
             if len(candidates) >= limit:
-                heappushpop(candidates, Candidate(rank, match))
+                ids.remove(match_id(heappushpop(candidates, Candidate(rank, match)).match))
             else:
                 heappush(candidates, Candidate(rank, match))
 
