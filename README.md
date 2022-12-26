@@ -343,6 +343,10 @@ Config:
     - `"pending_role": <role id>` -- (optional) role given to the applying user while the application is pending.
     - `"denied_role": <role id>` -- (optional) role given to the applying user if their application is denied.
 
+### `whois`
+
+A `/whois <user>` slash-command for locating users and printing useful information about them.
+
 ### Miscellaneous Configuration
 - ``config bot.commands prefix `"<prefix>"` `` -- set the prefix for the bot's "ordinary" commands.
 
