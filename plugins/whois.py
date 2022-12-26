@@ -181,6 +181,8 @@ async def match_recents(session: AsyncSession, text: str, nu: NickOrUser, infix:
 @guild_only()
 async def whois_command(interaction: Interaction, user: str) -> None:
     assert (guild := interaction.guild) is not None
+    await interaction.response.defer(ephemeral=True)
+
     async with plugins.log.sessionmaker() as session:
         lookup_id = guild.get_member
         member_source = lambda: guild.members
@@ -193,7 +195,7 @@ async def whois_command(interaction: Interaction, user: str) -> None:
         try:
             id = int(user)
         except ValueError:
-            await interaction.response.send_message("No matches.", ephemeral=True, delete_after=60)
+            await interaction.followup.send("No matches.", ephemeral=True)
             return
     else:
         id = match_id(candidates[0].match)
@@ -222,7 +224,7 @@ async def whois_command(interaction: Interaction, user: str) -> None:
         embed.add_field(name="Created", value="<t:{}:f>, <t:{}:R>".format(created_at, created_at))
         embed.set_thumbnail(url=m.display_avatar.url)
 
-    await interaction.response.send_message(content, embed=embed, ephemeral=True)
+    await interaction.followup.send(content, embed=embed, ephemeral=True)
 
     async with plugins.tickets.sessionmaker() as session:
         tickets = await plugins.tickets.visible_tickets(session, id)
