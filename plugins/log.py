@@ -20,7 +20,7 @@ from sqlalchemy.dialects.postgresql import BYTEA
 from sqlalchemy.ext.asyncio import async_sessionmaker
 import sqlalchemy.orm
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy.schema import CreateSchema
+from sqlalchemy.schema import DDL, CreateSchema
 
 from bot.client import client
 from bot.cogs import Cog, cog
@@ -198,7 +198,10 @@ async def init() -> None:
     global conf, cleanup_task
     await util.db.init(util.db.get_ddl(
         CreateSchema("log"),
-        registry.metadata.create_all))
+        registry.metadata.create_all,
+        DDL("""
+        CREATE INDEX messages_author_id ON log.messages USING BTREE (author_id);
+        """)))
     conf = cast(LoggerConf, await util.db.kv.load(__name__))
     await bot.message_tracker.subscribe(__name__, None, register_messages, missing=True, retroactive=False)
     async def unsubscribe() -> None:
