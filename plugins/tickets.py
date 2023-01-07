@@ -193,7 +193,7 @@ class TicketMod:
                     yield PlainItem(", ")
                 first = False
                 yield PlainItem(format("[#{}]({}): {} ({})", ticket.id, ticket.jump_link,
-                    ticket.describe_action(dm=True), ticket.status_line))
+                    ticket.describe(target=False, mod=False, dm=True), ticket.status_line))
 
         for content, _ in chunk_messages(item_gen()):
             embeds.append(Embed(description=content, color=0xFF9900))
@@ -374,10 +374,7 @@ class Ticket:
             return self.status.value + ", Uncommented"
         return self.status.value
 
-    def describe(self, *, dm: bool = False) -> str:
-        raise NotImplementedError
-
-    def describe_action(self, *, dm: bool = False) -> str:
+    def describe(self, *, mod: bool = True, target: bool = True, dm: bool = False) -> str:
         raise NotImplementedError
 
     def append_comment(self, comment: str) -> None:
@@ -385,10 +382,6 @@ class Ticket:
             self.comment = comment
         else:
             self.comment += "\n" + comment
-
-    def to_summary(self, *, dm: bool = False) -> str:
-        return format("[#{}]({}): {!m} {} ({})", self.id, self.jump_link, self.modid,
-            self.describe(dm=dm), self.status_line)
 
     def to_embed(self, *, dm: bool = False) -> Embed:
         """
@@ -407,7 +400,7 @@ class Ticket:
 
         embed = Embed(
             title="Ticket #{}".format(self.id),
-            description="{} ({})\n{}".format(self.describe(dm=dm), self.status_line, self.comment or ""),
+            description="{} ({})\n{}".format(self.describe(mod=False, dm=dm), self.status_line, self.comment or ""),
             timestamp=self.created_at, color=color)
         embed.add_field(name="Moderator", value=format("{!m}", self.modid))
 
@@ -621,11 +614,9 @@ class NoteTicket(Ticket):
 
     colors = 0xFFFFFF, 0xFFFFFF, 0x666666
 
-    def describe(self, *, dm: bool = False) -> str:
-        return format("**Note** for {!m}", self.targetid)
-
-    def describe_action(self, *, dm: bool = False) -> str:
-        return "**Note**"
+    def describe(self, *, mod: bool = True, target: bool = True, dm: bool = False) -> str:
+        return "{}**Note**{}".format(
+            format("{!m} added ", self.modid) if mod else "", format(" for {!m}", self.targetid) if target else "")
 
     async def revert_action(self, reason: Optional[str] = None) -> None:
         pass
@@ -657,6 +648,7 @@ async def audit_ticket_data(session: AsyncSession, audit: AuditLogEntry) -> Dict
             stage = TicketStage.COMMENTED
     return {
         "mod": await TicketMod.get(session, mod_id),
+        "modid": mod_id,
         "targetid": audit.target.id,
         "auditid": audit.id,
         "created_at": audit.created_at.replace(tzinfo=None),
@@ -681,11 +673,9 @@ class KickTicket(Ticket):
 
     colors = 0xFFBB55, 0xFF9900, 0x995500
 
-    def describe(self, *, dm: bool = False) -> str:
-        return format("**Kicked** {!m}", self.targetid)
-
-    def describe_action(self, *, dm: bool = False) -> str:
-        return "**Kick**"
+    def describe(self, *, mod: bool = True, target: bool = True, dm: bool = False) -> str:
+        return "{}**Kicked**{}".format(
+            format("{!m} ", self.modid) if mod else "", format(" {!m}", self.targetid) if target else "")
 
     @staticmethod
     async def create_from_audit(session: AsyncSession, audit: AuditLogEntry) -> Sequence[Ticket]:
@@ -716,11 +706,9 @@ class BanTicket(Ticket):
 
     colors = 0xFF6666, 0xFF0000, 0x990000
 
-    def describe(self, *, dm: bool = False) -> str:
-        return format("**Banned** {!m}", self.targetid)
-
-    def describe_action(self, *, dm: bool = False) -> str:
-        return "**Ban**"
+    def describe(self, *, mod: bool = True, target: bool = True, dm: bool = False) -> str:
+        return "{}**Banned**{}".format(
+            format("{!m} ", self.modid) if mod else "", format(" {!m}", self.targetid) if target else "")
 
     @staticmethod
     async def create_from_audit(session: AsyncSession, audit: AuditLogEntry) -> Sequence[Ticket]:
@@ -763,11 +751,9 @@ class VCMuteTicket(Ticket):
 
     colors = 0xFF55BB, 0xFF0099, 0x990055
 
-    def describe(self, *, dm: bool = False) -> str:
-        return format("**VC Muted** {!m}", self.targetid)
-
-    def describe_action(self, *, dm: bool = False) -> str:
-        return "**VC Mute**"
+    def describe(self, *, mod: bool = True, target: bool = True, dm: bool = False) -> str:
+        return "{}**VC Muted**{}".format(
+            format("{!m} ", self.modid) if mod else "", format(" {!m}", self.targetid) if target else "")
 
     @staticmethod
     async def create_from_audit(session: AsyncSession, audit: AuditLogEntry) -> Sequence[Ticket]:
@@ -825,11 +811,9 @@ class VCDeafenTicket(Ticket):
 
     colors = 0xCC66FF, 0x9900FF, 0x550099
 
-    def describe(self, *, dm: bool = False) -> str:
-        return format("**VC Deafened** {!m}", self.targetid)
-
-    def describe_action(self, *, dm: bool = False) -> str:
-        return "**VC Deafen**"
+    def describe(self, *, mod: bool = True, target: bool = True, dm: bool = False) -> str:
+        return "{}**VC Deafened**{}".format(
+            format("{!m} ", self.modid) if mod else "", format(" {!m}", self.targetid) if target else "")
 
     @staticmethod
     async def create_from_audit(session: AsyncSession, audit: AuditLogEntry) -> Sequence[Ticket]:
@@ -888,23 +872,15 @@ class AddRoleTicket(Ticket):
 
     colors = 0xFFFF99, 0xFFFF00, 0x999900
 
-    def describe(self, *, dm: bool = False) -> str:
+    def describe(self, *, mod: bool = True, target: bool = True, dm: bool = False) -> str:
         role_desc = format("{!M}", self.roleid)
         if dm:
             if (guild := client.get_guild(conf.guild)) and (role := guild.get_role(self.roleid)):
                 role_desc = role.name
             else:
                 role_desc = str(self.roleid)
-        return format("**Added Role** {} to {!m}", role_desc, self.targetid)
-
-    def describe_action(self, *, dm: bool = False) -> str:
-        role_desc = format("{!M}", self.roleid)
-        if dm:
-            if (guild := client.get_guild(conf.guild)) and (role := guild.get_role(self.roleid)):
-                role_desc = role.name
-            else:
-                role_desc = str(self.roleid)
-        return "**Role** {}".format(role_desc)
+        return "{}**Role {}**{}".format(format("{!m} added ", self.modid) if mod else "", role_desc,
+            format(" to {!m}", self.targetid) if target else "")
 
     @staticmethod
     async def create_from_audit(session: AsyncSession, audit: AuditLogEntry) -> Sequence[Ticket]:
@@ -1250,14 +1226,16 @@ async def resolve_ticket(ref: Optional[MessageReference], ticket_arg: Optional[U
     else:
         raise InvocationError("Specify a ticket by ID, message ID, or by replying to it")
 
-def summarise_tickets(tickets: Sequence[Ticket], title: str, *, dm: bool = False) -> Optional[Iterator[Embed]]:
+def summarise_tickets(tickets: Sequence[Ticket], title: str, *, mod: bool = True, target: bool = True, dm: bool = False
+    ) -> Optional[Iterator[Embed]]:
     """
     Create paged embeds of ticket summaries from the provided list of tickets.
     """
     if not tickets:
         return None
 
-    lines = [ticket.to_summary(dm=dm) for ticket in tickets]
+    lines = ["[#{}]({}): {}".format(ticket.id, ticket.jump_link, ticket.describe(mod=mod, target=target, dm=dm))
+        for ticket in tickets]
     blocks = ['\n'.join(lines[i:i+10]) for i in range(0, len(lines), 10)]
     page_count = len(blocks)
 
@@ -1390,7 +1368,7 @@ class Tickets(Cog):
             stmt = select(Ticket).where(Ticket.modid == user.id, Ticket.stage != TicketStage.COMMENTED
                 ).order_by(Ticket.id)
             tickets = (await session.execute(stmt)).scalars().all()
-            embeds = summarise_tickets(tickets, "Queue for {}".format(user),
+            embeds = summarise_tickets(tickets, "Queue for {}".format(user), mod=False,
                 dm=ctx.channel.type == ChannelType.private)
 
         if embeds:
@@ -1533,7 +1511,7 @@ class Tickets(Cog):
                         shown.append(tkt)
 
                 embeds: Optional[Iterable[Embed]] = summarise_tickets(shown,
-                    title='Tickets for {}'.format(user_or_id.id),
+                    title='Tickets for {}'.format(user_or_id.id), target=False,
                     dm=ctx.channel.type == ChannelType.private)
                 hidden_field = ', '.join('#{}'.format(tkt.id) for tkt in hidden)
 
@@ -1561,7 +1539,7 @@ class Tickets(Cog):
                 tickets = (await session.execute(stmt)).scalars().all()
 
                 embeds = summarise_tickets(tickets, title='Hidden tickets for {}'.format(user_or_id.id),
-                    dm=ctx.channel.type == ChannelType.private)
+                    target=False, dm=ctx.channel.type == ChannelType.private)
 
                 if embeds:
                     await pager(ctx, [Page(embed=embed) for embed in embeds])

@@ -250,7 +250,7 @@ async def whois_command(interaction: Interaction, user: str) -> None:
                 yield PlainItem(", ")
             first = False
             yield PlainItem(format("[#{}]({}): {} ({})", ticket.id, ticket.jump_link,
-                ticket.describe_action(dm=False), ticket.status_line))
+                ticket.describe(target=False, mod=False, dm=False), ticket.status_line))
         first = True
         for msg in msgs:
             if first:
