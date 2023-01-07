@@ -104,6 +104,8 @@ class TicketStage(enum.Enum):
 
 ModQueueView = Table("mod_queues", MetaData(), Column("id", BigInteger), schema="tickets")
 
+perm_duration_re = re.compile(r"""p(?:erm(?:anent)?)?[^\w'"]*""", re.IGNORECASE)
+
 @registry.mapped
 class TicketMod:
     __tablename__ = "mods"
@@ -251,23 +253,32 @@ class TicketMod:
         ticket.stage = TicketStage.DELIVERED
 
     @staticmethod
-    def parse_ticket_comment(ticket: Ticket, text: str) -> Tuple[Optional[int], str, str]:
-        delta, offset = parse_duration(text)
-        if offset:
-            comment = text[offset:]
-            duration = delta // timedelta(seconds=1)
-        else:
-            comment = text
+    def parse_ticket_comment(ticket: Ticket, text: str) -> Tuple[Optional[int], bool, str, str]:
+        if match := re.match(perm_duration_re, text):
+            comment = text[match.end():]
             duration = None
+            have_duration = True
+        else:
+            delta, offset = parse_duration(text)
+            if offset:
+                comment = text[offset:]
+                duration = delta // timedelta(seconds=1)
+                have_duration = True
+            else:
+                comment = text
+                duration = None
+                have_duration = False
 
         msg = ""
-        if duration:
+        if duration is not None:
             if not ticket.can_revert:
                 msg += "Provided duration ignored since this ticket type cannot expire."
                 duration = None
+                have_duration = True
             elif ticket.status != TicketStatus.IN_EFFECT:
                 msg += "Provided duration ignored since this ticket is no longer in effect."
                 duration = None
+                have_duration = True
             else:
                 expiry = ticket.created_at + timedelta(seconds=duration)
                 now = datetime.utcnow()
@@ -275,7 +286,7 @@ class TicketMod:
                     msg += "Ticket will expire immediately!"
                 else:
                     msg += "Ticket will expire in {}.".format(str(expiry - now).split('.')[0])
-        return duration, comment, msg
+        return duration, have_duration, comment, msg
 
     async def process_message(self, msg: Message) -> None:
         """
@@ -289,7 +300,9 @@ class TicketMod:
                 logger.debug(format("Processing message from {!m} as comment to Ticket #{}: {!r}",
                     self.modid, ticket.id, msg.content))
 
-                ticket.duration, ticket.comment, message = self.parse_ticket_comment(ticket, msg.content)
+                duration, have_duration, ticket.comment, message = self.parse_ticket_comment(ticket, msg.content)
+                if have_duration:
+                    ticket.duration = duration
 
                 ticket.stage = TicketStage.COMMENTED
                 ticket.modified_by = self.modid
@@ -1423,11 +1436,24 @@ class Tickets(Cog):
         """Set the duration and comment for a ticket."""
         async with sessionmaker() as session:
             tkt = await resolve_ticket(ctx.message.reference, ticket, session)
-            tkt.duration, comment, message = TicketMod.parse_ticket_comment(tkt, duration_comment)
 
+            duration, have_duration, comment, message = TicketMod.parse_ticket_comment(tkt, duration_comment)
+            if have_duration:
+                tkt.duration = duration
             if comment:
                 tkt.comment = comment
             tkt.modified_by = ctx.author.id
+
+            if tkt.stage != TicketStage.COMMENTED and tkt.modid == ctx.author.id and have_duration and comment:
+                mod = tkt.mod
+                if tkt == await mod.load_queue():
+                    tkt.stage = TicketStage.COMMENTED
+                    await mod.update_delivered_message(tkt)
+                    mod.scheduled_delivery = None
+                else:
+                    tkt.stage = TicketStage.COMMENTED
+                delivery_updated()
+
             await tkt.publish()
             await session.commit()
 
