@@ -253,40 +253,15 @@ class TicketMod:
         ticket.stage = TicketStage.DELIVERED
 
     @staticmethod
-    def parse_ticket_comment(ticket: Ticket, text: str) -> Tuple[Optional[int], bool, str, str]:
+    def parse_duration_comment(text: str) -> Tuple[Optional[int], bool, str]:
         if match := re.match(perm_duration_re, text):
-            comment = text[match.end():]
-            duration = None
-            have_duration = True
+            return None, True, text[match.end():]
         else:
             delta, offset = parse_duration(text)
             if offset:
-                comment = text[offset:]
-                duration = delta // timedelta(seconds=1)
-                have_duration = True
+                return delta // timedelta(seconds=1), True, text[offset:]
             else:
-                comment = text
-                duration = None
-                have_duration = False
-
-        msg = ""
-        if duration is not None:
-            if not ticket.can_revert:
-                msg += "Provided duration ignored since this ticket type cannot expire."
-                duration = None
-                have_duration = True
-            elif ticket.status != TicketStatus.IN_EFFECT:
-                msg += "Provided duration ignored since this ticket is no longer in effect."
-                duration = None
-                have_duration = True
-            else:
-                expiry = ticket.created_at + timedelta(seconds=duration)
-                now = datetime.utcnow()
-                if expiry <= now:
-                    msg += "Ticket will expire immediately!"
-                else:
-                    msg += "Ticket will expire in {}.".format(str(expiry - now).split('.')[0])
-        return duration, have_duration, comment, msg
+                return None, False, text
 
     async def process_message(self, msg: Message) -> None:
         """
@@ -300,7 +275,8 @@ class TicketMod:
                 logger.debug(format("Processing message from {!m} as comment to Ticket #{}: {!r}",
                     self.modid, ticket.id, msg.content))
 
-                duration, have_duration, ticket.comment, message = self.parse_ticket_comment(ticket, msg.content)
+                duration, have_duration, ticket.comment = self.parse_duration_comment(msg.content)
+                duration, have_duration, message = ticket.duration_message(duration, have_duration)
                 if have_duration:
                     ticket.duration = duration
 
@@ -481,6 +457,31 @@ class Ticket:
             Ticket.status != TicketStatus.HIDDEN)
         return (await session.execute(stmt)).scalars().all()
 
+    def duration_message(self, duration: Optional[int], have_duration: bool) -> Tuple[Optional[int], bool, str]:
+        if not have_duration:
+            duration = None
+        msg = ""
+        if not self.can_revert:
+            duration = None
+            if have_duration:
+                msg += "Provided duration ignored since this ticket type cannot expire."
+            else:
+                have_duration = True
+        elif self.status != TicketStatus.IN_EFFECT:
+            duration = None
+            if have_duration:
+                msg += "Provided duration ignored since this ticket is no longer in effect."
+            else:
+                have_duration = True
+        elif duration is not None:
+            expiry = self.created_at + timedelta(seconds=duration)
+            now = datetime.utcnow()
+            if expiry <= now:
+                msg += "Ticket will expire immediately!"
+            else:
+                msg += "Ticket will expire in {}.".format(str(expiry - now).split('.')[0])
+        return duration, have_duration, msg
+
     @staticmethod
     async def create_from_audit(session: AsyncSession, audit: AuditLogEntry) -> Sequence[Ticket]:
         """
@@ -631,21 +632,30 @@ class NoteTicket(Ticket):
 
 blame_re: re.Pattern[str] = re.compile(r"^[^:]* by (\d+): (.*)$", re.I)
 
-async def audit_ticket_data(session: AsyncSession, audit: AuditLogEntry) -> Dict[str, Any]:
+async def audit_ticket_data(session: AsyncSession, audit: AuditLogEntry, *, need_duration: bool = True
+    ) -> Dict[str, Any]:
     assert isinstance(audit.target, (User, Member))
     assert audit.user is not None
     mod_id = audit.user.id
-    comment = audit.reason
     stage = TicketStage.NEW
+    duration = None
+    have_duration = False
     if audit.user.bot:
-        if comment is None:
+        if audit.reason is None:
             comment = "No reason attached to the audit log"
             stage = TicketStage.COMMENTED
-        elif (match := blame_re.match(comment)) is not None:
+        elif (match := blame_re.match(audit.reason)) is not None:
             mod_id = int(match.group(1))
-            comment = match.group(2)
+            duration, have_duration, comment = TicketMod.parse_duration_comment(match.group(2))
         else:
+            comment = audit.reason
             stage = TicketStage.COMMENTED
+    elif audit.reason is None:
+        comment = None
+    else:
+        duration, have_duration, comment = TicketMod.parse_duration_comment(audit.reason)
+    if comment and (have_duration or not need_duration):
+        stage = TicketStage.COMMENTED
     return {
         "mod": await TicketMod.get(session, mod_id),
         "modid": mod_id,
@@ -653,7 +663,8 @@ async def audit_ticket_data(session: AsyncSession, audit: AuditLogEntry) -> Dict
         "auditid": audit.id,
         "created_at": audit.created_at.replace(tzinfo=None),
         "comment": comment,
-        "stage": stage}
+        "stage": stage,
+        "duration": duration if need_duration else None}
 
 @registry.mapped
 @register_action
@@ -679,7 +690,7 @@ class KickTicket(Ticket):
 
     @staticmethod
     async def create_from_audit(session: AsyncSession, audit: AuditLogEntry) -> Sequence[Ticket]:
-        return (KickTicket(**await audit_ticket_data(session, audit)),)
+        return (KickTicket(**await audit_ticket_data(session, audit, need_duration=False)),)
 
     async def hide(self, actorid: int, reason: Optional[str] = None) -> None:
         logger.debug("Hiding Ticket #{}".format(self.id))
@@ -1415,7 +1426,8 @@ class Tickets(Cog):
         async with sessionmaker() as session:
             tkt = await resolve_ticket(ctx.message.reference, ticket, session)
 
-            duration, have_duration, comment, message = TicketMod.parse_ticket_comment(tkt, duration_comment)
+            duration, have_duration, comment = TicketMod.parse_duration_comment(duration_comment)
+            duration, have_duration, message = tkt.duration_message(duration, have_duration)
             if have_duration:
                 tkt.duration = duration
             if comment:
