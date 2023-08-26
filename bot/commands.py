@@ -4,8 +4,7 @@ Utilities for registering basic commands. Commands are triggered by a configurab
 
 import asyncio
 import logging
-from typing import (Any, Callable, Coroutine, Optional, Protocol, Set, TYPE_CHECKING, Type, TypeVar, Union, cast,
-    overload)
+from typing import Any, Callable, Coroutine, Optional, Protocol, Set, Type, TypeVar, Union, cast, overload
 from typing_extensions import Concatenate, ParamSpec
 
 import discord
@@ -107,15 +106,14 @@ ContextT = TypeVar('ContextT', bound=Context)
 CogT = TypeVar("CogT", bound=Optional[Cog])
 CommandT = TypeVar("CommandT", bound=Command[Any, Any, Any])
 
-if TYPE_CHECKING:
-    class _CommandDecorator:
-        @overload
-        def __call__(self, func: Callable[Concatenate[CogT, ContextT, P], Coroutine[Any, Any, T]], /
-            ) -> Command[CogT, P, T]: ...
-        @overload
-        def __call__(self, func: Callable[Concatenate[ContextT, P], Coroutine[Any, Any, T]], /
-            ) -> Command[None, P, T]: ...
-        def __call__(self, func: Callable[..., Coroutine[Any, Any, Any]], /) -> Any: ...
+class _CommandDecorator:
+    @overload
+    def __call__(self, func: Callable[Concatenate[CogT, ContextT, P], Coroutine[Any, Any, T]], /
+        ) -> Command[CogT, P, T]: ...
+    @overload
+    def __call__(self, func: Callable[Concatenate[ContextT, P], Coroutine[Any, Any, T]], /
+        ) -> Command[None, P, T]: ...
+    def __call__(self, func: Callable[..., Coroutine[Any, Any, Any]], /) -> Any: ...
 
 @overload
 def command(name: Optional[str], cls: Type[CommandT], **attrs: Any) -> Callable[
