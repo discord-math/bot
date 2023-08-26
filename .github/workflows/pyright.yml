@@ -14,6 +14,6 @@ jobs:
       with:
         python-version: 3.9
     - name: pip
-      run: pip install aiohttp aiohttp-session types-requests asyncpg git+https://github.com/sqlalchemy/sqlalchemy@main pyright
+      run: pip install aiohttp aiohttp-session types-requests asyncpg sqlalchemy pyright
     - name: pyright
       run: pyright
