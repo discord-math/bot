@@ -291,7 +291,6 @@ async def select_candidates(limit: int, input: str, guild: Guild, session: Async
     candidates = list(itertools.islice(
         unique_candidates(heapq.merge(id_iter(), username_iter(), displayname_iter(), nickname_iter())),
         limit))
-    logger.debug("members: " + repr(candidates))
 
     if len(candidates) < limit or candidates[-1].rank[0] >= MatchType.EXACT_RECENT_USER:
         logger.debug("candidates: Iterating recent users")
@@ -299,7 +298,6 @@ async def select_candidates(limit: int, input: str, guild: Guild, session: Async
             unique_candidates(heapq.merge(candidates,
                 recent_iter(await match_recents(session, input, NickOrUser.USER, False)))),
             limit))
-        logger.debug("recent users: " + repr(candidates))
 
     if len(candidates) < limit or candidates[-1].rank[0] >= MatchType.EXACT_RECENT_NICK:
         logger.debug("candidates: Iterating recent nicks")
@@ -307,7 +305,6 @@ async def select_candidates(limit: int, input: str, guild: Guild, session: Async
             unique_candidates(heapq.merge(candidates,
                 recent_iter(await match_recents(session, input, NickOrUser.NICK, False)))),
             limit))
-        logger.debug("recent nicks: " + repr(candidates))
 
     if len(candidates) < limit or candidates[-1].rank[0] >= MatchType.INFIX_RECENT:
         logger.debug("candidates: Iterating recent infix")
@@ -316,7 +313,6 @@ async def select_candidates(limit: int, input: str, guild: Guild, session: Async
                 recent_iter(await match_recents(session, input, NickOrUser.USER, True)),
                 recent_iter(await match_recents(session, input, NickOrUser.NICK, True)))),
             limit))
-        logger.debug("infix: " + repr(candidates))
 
     logger.debug("candidates: Done")
     return candidates
@@ -525,6 +521,8 @@ async def whois_autocomplete(interaction: Interaction, input: str) -> List[Choic
     logger.debug("End autocomplete")
     return results
 
+filling_event: threading.Event = threading.Event()
+
 @cog
 class Whois(Cog):
     """Maintain username cache"""
@@ -533,15 +531,21 @@ class Whois(Cog):
 
     @Cog.listener()
     async def on_ready(self) -> None:
-        global username_trie, displayname_trie, nickname_trie
+        global id_trie, username_trie, displayname_trie, nickname_trie, filling_event
+        id_trie = IdTrie()
         username_trie = InfixTrie()
         displayname_trie = InfixTrie()
         nickname_trie = InfixTrie()
 
-        def fill_trie(members: List[Member]) -> None:
+        filling_event.set()
+        filling_event = threading.Event()
+
+        def fill_trie(event: threading.Event, members: List[Member]) -> None:
             logger.debug("Starting to fill tries")
             i = 0
             for member in members:
+                if event.is_set():
+                    break
                 id_trie.insert(member.id)
                 username_trie.insert(member.name + "#" + member.discriminator, member.id)
                 if member.global_name is not None:
@@ -549,12 +553,12 @@ class Whois(Cog):
                 if member.nick is not None:
                     nickname_trie.insert(member.nick, member.id)
 
+                i += 1
                 if (i + 1) % 10000 == 0:
                     logger.debug("Filling tries: {}".format(i))
-                i += 1
             logger.debug("Done filling tries")
 
-        asyncio.get_event_loop().run_in_executor(None, fill_trie, list(client.get_all_members()))
+        asyncio.get_event_loop().run_in_executor(None, fill_trie, filling_event, list(client.get_all_members()))
 
     @Cog.listener()
     async def on_member_join(self, member: Member) -> None:
