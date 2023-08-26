@@ -554,7 +554,7 @@ class Whois(Cog):
                     nickname_trie.insert(member.nick, member.id)
 
                 i += 1
-                if (i + 1) % 10000 == 0:
+                if i % 10000 == 0:
                     logger.debug("Filling tries: {}".format(i))
             logger.debug("Done filling tries")
 
