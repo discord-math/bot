@@ -13,10 +13,9 @@ from typing import (Any, AsyncIterator, Dict, Iterator, Optional, Sequence,
     Set, Tuple, Union, cast)
 from weakref import WeakValueDictionary
 
-import asyncpg
-
 import util.asyncio
 import util.db as util_db
+import util.db.log as util_db_log
 from util.frozen_dict import FrozenDict
 from util.frozen_list import FrozenList
 
@@ -61,7 +60,7 @@ def json_decode(text: Optional[str]) -> Any:
     return json_freeze(json.loads(text)) if text is not None else None
 
 @contextlib.asynccontextmanager
-async def connect() -> AsyncIterator[asyncpg.Connection]:
+async def connect() -> AsyncIterator[util_db_log.LoggingConnection]:
     await init_schema()
     async with util_db.connection() as conn:
         yield conn
@@ -78,20 +77,6 @@ async def get_raw_key_values(namespace: str) -> Dict[Tuple[str, ...], str]:
         rows = await conn.fetch("""
             SELECT key, value FROM kv WHERE namespace = $1
             """, namespace)
-        return {tuple(row["key"]): row["value"] for row in rows}
-
-async def get_raw_glob(namespace: str, length: int, parts: Dict[int, str]) -> Dict[Tuple[str, ...], str]:
-    async with connect() as conn:
-        arg = 2
-        clauses = []
-        for k in parts:
-            arg += 1
-            clauses.append("key[{}] = ${}".format(k, arg))
-        clause = " AND ".join(clauses) if clauses else "TRUE"
-        rows = await conn.fetch("""
-            SELECT key, value FROM kv
-            WHERE namespace = $1 AND ARRAY_LENGTH(key, 1) = $2 AND ({})
-            """.format(clause), namespace, length, *parts.values())
         return {tuple(row["key"]): row["value"] for row in rows}
 
 async def get_namespaces() -> Sequence[str]:

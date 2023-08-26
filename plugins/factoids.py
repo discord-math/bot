@@ -91,7 +91,6 @@ async def init() -> None:
         CreateSchema("factoids"),
         registry.metadata.create_all))
 
-
 @cog
 class Factoids(Cog):
     """Manage factoids."""

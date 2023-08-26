@@ -30,7 +30,7 @@ async def on_error(interaction: Interaction, exc: AppCommandError) -> None:
         return
 @plugins.finalizer
 def restore_on_error() -> None:
-    client.tree.error(old_on_error)
+    client.tree.error(old_on_error) # type: ignore
 
 sync_required = asyncio.Event()
 

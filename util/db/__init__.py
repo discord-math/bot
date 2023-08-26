@@ -1,5 +1,4 @@
 import contextlib
-import logging
 from typing import Any, AsyncIterator, Callable, Dict, Union
 
 import asyncpg
@@ -13,18 +12,14 @@ import static_config
 import util.db.dsn as util_db_dsn
 import util.db.log as util_db_log
 
-logger: logging.Logger = logging.getLogger(__name__)
 connection_dsn: str = static_config.DB["dsn"]
-
-class LoggingConnection(util_db_log.LoggingConnection(logger)): # type: ignore
-    pass
 
 connection_uri: str = util_db_dsn.dsn_to_uri(connection_dsn)
 async_connection_uri: str = util_db_dsn.uri_to_asyncpg(connection_uri)
 
 @contextlib.asynccontextmanager
-async def connection() -> AsyncIterator[LoggingConnection]:
-    conn = await asyncpg.connect(connection_uri, connection_class=LoggingConnection)
+async def connection() -> AsyncIterator[util_db_log.LoggingConnection]:
+    conn = await asyncpg.connect(connection_uri, connection_class=util_db_log.LoggingConnection)
     try:
         yield conn
     finally:
@@ -32,7 +27,7 @@ async def connection() -> AsyncIterator[LoggingConnection]:
 
 def create_async_engine(connect_args: Dict[str, Any] = {}, **kwargs: Any) -> sqlalchemy.ext.asyncio.AsyncEngine:
     args = connect_args.copy()
-    args.setdefault("connection_class", LoggingConnection)
+    args.setdefault("connection_class", util_db_log.LoggingConnection)
     return sqlalchemy.ext.asyncio.create_async_engine(async_connection_uri,
         pool_pre_ping=True, connect_args=args, **kwargs)
 

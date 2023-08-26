@@ -6,11 +6,14 @@ import asyncio
 import logging
 from typing import Any, Coroutine, List, Optional, TypeVar
 
+tasks: List[asyncio.Task[Any]]
 try:
     # Keep the list of tasks if we're being reloaded
     tasks # type: ignore
 except NameError:
-    tasks: List[asyncio.Task[Any]] = []
+    tasks = []
+else:
+    tasks = tasks # type: ignore
 
 logger = logging.getLogger(__name__)
 

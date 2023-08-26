@@ -63,7 +63,7 @@ async def exportperms(ctx: Context) -> None:
                 name = "Role {}".format(target.name)
             elif isinstance(target, Member):
                 name = "User {} {}".format(target.id, target.name)
-            elif isinstance(target, Object) and target.type == Role:
+            elif target.type == Role:
                 name = "Role {}".format(target.id)
             else:
                 name = "User {}".format(target.id)

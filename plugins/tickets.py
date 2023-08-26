@@ -1212,25 +1212,25 @@ async def resolve_ticket(ref: Optional[MessageReference], ticket_arg: Optional[U
         # snowflake are the timestamp and we assume that if all of those are zero, it's probably not a snowflake as
         # that would imply an epoch time of 0 milliseconds.
         if ticket_arg < 1 << 22:
-            ticket = cast(Optional[Ticket], await session.get(Ticket, ticket_arg))
+            ticket = await session.get(Ticket, ticket_arg)
             if ticket is None:
                 raise InvocationError("No ticket with ID {}".format(ticket_arg))
             return ticket
         else:
             stmt = select(Ticket).where(Ticket.list_msgid == ticket_arg)
-            ticket = cast(Optional[Ticket], (await session.execute(stmt)).scalar())
+            ticket = (await session.execute(stmt)).scalar()
             if ticket is None:
                 raise InvocationError("Message ID {} is not referring to a ticket".format(ticket_arg))
             return ticket
     elif isinstance(ticket_arg, PartialMessage):
         stmt = select(Ticket).where(Ticket.list_msgid == ticket_arg.id)
-        ticket = cast(Optional[Ticket], (await session.execute(stmt)).scalar())
+        ticket = (await session.execute(stmt)).scalar()
         if ticket is None:
             raise InvocationError("Message ID {} is not referring to a ticket".format(ticket_arg.id))
         return ticket
     elif ref is not None:
         stmt = select(Ticket).where(Ticket.list_msgid == ref.message_id)
-        ticket = cast(Optional[Ticket], (await session.execute(stmt)).scalar())
+        ticket = (await session.execute(stmt)).scalar()
         if ticket is None:
             raise InvocationError("Message ID {} is not referring to a ticket".format(ref.message_id))
         return ticket

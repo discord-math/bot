@@ -16,6 +16,5 @@
 	"reportUnknownLambdaType": "error",
 	"reportMissingParameterType": "error",
 	"reportMissingTypeArgument": "error",
-	"reportUnnecessaryIsInstance": "warning",
-	"reportUnnecessaryCast": "warning"
+	"reportUnnecessaryIsInstance": "warning"
 }

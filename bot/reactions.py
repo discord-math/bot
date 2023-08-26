@@ -65,28 +65,28 @@ class ReactionMonitor(ContextManager['ReactionMonitor[T]'], Generic[T]):
         guild_id: Optional[int] = None, channel_id: Optional[int] = None, message_id: Optional[int] = None,
         author_id: Optional[int] = None, emoji: Optional[Union[PartialEmoji, Emoji, str, int]] = None,
         loop: Optional[asyncio.AbstractEventLoop] = None, timeout_each: Optional[float] = None,
-        timeout_total: Optional[float] = None): ...
+        timeout_total: Optional[float] = None) -> None: ...
     @overload
     def __init__(self: ReactionMonitor[RawReactionClearEvent], *, event: Literal["clear"],
         filter: Optional[Callable[[str, RawReactionClearEvent], bool]] = None,
         guild_id: Optional[int] = None, channel_id: Optional[int] = None, message_id: Optional[int] = None,
         author_id: Optional[int] = None, emoji: Optional[Union[PartialEmoji, Emoji, str, int]] = None,
         loop: Optional[asyncio.AbstractEventLoop] = None, timeout_each: Optional[float] = None,
-        timeout_total: Optional[float] = None): ...
+        timeout_total: Optional[float] = None) -> None: ...
     @overload
     def __init__(self: ReactionMonitor[RawReactionClearEmojiEvent], *, event: Literal["clear_emoji"],
         filter: Optional[Callable[[str, RawReactionClearEmojiEvent], bool]] = None,
         guild_id: Optional[int] = None, channel_id: Optional[int] = None, message_id: Optional[int] = None,
         author_id: Optional[int] = None, emoji: Optional[Union[PartialEmoji, Emoji, str, int]] = None,
         loop: Optional[asyncio.AbstractEventLoop] = None, timeout_each: Optional[float] = None,
-        timeout_total: Optional[float] = None): ...
+        timeout_total: Optional[float] = None) -> None: ...
     @overload
     def __init__(self: ReactionMonitor[ReactionEvent], *, event: None = None,
         filter: Optional[Callable[[str, ReactionEvent], bool]] = None,
         guild_id: Optional[int] = None, channel_id: Optional[int] = None, message_id: Optional[int] = None,
         author_id: Optional[int] = None, emoji: Optional[Union[PartialEmoji, Emoji, str, int]] = None,
         loop: Optional[asyncio.AbstractEventLoop] = None, timeout_each: Optional[float] = None,
-        timeout_total: Optional[float] = None): ...
+        timeout_total: Optional[float] = None) -> None: ...
     def __init__(self: ReactionMonitor[Any], *, event: Optional[str] = None,
         filter: Optional[Callable[[str, Any], bool]] = None,
         guild_id: Optional[int] = None, channel_id: Optional[int] = None, message_id: Optional[int] = None,
@@ -144,7 +144,7 @@ class ReactionMonitor(ContextManager['ReactionMonitor[T]'], Generic[T]):
             raise value
         return cast(Tuple[str, T], value)
 
-    async def __aiter__(self) -> AsyncIterator[Tuple[str, ReactionEvent]]:
+    async def __aiter__(self) -> AsyncIterator[Tuple[str, T]]:
         while True:
             try:
                 yield await self

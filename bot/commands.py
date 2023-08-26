@@ -4,7 +4,8 @@ Utilities for registering basic commands. Commands are triggered by a configurab
 
 import asyncio
 import logging
-from typing import Any, Callable, Coroutine, Optional, Protocol, Set, Type, TypeVar, cast, overload
+from typing import (Any, Callable, Coroutine, Optional, Protocol, Set, TYPE_CHECKING, Type, TypeVar, Union, cast,
+    overload)
 from typing_extensions import Concatenate, ParamSpec
 
 import discord
@@ -104,17 +105,25 @@ P = ParamSpec("P")
 BotT = TypeVar('BotT', bound=Bot, covariant=True)
 ContextT = TypeVar('ContextT', bound=Context)
 CogT = TypeVar("CogT", bound=Optional[Cog])
-FreeCommandT = TypeVar("FreeCommandT", bound=Command[None, Any, Any])
 CommandT = TypeVar("CommandT", bound=Command[Any, Any, Any])
 
+if TYPE_CHECKING:
+    class _CommandDecorator:
+        @overload
+        def __call__(self, func: Callable[Concatenate[CogT, ContextT, P], Coroutine[Any, Any, T]], /
+            ) -> Command[CogT, P, T]: ...
+        @overload
+        def __call__(self, func: Callable[Concatenate[ContextT, P], Coroutine[Any, Any, T]], /
+            ) -> Command[None, P, T]: ...
+        def __call__(self, func: Callable[..., Coroutine[Any, Any, Any]], /) -> Any: ...
+
 @overload
-def command(name: Optional[str] = None, cls: Type[FreeCommandT] = ..., *args: Any, **kwargs: Any) -> Callable[
-    [Callable[Concatenate[ContextT, P], Coroutine[Any, Any, Any]]], FreeCommandT]: ...
+def command(name: Optional[str], cls: Type[CommandT], **attrs: Any) -> Callable[
+    [Union[Callable[Concatenate[ContextT, P], Coroutine[Any, Any, Any]],
+        Callable[Concatenate[Any, ContextT, P], Coroutine[Any, Any, Any]]]], CommandT]: ...
 @overload
-def command(name: Optional[str] = None, cls: None = None, *args: Any, **kwargs: Any) -> Callable[
-    [Callable[Concatenate[ContextT, P], Coroutine[Any, Any, T]]], Command[None, P, T]]: ...
-def command(name: Optional[str] = None, cls: Any = Command, *args: Any, **kwargs: Any) -> Callable[
-    [Callable[Concatenate[discord.ext.commands.Context[Any], P], Coroutine[Any, Any, Any]]], Any]:
+def command(name: Optional[str] = ..., **attrs: Any,) -> _CommandDecorator: ...
+def command(name: Optional[str] = None, cls: Any = Command, *args: Any, **kwargs: Any) -> Any:
     def decorator(fun: Callable[Concatenate[ContextT, P], Coroutine[Any, Any, T]]
         ) -> Callable[Concatenate[ContextT, P], Coroutine[Any, Any, T]]:
         cmd: Command[None, P, T]
@@ -132,7 +141,8 @@ def command(name: Optional[str] = None, cls: Any = Command, *args: Any, **kwargs
     return decorator
 
 def group(name: Optional[str] = None, *args: Any, **kwargs: Any) -> Callable[
-    [Callable[Concatenate[ContextT, P], Coroutine[Any, Any, T]]], Group[None, P, T]]:
+    [Union[Callable[Concatenate[ContextT, P], Coroutine[Any, Any, Any]],
+        Callable[Concatenate[CogT, ContextT, P], Coroutine[Any, Any, Any]]]], Group[CogT, P, ContextT]]:
     return command(name, cls=Group, *args, **kwargs)
 
 def suppress_usage(cmd: T) -> T:
@@ -195,11 +205,11 @@ def init_cleanup(ctx: CleanupContext[BotT]) -> None:
             return msg
         ctx.send = send
 
-async def finalize_cleanup(ctx: ContextT) -> None:
+async def finalize_cleanup(ctx: object) -> None:
     if (ref := getattr(ctx, "cleanup", None)) is not None:
         await ref.finalize()
 
-def add_cleanup(ctx: ContextT, msg: Message) -> None:
+def add_cleanup(ctx: object, msg: Message) -> None:
     """Mark a message as "output" of a cleanup command."""
     if (ref := getattr(ctx, "cleanup", None)) is not None:
         ref.add(msg)
