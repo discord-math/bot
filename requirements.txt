@@ -1,5 +1,6 @@
 aiohttp
 aiohttp-session
 asyncpg
+datrie
 sqlalchemy
 typing_extensions

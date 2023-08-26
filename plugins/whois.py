@@ -456,12 +456,14 @@ class Whois(Cog):
         nickname_trie = InfixTrie()
 
         def fill_trie(members: List[Member]) -> None:
+            logger.debug("Starting to fill the trie")
             for member in members:
                 username_trie.insert(member.name + "#" + member.discriminator, member.id)
                 if member.global_name is not None:
                     displayname_trie.insert(member.global_name, member.id)
                 if member.nick is not None:
                     nickname_trie.insert(member.nick, member.id)
+            logger.debug("Done filling the trie")
 
         await asyncio.get_event_loop().run_in_executor(None, fill_trie, list(client.get_all_members()))
 
