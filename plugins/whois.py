@@ -1,20 +1,26 @@
 from __future__ import annotations
 
+import asyncio
+from collections import defaultdict
 from dataclasses import dataclass, field
 import enum
 from functools import total_ordering
 from heapq import heappop, heappush, heappushpop
 import logging
-from typing import Awaitable, Callable, Iterator, List, Literal, Optional, Sequence, Set, Tuple, Union
+import re
+import threading
+from typing import Awaitable, Callable, Collection, Dict, Iterator, List, Literal, Optional, Sequence, Set, Tuple, Union
 
+import datrie
 import discord
-from discord import Embed, Interaction, Member
+from discord import Embed, Interaction, Member, RawMemberRemoveEvent, User
 from discord.app_commands import Choice, default_permissions, guild_only
 from discord.utils import snowflake_time
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.client import client
+from bot.cogs import Cog, cog
 from bot.interactions import command
 import plugins.log
 import plugins.tickets
@@ -60,6 +66,72 @@ Recent = Tuple[int, str, NickOrUser, bool]
 def rank_server_status(m: Optional[Member]) -> ServerStatus:
     return len(m.roles) if m else -1
 
+class InfixTrie:
+    # Most common characters to appear in nicknames and usernames
+    common_chars = (" !\"$&'()*+,-./0123456789;<=>?ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\xa3"
+    "\xae\xb0\xb2\xc6\xd8\xe0\xe1\xe3\xe4\xe5\xe6\xe7\xe9\xea\xeb\xed\xef\xf1\xf3\xf6\xf8\xfc\u0110\u0130\u0131\u015f"
+    "\u026a\u0280\u02de\u0334\u0336\u0337\u035c\u0361\u0394\u03a3\u03b1\u03b5\u03b9\u03bb\u03bd\u03bf\u03c0\u03c1\u03c2"
+    "\u03c3\u03c4\u0410\u0430\u0431\u0432\u0433\u0434\u0435\u0436\u0438\u0439\u043a\u043b\u043c\u043d\u043e\u0440\u0441"
+    "\u0442\u0443\u0445\u0447\u044c\u044f\u0627\u0628\u062d\u062f\u0631\u0632\u0639\u0644\u0645\u0646\u0647\u0648\u064a"
+    "\u17b5\u1cbc\u1d00\u1d07\u1d0f\u1d1b\u1d1c\u1d43\u1d49\u2019\u2020\u2022\u2122\u2605\u2606\u2661\u2665\u2727\u2728"
+    "\u2764\u300e\u300f\u30a4\u30b8\u30b9\u30c4\u30c8\u30e9\u30ea\u30eb\u30f3\u30fb\u30fc\u4e00\u4eba\u5927\u7684\ua9c1"
+    "\ua9c2\uc774\U0001d404\U0001d41a\U0001d422\U0001d427\U0001d42b\U0001d452\U0001d4b6\U0001d4be\U0001d4c3\U0001d4ea"
+    "\U0001d4ee\U0001d4f1\U0001d4f2\U0001d4f5\U0001d4f7\U0001d4f8\U0001d4fb\U0001d556\U0001d586\U0001d588\U0001d58a"
+    "\U0001d58c\U0001d58d\U0001d58e\U0001d591\U0001d592\U0001d593\U0001d594\U0001d597\U0001d598\U0001d599\U0001d59a"
+    "\U0001f338\U0001f451\U0001f525\U0001f5a4\U0001f608\U0001f940\U0001f98b")
+    assert len(common_chars) == 254
+    uncommon_re = re.compile("[^" + re.escape(common_chars) + "]")
+
+    trie: datrie.Trie
+    uncommon: Dict[str, Set[int]]
+    lock: threading.Lock
+
+    def __init__(self):
+        self.trie = datrie.Trie("\x00" + self.common_chars)
+        self.uncommon = defaultdict(set)
+        self.lock = threading.Lock()
+
+    def common_key_iter(self, key: str):
+        common_key = re.sub(self.uncommon_re, "\x00", key)
+        for i in range(len(common_key)):
+            if common_key[i] != "\x00":
+                yield common_key[i:]
+
+
+    def insert(self, key: str, value: int) -> None:
+        with self.lock:
+            for ch in re.findall(self.uncommon_re, key):
+                self.uncommon[ch].add(value)
+            for trie_key in self.common_key_iter(key):
+                if (s := self.trie.get(trie_key)) is not None:
+                    s.add(value)
+                else:
+                    self.trie[trie_key] = {value}
+
+    def delete(self, key: str, value: int) -> None:
+        with self.lock:
+            for ch in re.findall(self.uncommon_re, key):
+                self.uncommon[ch].remove(value)
+            for trie_key in self.common_key_iter(key):
+                if (s := self.trie.get(trie_key)) is not None:
+                    s.remove(value)
+
+    def lookup(self, key: str) -> Set[int]:
+        """Returns ids that *might* match the key, but not necessarily do."""
+        results: Set[int] = set()
+        with self.lock:
+            for ch in re.findall(self.uncommon_re, key):
+                if (s := self.uncommon.get(ch)) is not None:
+                    results |= s
+            common_key = re.sub(self.uncommon_re, "\x00", key)
+            for s in self.trie.values(common_key):
+                results |= s
+        return results
+
+username_trie: InfixTrie = InfixTrie()
+displayname_trie: InfixTrie = InfixTrie()
+nickname_trie: InfixTrie = InfixTrie()
+
 def rank_member_match(text: str, m: Member) -> Optional[MatchRank]:
     text_l = text.lower()
     user_l = m.name.lower() + "#" + m.discriminator
@@ -101,7 +173,7 @@ class Candidate:
     match: Union[Member, Recent] = field(compare=False)
 
 async def select_candidates(limit: int, text: str, id_lookup: Callable[[int], Optional[Member]],
-    member_source: Callable[[], Sequence[Member]],
+    member_source: Callable[[], Collection[int]],
     recent_source: Callable[[str, NickOrUser, bool], Awaitable[Sequence[Recent]]]) -> Sequence[Candidate]:
 
     candidates: List[Candidate] = []
@@ -125,8 +197,8 @@ async def select_candidates(limit: int, text: str, id_lookup: Callable[[int], Op
 
     if len(candidates) < limit:
         logger.debug("candidates: Iterating members")
-        for m in member_source():
-            if (rank := rank_member_match(text, m)) is not None:
+        for id in member_source():
+            if (m := id_lookup(id)) is not None and (rank := rank_member_match(text, m)) is not None:
                 heapfill(rank, m)
 
     if len(candidates) < limit or candidates[0].rank[0] <= MatchType.EXACT_RECENT_USER:
@@ -185,7 +257,7 @@ async def whois_command(interaction: Interaction, user: str) -> None:
 
     async with plugins.log.sessionmaker() as session:
         lookup_id = guild.get_member
-        member_source = lambda: guild.members
+        member_source = lambda: username_trie.lookup(user) | displayname_trie.lookup(user) | nickname_trie.lookup(user)
         recent_source: Callable[[str, NickOrUser, bool], Awaitable[Sequence[Recent]]]
         recent_source = lambda text, nu, infix: match_recents(session, text, nu, infix)
 
@@ -361,7 +433,7 @@ async def whois_autocomplete(interaction: Interaction, input: str) -> List[Choic
     if not input: return []
     async with plugins.log.sessionmaker() as session:
         lookup_id = guild.get_member
-        member_source = lambda: guild.members
+        member_source = lambda: username_trie.lookup(input) | displayname_trie.lookup(input) | nickname_trie.lookup(input)
         recent_source: Callable[[str, NickOrUser, bool], Awaitable[Sequence[Recent]]]
         recent_source = lambda text, nu, infix: match_recents(session, text, nu, infix)
 
@@ -369,3 +441,56 @@ async def whois_autocomplete(interaction: Interaction, input: str) -> List[Choic
             for c in reversed(await select_candidates(25, input, lookup_id, member_source, recent_source))]
     logger.debug("End autocomplete")
     return results
+
+@cog
+class Whois(Cog):
+    """Maintain username cache"""
+    async def cog_load(self) -> None:
+        await self.on_ready()
+
+    @Cog.listener()
+    async def on_ready(self) -> None:
+        global username_trie, displayname_trie, nickname_trie
+        username_trie = InfixTrie()
+        displayname_trie = InfixTrie()
+        nickname_trie = InfixTrie()
+
+        def fill_trie(members: List[Member]) -> None:
+            for member in members:
+                username_trie.insert(member.name + "#" + member.discriminator, member.id)
+                if member.global_name is not None:
+                    displayname_trie.insert(member.global_name, member.id)
+                if member.nick is not None:
+                    nickname_trie.insert(member.nick, member.id)
+
+        await asyncio.get_event_loop().run_in_executor(None, fill_trie, list(client.get_all_members()))
+
+    @Cog.listener()
+    async def on_member_join(self, member: Member) -> None:
+        username_trie.insert(member.name + "#" + member.discriminator, member.id)
+        if member.global_name is not None:
+            displayname_trie.insert(member.global_name, member.id)
+        if member.nick is not None:
+            nickname_trie.insert(member.nick, member.id)
+
+    @Cog.listener()
+    async def on_raw_member_remove(self, payload: RawMemberRemoveEvent) -> None:
+        username_trie.delete(payload.user.name + "#" + payload.user.discriminator, payload.user.id)
+        if payload.user.global_name is not None:
+            displayname_trie.delete(payload.user.global_name, payload.user.id)
+        if isinstance(payload.user, Member) and payload.user.nick is not None:
+            nickname_trie.delete(payload.user.nick, payload.user.id)
+
+    @Cog.listener()
+    async def on_member_update(self, before: Member, after: Member) -> None:
+        if before.nick != after.nick:
+            if before.nick is not None:
+                nickname_trie.delete(before.nick, before.id)
+            if after.nick is not None:
+                nickname_trie.insert(after.nick, after.id)
+
+    @Cog.listener()
+    async def on_user_update(self, before: User, after: User) -> None:
+        if before.name != after.name or before.discriminator != after.discriminator:
+            username_trie.delete(before.name + "#" + before.discriminator, before.id)
+            username_trie.insert(after.name + "#" + after.discriminator, after.id)
