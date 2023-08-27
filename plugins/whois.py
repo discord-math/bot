@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from array import array
 from bisect import bisect_left
 import asyncio
 from collections import defaultdict
@@ -18,7 +17,7 @@ import datrie
 import discord
 from discord import Embed, Guild, Interaction, Member, RawMemberRemoveEvent, User
 from discord.app_commands import Choice, default_permissions, guild_only
-from discord.utils import SnowflakeList, snowflake_time
+from discord.utils import snowflake_time
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -89,7 +88,7 @@ class InfixTrie:
     uncommon_re = re.compile("[^" + re.escape(common_chars) + "]")
 
     tries: Dict[int, datrie.Trie[int]]
-    tries_more: Dict[int, datrie.Trie[array[int]]]
+    tries_more: Dict[int, datrie.Trie[List[int]]]
     uncommon: Dict[str, Dict[int, str]]
     lock: threading.Lock
 
@@ -118,9 +117,9 @@ class InfixTrie:
             for trie, trie_more, trie_key in self.common_key_iter(key):
                 if trie.setdefault(trie_key, value) != value:
                     if (l := trie_more.get(trie_key)) is not None:
-                        l.add(value)
+                        l.insert(bisect_left(l, value), value)
                     else:
-                        trie_more[trie_key] = SnowflakeList((value,), is_sorted=True)
+                        trie_more[trie_key] = [value]
 
     def delete(self, key: str, value: int) -> None:
         key = key.lower()
@@ -130,18 +129,18 @@ class InfixTrie:
             for trie, trie_more, trie_key in self.common_key_iter(key):
                 head = trie.get(trie_key)
                 if head == value:
-                    if a := trie_more.get(trie_key):
-                        trie[trie_key] = a.pop()
-                        if not a:
+                    if l := trie_more.get(trie_key):
+                        trie[trie_key] = l.pop()
+                        if not l:
                             del trie_more[trie_key]
                     else:
                         del trie[trie_key]
                 elif head != None:
-                    if (a := trie_more.get(trie_key)) is not None:
-                        i = bisect_left(a, value)
-                        if i < len(a) and a[i] == value:
-                            a.pop(i)
-                            if not a:
+                    if (l := trie_more.get(trie_key)) is not None:
+                        i = bisect_left(l, value)
+                        if i < len(l) and l[i] == value:
+                            l.pop(i)
+                            if not l:
                                 del trie_more[trie_key]
 
     def lookup(self, input: str) -> Iterator[InfixCandidate[int]]:
@@ -165,7 +164,7 @@ class InfixTrie:
 
             common_key = re.sub(self.uncommon_re, "\n", input)
 
-            def prefix_iter() -> Iterator[InfixCandidate[Union[int, SnowflakeList]]]:
+            def prefix_iter() -> Iterator[InfixCandidate[Union[int, List[int]]]]:
                 for key, values in itertools.chain(
                     self.tries[0].items(common_key), self.tries_more[0].items(common_key)):
                     if key == input:
@@ -173,13 +172,13 @@ class InfixTrie:
                     else:
                         yield InfixCandidate((InfixType.PREFIX, len(key) - len(input)), values)
 
-            def infix_iter(i: int) -> Iterator[InfixCandidate[Union[int, SnowflakeList]]]:
+            def infix_iter(i: int) -> Iterator[InfixCandidate[Union[int, List[int]]]]:
                 for key, values in itertools.chain(
                     self.tries[i].items(common_key), self.tries_more[i].items(common_key)):
                     yield InfixCandidate((InfixType.INFIX, i + len(key) - len(input)), values)
 
-            def prefix_iter_sorted(i: int) -> Iterator[InfixCandidate[Union[int, SnowflakeList]]]:
-                yield InfixCandidate((InfixType.INFIX, i), SnowflakeList((), is_sorted=True))
+            def prefix_iter_sorted(i: int) -> Iterator[InfixCandidate[Union[int, List[int]]]]:
+                yield InfixCandidate((InfixType.INFIX, i), [])
                 yield from sorted(infix_iter(i))
 
             for candidate in heapq.merge(sorted(uncommon_iter()), sorted(prefix_iter()),
