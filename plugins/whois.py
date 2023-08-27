@@ -64,7 +64,7 @@ class IdTrie:
         self.trie.pop(str(value), None)
 
     def lookup(self, input: str) -> Iterable[InfixCandidate[int]]:
-        return sorted(InfixCandidate((InfixType.EXACT,) if key == str(value) else
+        return sorted(InfixCandidate((InfixType.EXACT,) if input == str(value) else
             (InfixType.PREFIX, len(key) - len(input)), value)
             for key, value in self.trie.items(input))
 
@@ -87,19 +87,25 @@ class InfixTrie:
     uncommon_re = re.compile("[^" + re.escape(common_chars) + "]")
 
     tries: Dict[int, datrie.Trie]
+    tries_more: Dict[int, datrie.Trie]
     uncommon: Dict[str, Dict[int, str]]
     lock: threading.Lock
 
+    @classmethod
+    def make_trie(cls) -> datrie.Trie: # type: ignore
+        return datrie.Trie("\n" + cls.common_chars)
+
     def __init__(self):
-        self.tries = defaultdict(lambda: datrie.Trie("\n" + self.common_chars)) # type: ignore
+        self.tries = defaultdict(self.make_trie)
+        self.tries_more = defaultdict(self.make_trie)
         self.uncommon = defaultdict(dict)
         self.lock = threading.Lock()
 
-    def common_key_iter(self, key: str) -> Iterator[Tuple[datrie.Trie, str]]: # type: ignore
+    def common_key_iter(self, key: str) -> Iterator[Tuple[datrie.Trie, datrie.Trie, str]]: # type: ignore
         common_key = re.sub(self.uncommon_re, "\n", key)
         for i in range(len(common_key)):
             if common_key[i] != "\n":
-                yield self.tries[i], common_key[i:]
+                yield self.tries[i], self.tries_more[i], common_key[i:]
 
 
     def insert(self, key: str, value: int) -> None:
@@ -107,20 +113,32 @@ class InfixTrie:
         with self.lock:
             for ch in re.findall(self.uncommon_re, key):
                 self.uncommon[ch][value] = key
-            for trie, trie_key in self.common_key_iter(key):
-                if (s := trie.get(trie_key)) is not None:
-                    s.add(value)
-                else:
-                    trie[trie_key] = {value}
+            for trie, trie_more, trie_key in self.common_key_iter(key):
+                if trie.setdefault(trie_key, value) != value:
+                    if (s := trie_more.get(trie_key)) is not None:
+                        s.add(value)
+                    else:
+                        trie_more[trie_key] = {value}
 
     def delete(self, key: str, value: int) -> None:
         key = key.lower()
         with self.lock:
             for ch in re.findall(self.uncommon_re, key):
                 self.uncommon[ch].pop(value, None)
-            for trie, trie_key in self.common_key_iter(key):
-                if (s := trie.get(trie_key)) is not None:
-                    s.discard(value)
+            for trie, trie_more, trie_key in self.common_key_iter(key):
+                i = trie.get(trie_key)
+                if i == value:
+                    if s := trie_more.get(trie_key):
+                        trie[trie_key] = s.pop()
+                        if not s:
+                            del trie_more[trie_key]
+                    else:
+                        del trie[trie_key]
+                elif i != None:
+                    if (s := trie_more.get(trie_key)) is not None:
+                        s.discard(value)
+                        if not s:
+                            del trie_more[trie_key]
 
     def lookup(self, input: str) -> Iterator[InfixCandidate[int]]:
         """Returned value might not actually be a match"""
@@ -143,18 +161,20 @@ class InfixTrie:
 
             common_key = re.sub(self.uncommon_re, "\n", input)
 
-            def prefix_iter() -> Iterator[InfixCandidate[Set[int]]]:
-                for key, values in self.tries[0].items(common_key):
+            def prefix_iter() -> Iterator[InfixCandidate[Union[int, Set[int]]]]:
+                for key, values in itertools.chain(
+                    self.tries[0].items(common_key), self.tries_more[0].items(common_key)):
                     if key == input:
                         yield InfixCandidate((InfixType.EXACT,), values)
                     else:
                         yield InfixCandidate((InfixType.PREFIX, len(key) - len(input)), values)
 
-            def infix_iter(i: int) -> Iterator[InfixCandidate[Set[int]]]:
-                for key, values in self.tries[i].items(common_key):
+            def infix_iter(i: int) -> Iterator[InfixCandidate[Union[int, Set[int]]]]:
+                for key, values in itertools.chain(
+                    self.tries[i].items(common_key), self.tries_more[i].items(common_key)):
                     yield InfixCandidate((InfixType.INFIX, i + len(key) - len(input)), values)
 
-            def prefix_iter_sorted(i: int) -> Iterator[InfixCandidate[Set[int]]]:
+            def prefix_iter_sorted(i: int) -> Iterator[InfixCandidate[Union[int, Set[int]]]]:
                 yield InfixCandidate((InfixType.INFIX, i), set())
                 yield from sorted(infix_iter(i))
 
@@ -170,6 +190,11 @@ id_trie: IdTrie = IdTrie()
 username_trie: InfixTrie = InfixTrie()
 displayname_trie: InfixTrie = InfixTrie()
 nickname_trie: InfixTrie = InfixTrie()
+
+@plugins.finalizer
+def deallocate_tries() -> None:
+    global id_trie, username_trie, displayname_trie, nickname_trie
+    del id_trie, username_trie, displayname_trie, nickname_trie
 
 @total_ordering
 class MatchType(enum.Enum):
@@ -543,7 +568,7 @@ class Whois(Cog):
         displayname_trie = InfixTrie()
         nickname_trie = InfixTrie()
 
-        def fill_trie(event: threading.Event, members: List[Member]) -> None:
+        def fill_trie(event: threading.Event, id_trie: IdTrie, username_trie: InfixTrie, displayname_trie: InfixTrie, nickname_trie: InfixTrie, members: List[Member]) -> None:
             logger.debug("Starting to fill tries")
             i = 0
             for member in members:
@@ -561,7 +586,9 @@ class Whois(Cog):
                     logger.debug("Filling tries: {}".format(i))
             logger.debug("Done filling tries")
 
-        asyncio.get_event_loop().run_in_executor(None, fill_trie, filling_event, list(client.get_all_members()))
+        asyncio.get_event_loop().run_in_executor(None,
+            fill_trie, filling_event, id_trie, username_trie, displayname_trie, nickname_trie,
+            list(client.get_all_members()))
 
     @Cog.listener()
     async def on_member_join(self, member: Member) -> None:
