@@ -154,9 +154,12 @@ class InfixTrie:
                 for key, values in self.tries[i].items(common_key):
                     yield InfixCandidate((InfixType.INFIX, i + len(key) - len(input)), values)
 
+            def prefix_iter_sorted(i: int) -> Iterator[InfixCandidate[Set[int]]]:
+                yield InfixCandidate((InfixType.INFIX, i), set())
+                yield from sorted(infix_iter(i))
+
             for candidate in heapq.merge(sorted(uncommon_iter()), sorted(prefix_iter()),
-                *(itertools.chain((InfixCandidate((InfixType.INFIX, i), set()),), sorted(infix_iter(i)))
-                    for i in range(max(self.tries) + 1))):
+                *(prefix_iter_sorted(i) for i in range(1, max(self.tries) + 1))):
                 if isinstance(candidate.match, int):
                     yield candidate # type:ignore
                 else:
@@ -485,11 +488,11 @@ def format_match(rank: MatchRank, match: Union[Member, Recent], guild: Guild) ->
             server_status = rank_server_status(match)
         sstat = format_server_status(server_status)
         if match.nick is not None:
-            return "{} \uFF5C {}#{} \uFF5C {} \uFF5C ({}) [{}]".format(
-                match.id, match.name, match.discriminator, match.nick, sstat, mtype)
+            return "{} \uFF5C {}#{} \uFF5C {} \uFF5C {} \uFF5C ({}) [{}]".format(
+                match.id, match.name, match.discriminator, match.display_name, match.nick, sstat, mtype)
         else:
-            return "{} \uFF5C {}#{} \uFF5C ({}) [{}]".format(
-                match.id, match.name, match.discriminator, sstat, mtype)
+            return "{} \uFF5C {}#{} \uFF5C {} \uFF5C ({}) [{}]".format(
+                match.id, match.name, match.discriminator, match.display_name, sstat, mtype)
     else:
         id, aka, _, _ = match
         if (m := guild.get_member(id)) is not None:
@@ -532,13 +535,13 @@ class Whois(Cog):
     @Cog.listener()
     async def on_ready(self) -> None:
         global id_trie, username_trie, displayname_trie, nickname_trie, filling_event
+        filling_event.set()
+        filling_event = threading.Event()
+
         id_trie = IdTrie()
         username_trie = InfixTrie()
         displayname_trie = InfixTrie()
         nickname_trie = InfixTrie()
-
-        filling_event.set()
-        filling_event = threading.Event()
 
         def fill_trie(event: threading.Event, members: List[Member]) -> None:
             logger.debug("Starting to fill tries")
