@@ -986,8 +986,8 @@ class TimeoutTicket(Ticket):
     async def create_from_audit(session: AsyncSession, audit: AuditLogEntry) -> Sequence[Ticket]:
         assert isinstance(audit.target, (User, Member))
         assert audit.user is not None
-        old = audit.changes.before.timed_out_until
-        new = audit.changes.after.timed_out_until
+        old = getattr(audit.changes.before, "timed_out_until", None)
+        new = getattr(audit.changes.after, "timed_out_until", None)
         if new is not None and (old is None or old < new) and audit.reason != "Synchronization with ticket":
             ticket = TimeoutTicket(**await audit_ticket_data(session, audit, need_duration=False))
             if ticket.duration is None:
@@ -1002,8 +1002,8 @@ class TimeoutTicket(Ticket):
         assert isinstance(audit.target, (User, Member))
         assert audit.user is not None
         now = discord.utils.utcnow()
-        old = audit.changes.before.timed_out_until
-        new = audit.changes.after.timed_out_until
+        old = getattr(audit.changes.before, "timed_out_until", None)
+        new = getattr(audit.changes.after, "timed_out_until", None)
         if (old is not None and new is not None and old > now and old != new
             and audit.reason != "Synchronization with ticket"):
             stmt = select(TimeoutTicket).where(
@@ -1020,8 +1020,8 @@ class TimeoutTicket(Ticket):
     async def revert_from_audit(session: AsyncSession, audit: AuditLogEntry) -> Sequence[Ticket]:
         assert isinstance(audit.target, (User, Member))
         assert audit.user is not None
-        old = audit.changes.before.timed_out_until
-        new = audit.changes.after.timed_out_until
+        old = getattr(audit.changes.before, "timed_out_until", None)
+        new = getattr(audit.changes.after, "timed_out_until", None)
         if old is not None and new is None:
             stmt = select(TimeoutTicket).where(
                 AddRoleTicket.status.in_((TicketStatus.IN_EFFECT, TicketStatus.EXPIRE_FAILED)),
