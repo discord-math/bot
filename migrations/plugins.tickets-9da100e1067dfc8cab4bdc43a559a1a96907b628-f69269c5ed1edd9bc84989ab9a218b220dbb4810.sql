@@ -1,0 +1,1 @@
+ALTER TYPE tickets.TicketType ADD VALUE 'TIMEOUT';

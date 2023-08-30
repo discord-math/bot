@@ -14,8 +14,8 @@ from discord import (AllowedMentions, AuditLogAction, AuditLogEntry, ChannelType
     MessageReference, Object, PartialMessage, TextChannel, Thread, User, VoiceState)
 from discord.abc import Messageable
 import sqlalchemy
-from sqlalchemy import (TEXT, TIMESTAMP, BigInteger, Column, ForeignKey, Integer, MetaData, PrimaryKeyConstraint, Table,
-    func, select)
+from sqlalchemy import (TEXT, TIMESTAMP, BigInteger, Column, ForeignKey, Integer, MetaData,
+    PrimaryKeyConstraint, Table, func, select)
 from sqlalchemy.ext.asyncio import AsyncSession, async_object_session, async_sessionmaker
 import sqlalchemy.orm
 from sqlalchemy.orm import Mapped, joinedload, mapped_column, relationship
@@ -78,6 +78,7 @@ class TicketType(enum.Enum):
     VC_MUTE = "VC Mute"
     VC_DEAFEN = "VC Deafen"
     ADD_ROLE = "Role Added"
+    TIMEOUT = "Timeout"
 
 class TicketStatus(enum.Enum):
     """
@@ -278,7 +279,7 @@ class TicketMod:
                 duration, have_duration, ticket.comment = self.parse_duration_comment(msg.content)
                 duration, have_duration, message = ticket.duration_message(duration, have_duration)
                 if have_duration:
-                    ticket.duration = duration
+                    await ticket.set_duration(duration)
 
                 ticket.stage = TicketStage.COMMENTED
                 ticket.modified_by = self.modid
@@ -324,6 +325,8 @@ class Ticket:
 
     # Action triggering automatic ticket creation
     trigger_action: Optional[AuditLogAction] = None
+    # Action triggering automatic ticket update
+    update_trigger_action: Optional[AuditLogAction] = None
     # Action triggering automatic ticket reversal
     revert_trigger_action: Optional[AuditLogAction] = None
 
@@ -358,6 +361,9 @@ class Ticket:
             self.comment = comment
         else:
             self.comment += "\n" + comment
+
+    async def set_duration(self, duration: Optional[int]) -> None:
+        self.duration = duration
 
     def to_embed(self, *, dm: bool = False) -> Embed:
         """
@@ -490,6 +496,13 @@ class Ticket:
         return ()
 
     @staticmethod
+    async def update_from_audit(session: AsyncSession, audit: AuditLogEntry) -> Sequence[Ticket]:
+        """
+        If the audit log entry updates any tickets we have, return the list of such (updated) tickets.
+        """
+        return ()
+
+    @staticmethod
     async def revert_from_audit(session: AsyncSession, audit: AuditLogEntry) -> Sequence[Ticket]:
         """
         If the audit log entry represents any tickets we have, return the list of such tickets.
@@ -571,7 +584,7 @@ class TicketHistory:
     comment: Mapped[Optional[str]] = mapped_column(TEXT)
     list_msgid: Mapped[Optional[int]] = mapped_column(BigInteger)
     delivered_id: Mapped[Optional[int]] = mapped_column(BigInteger)
-    created_at: Mapped[datetime] = mapped_column(TIMESTAMP)
+    created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP)
     modified_by: Mapped[Optional[int]] = mapped_column(BigInteger)
     __table_args__ = (PrimaryKeyConstraint(id, version), {"schema": "tickets"})
 
@@ -585,6 +598,7 @@ class TicketHistory:
 
 # Map of audit actions to the associated handler methods.
 create_handlers: Dict[AuditLogAction, List[Callable[[AsyncSession, AuditLogEntry], Awaitable[Sequence[Ticket]]]]] = {}
+update_handlers: Dict[AuditLogAction, List[Callable[[AsyncSession, AuditLogEntry], Awaitable[Sequence[Ticket]]]]] = {}
 revert_handlers: Dict[AuditLogAction, List[Callable[[AsyncSession, AuditLogEntry], Awaitable[Sequence[Ticket]]]]] = {}
 
 T = TypeVar("T", bound=Ticket)
@@ -593,6 +607,8 @@ T = TypeVar("T", bound=Ticket)
 def register_action(cls: Type[T]) -> Type[T]:
     if (action := cls.trigger_action) is not None:
         create_handlers.setdefault(action, []).append(cls.create_from_audit)
+    if (action := cls.update_trigger_action) is not None:
+        update_handlers.setdefault(action, []).append(cls.update_from_audit)
     if (action := cls.revert_trigger_action) is not None:
         revert_handlers.setdefault(action, []).append(cls.revert_from_audit)
     return cls
@@ -632,8 +648,8 @@ class NoteTicket(Ticket):
 
 blame_re: re.Pattern[str] = re.compile(r"^[^:]* by (\d+): (.*)$", re.I)
 
-async def audit_ticket_data(session: AsyncSession, audit: AuditLogEntry, *, need_duration: bool = True
-    ) -> Dict[str, Any]:
+async def audit_ticket_data(session: AsyncSession, audit: AuditLogEntry, *,
+    need_duration: bool = True, can_have_duration: bool = True) -> Dict[str, Any]:
     assert isinstance(audit.target, (User, Member))
     assert audit.user is not None
     mod_id = audit.user.id
@@ -664,7 +680,7 @@ async def audit_ticket_data(session: AsyncSession, audit: AuditLogEntry, *, need
         "created_at": audit.created_at.replace(tzinfo=None),
         "comment": comment,
         "stage": stage,
-        "duration": duration if need_duration else None}
+        "duration": duration if can_have_duration else None}
 
 @registry.mapped
 @register_action
@@ -690,7 +706,7 @@ class KickTicket(Ticket):
 
     @staticmethod
     async def create_from_audit(session: AsyncSession, audit: AuditLogEntry) -> Sequence[Ticket]:
-        return (KickTicket(**await audit_ticket_data(session, audit, need_duration=False)),)
+        return (KickTicket(**await audit_ticket_data(session, audit, can_have_duration=False)),)
 
     async def hide(self, actorid: int, reason: Optional[str] = None) -> None:
         logger.debug("Hiding Ticket #{}".format(self.id))
@@ -928,6 +944,96 @@ class AddRoleTicket(Ticket):
             return
         await member.remove_roles(role, reason=reason)
 
+@registry.mapped
+@register_action
+class TimeoutTicket(Ticket):
+    __mapper_args__ = {"polymorphic_identity": TicketType.TIMEOUT, "polymorphic_load": "inline"}
+
+    if TYPE_CHECKING:
+        def __init__(self, *, mod: TicketMod, targetid: int, id: int = ..., stage: TicketStage = ...,
+            status: TicketStatus = ..., auditid: Optional[int] = ..., duration: Optional[int] = ...,
+            comment: Optional[str] = ..., list_msgid: Optional[int] = ..., delivered_id: Optional[int] = ...,
+            created_at: datetime = ..., modified_by: Optional[int] = ...) -> None: ...
+
+    can_revert = True
+
+    trigger_action = AuditLogAction.member_update
+    update_trigger_action = AuditLogAction.member_update
+    revert_trigger_action = AuditLogAction.member_update
+
+    colors = 0xBBFF55, 0x99FF00, 0x559900
+
+    def describe(self, *, mod: bool = True, target: bool = True, dm: bool = False) -> str:
+        return "{}**Timed out**{}".format(
+            format("{!m} ", self.modid) if mod else "", format(" {!m}", self.targetid) if target else "")
+
+    async def set_duration(self, duration: Optional[int]) -> None:
+        if duration is not None:
+            guild = client.get_guild(conf.guild)
+            assert guild
+            try:
+                member = await guild.fetch_member(self.targetid)
+                await member.edit(
+                    timed_out_until=min(
+                        self.created_at.replace(tzinfo=timezone.utc) + timedelta(seconds=duration),
+                        discord.utils.utcnow() + timedelta(days=28)),
+                    reason="Synchronization with ticket")
+                self.duration = duration
+            except (discord.NotFound, discord.Forbidden):
+                pass
+
+    @staticmethod
+    async def create_from_audit(session: AsyncSession, audit: AuditLogEntry) -> Sequence[Ticket]:
+        assert isinstance(audit.target, (User, Member))
+        assert audit.user is not None
+        old = audit.changes.before.timed_out_until
+        new = audit.changes.after.timed_out_until
+        if new is not None and (old is None or old < new) and audit.reason != "Synchronization with ticket":
+            ticket = TimeoutTicket(**await audit_ticket_data(session, audit, need_duration=False))
+            if ticket.duration is None:
+                ticket.duration = (audit.changes.after.timed_out_until - discord.utils.utcnow()).total_seconds()
+            else:
+                await ticket.set_duration(ticket.duration)
+            return (ticket,)
+        return ()
+
+    @staticmethod
+    async def update_from_audit(session: AsyncSession, audit: AuditLogEntry) -> Sequence[Ticket]:
+        assert isinstance(audit.target, (User, Member))
+        assert audit.user is not None
+        now = discord.utils.utcnow()
+        old = audit.changes.before.timed_out_until
+        new = audit.changes.after.timed_out_until
+        if (old is not None and new is not None and old > now and old != new
+            and audit.reason != "Synchronization with ticket"):
+            stmt = select(TimeoutTicket).where(
+                AddRoleTicket.status.in_((TicketStatus.IN_EFFECT, TicketStatus.EXPIRE_FAILED)),
+                AddRoleTicket.targetid == audit.target.id)
+            tickets = (await session.execute(stmt)).scalars().all()
+            for ticket in tickets:
+                ticket.duration = (audit.changes.after.timed_out_until
+                    - ticket.created_at.replace(tzinfo=timezone.utc)).total_seconds()
+            return tickets
+        return ()
+
+    @staticmethod
+    async def revert_from_audit(session: AsyncSession, audit: AuditLogEntry) -> Sequence[Ticket]:
+        assert isinstance(audit.target, (User, Member))
+        assert audit.user is not None
+        old = audit.changes.before.timed_out_until
+        new = audit.changes.after.timed_out_until
+        if old is not None and new is None:
+            stmt = select(TimeoutTicket).where(
+                AddRoleTicket.status.in_((TicketStatus.IN_EFFECT, TicketStatus.EXPIRE_FAILED)),
+                AddRoleTicket.targetid == audit.target.id)
+            return (await session.execute(stmt)).scalars().all()
+        else:
+            return ()
+
+    async def revert_action(self, reason: Optional[str] = None) -> None:
+        # Discord should lift the timeout on its own
+        pass
+
 @plugins.init
 async def init_db() -> None:
     await util.db.init(util.db.get_ddl(
@@ -1054,6 +1160,12 @@ async def poll_audit_log() -> None:
                                 session.add(ticket)
                                 logger.debug("Created {!r} from audit {}".format(ticket.describe(), entry.id))
                                 await session.commit() # to get ID
+                                await ticket.publish()
+                        for update_handler in update_handlers.get(entry.action, ()):
+                            for ticket in await update_handler(session, entry):
+                                if entry.user is not None:
+                                    ticket.modified_by = entry.user.id
+                                logger.debug("Updated Ticket #{} from audit {}".format(ticket.id, entry.id))
                                 await ticket.publish()
                         for revert_handler in revert_handlers.get(entry.action, ()):
                             for ticket in await revert_handler(session, entry):
@@ -1429,7 +1541,7 @@ class Tickets(Cog):
             duration, have_duration, comment = TicketMod.parse_duration_comment(duration_comment)
             duration, have_duration, message = tkt.duration_message(duration, have_duration)
             if have_duration:
-                tkt.duration = duration
+                await tkt.set_duration(duration)
             if comment:
                 tkt.comment = comment
             tkt.modified_by = ctx.author.id
@@ -1633,7 +1745,7 @@ class Tickets(Cog):
 
     @Cog.listener("on_member_update")
     async def process_member_update(self, before: Member, after: Member) -> None:
-        if before.roles != after.roles:
+        if before.roles != after.roles or before.timed_out_until != after.timed_out_until:
             audit_log_updated()
 
     @Cog.listener("on_message")
