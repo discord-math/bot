@@ -71,20 +71,8 @@ class IdTrie:
 
 class InfixTrie:
     # Most common characters to appear in nicknames and usernames
-    common_chars = (" !\"#$&'()*+,-./0123456789;<=>?[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~\xa1\xa3\xa5\xae\xb0\xb2\xbf"
-        "\xe0\xe1\xe2\xe3\xe4\xe5\xe6\xe7\xe8\xe9\xea\xeb\xed\xef\xf1\xf3\xf4\xf6\xf8\xfc\u010d\u0111\u0131\u0142\u015f"
-        "\u0161\u026a\u0274\u0280\u02de\u0307\u0334\u0336\u0337\u035c\u0361\u03b1\u03b4\u03b5\u03b6\u03b9\u03bb\u03bc"
-        "\u03bd\u03bf\u03c0\u03c1\u03c2\u03c3\u03c4\u03c9\u0430\u0431\u0432\u0433\u0434\u0435\u0436\u0437\u0438\u0439"
-        "\u043a\u043b\u043c\u043d\u043e\u043f\u0440\u0441\u0442\u0443\u0445\u0447\u044c\u044f\u0627\u0628\u062d\u062f"
-        "\u0631\u0632\u0639\u0644\u0645\u0646\u0647\u0648\u064a\u17b5\u1cbc\u1d00\u1d07\u1d0f\u1d1b\u1d1c\u1d43\u1d49"
-        "\u2019\u2020\u2022\u20ac\u2122\u2605\u2606\u2661\u2665\u26a1\u2713\u2727\u2728\u2764\u3002\u300e\u300f\u3093"
-        "\u30a2\u30a4\u30b8\u30b9\u30c4\u30c8\u30e9\u30ea\u30eb\u30f3\u30fb\u30fc\u4e00\u4eba\u5927\u5c0f\u6211\u7684"
-        "\ua9c1\ua9c2\uc774\uff41\U0001d404\U0001d41a\U0001d41e\U0001d422\U0001d427\U0001d42b\U0001d42c\U0001d452"
-        "\U0001d4b6\U0001d4be\U0001d4c3\U0001d4ea\U0001d4ee\U0001d4f1\U0001d4f2\U0001d4f5\U0001d4f7\U0001d4f8"
-        "\U0001d4fb\U0001d51e\U0001d556\U0001d586\U0001d588\U0001d58a\U0001d58c\U0001d58d\U0001d58e\U0001d591"
-        "\U0001d592\U0001d593\U0001d594\U0001d597\U0001d598\U0001d599\U0001d59a\U0001d68e\U0001f338\U0001f451"
-        "\U0001f480\U0001f525\U0001f5a4\U0001f608\U0001f940\U0001f98b")
-    assert len(common_chars) == 254
+    common_chars = (" #.0123456789_abcdefghijklmnopqrstuvwxyz")
+    assert len(common_chars) <= 254
     uncommon_re = re.compile("[^" + re.escape(common_chars) + "]")
 
     tries: Dict[int, datrie.Trie[List[int]]]
