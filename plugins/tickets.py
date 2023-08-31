@@ -7,14 +7,14 @@ import enum
 import logging
 import re
 from typing import (TYPE_CHECKING, Any, AsyncIterator, Awaitable, Callable, Dict, Iterable, Iterator, List, NamedTuple,
-    Optional, Protocol, Sequence, Set, Tuple, Type, TypeVar, Union, cast)
+    Optional, Protocol, Sequence, Set, Tuple, Type, TypeVar, TypedDict, Union, cast)
 
 import discord
 from discord import (AllowedMentions, AuditLogAction, AuditLogEntry, ChannelType, Embed, Member, Message,
     MessageReference, Object, PartialMessage, TextChannel, Thread, User, VoiceState)
 from discord.abc import Messageable
 import sqlalchemy
-from sqlalchemy import (TEXT, TIMESTAMP, BigInteger, Column, ForeignKey, Integer, MetaData,
+from sqlalchemy import (BOOLEAN, TEXT, TIMESTAMP, BigInteger, Column, ForeignKey, Integer, MetaData,
     PrimaryKeyConstraint, Table, func, select)
 from sqlalchemy.ext.asyncio import AsyncSession, async_object_session, async_sessionmaker
 import sqlalchemy.orm
@@ -25,7 +25,7 @@ from bot.client import client
 from bot.cogs import Cog, cog, command, group
 import bot.commands
 from bot.commands import Context, cleanup
-from bot.privileges import priv
+from bot.privileges import has_privilege, priv
 from bot.reactions import ReactionMonitor, get_input
 import plugins
 import plugins.persistence
@@ -311,6 +311,7 @@ class Ticket:
     auditid: Mapped[Optional[int]] = mapped_column(BigInteger)
     duration: Mapped[Optional[int]] = mapped_column(Integer)
     comment: Mapped[Optional[str]] = mapped_column(TEXT)
+    approved: Mapped[bool] = mapped_column(BOOLEAN, nullable=False)
     list_msgid: Mapped[Optional[int]] = mapped_column(BigInteger)
     delivered_id: Mapped[Optional[int]] = mapped_column(BigInteger)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False,
@@ -381,7 +382,7 @@ class Ticket:
             color = self.colors[0]
 
         embed = Embed(
-            title="Ticket #{}".format(self.id),
+            title="Ticket #{}{}".format(self.id, "" if self.approved else " (UNAPPROVED)"),
             description="{} ({})\n{}".format(self.describe(mod=False, dm=dm), self.status_line, self.comment or ""),
             timestamp=self.created_at, color=color)
         embed.add_field(name="Moderator", value=format("{!m}", self.modid))
@@ -582,6 +583,7 @@ class TicketHistory:
     auditid: Mapped[Optional[int]] = mapped_column(BigInteger)
     duration: Mapped[Optional[int]] = mapped_column(Integer)
     comment: Mapped[Optional[str]] = mapped_column(TEXT)
+    approved: Mapped[Optional[bool]] = mapped_column(BOOLEAN)
     list_msgid: Mapped[Optional[int]] = mapped_column(BigInteger)
     delivered_id: Mapped[Optional[int]] = mapped_column(BigInteger)
     created_at: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP)
@@ -619,10 +621,11 @@ class NoteTicket(Ticket):
     __mapper_args__ = {"polymorphic_identity": TicketType.NOTE}
 
     if TYPE_CHECKING:
-        def __init__(self, *, mod: TicketMod, targetid: int, id: int = ..., stage: TicketStage = ...,
-            status: TicketStatus = ..., auditid: Optional[int] = ..., duration: Optional[int] = ...,
-            comment: Optional[str] = ..., list_msgid: Optional[int] = ..., delivered_id: Optional[int] = ...,
-            created_at: datetime = ..., modified_by: Optional[int] = ...) -> None: ...
+        def __init__(self, *, mod: TicketMod, targetid: int, approved: bool, modid: int = ..., id: int = ...,
+            stage: TicketStage = ..., status: TicketStatus = ..., auditid: Optional[int] = ...,
+            duration: Optional[int] = ..., comment: Optional[str] = ..., list_msgid: Optional[int] = ...,
+            delivered_id: Optional[int] = ..., created_at: datetime = ..., modified_by: Optional[int] = ...
+            ) -> None: ...
 
     can_revert = True
 
@@ -648,8 +651,19 @@ class NoteTicket(Ticket):
 
 blame_re: re.Pattern[str] = re.compile(r"^[^:]* by (\d+): (.*)$", re.I)
 
+class AuditData(TypedDict):
+    mod: TicketMod
+    modid: int
+    targetid: int
+    auditid: int
+    created_at: datetime
+    comment: Optional[str]
+    stage: TicketStage
+    duration: Optional[int]
+    approved: bool
+
 async def audit_ticket_data(session: AsyncSession, audit: AuditLogEntry, *,
-    need_duration: bool = True, can_have_duration: bool = True) -> Dict[str, Any]:
+    need_duration: bool = True, can_have_duration: bool = True) -> AuditData:
     assert isinstance(audit.target, (User, Member))
     assert audit.user is not None
     mod_id = audit.user.id
@@ -680,7 +694,8 @@ async def audit_ticket_data(session: AsyncSession, audit: AuditLogEntry, *,
         "created_at": audit.created_at.replace(tzinfo=None),
         "comment": comment,
         "stage": stage,
-        "duration": duration if can_have_duration else None}
+        "duration": duration if can_have_duration else None,
+        "approved": has_privilege("mod", audit.user)}
 
 @registry.mapped
 @register_action
@@ -688,10 +703,11 @@ class KickTicket(Ticket):
     __mapper_args__ = {"polymorphic_identity": TicketType.KICK}
 
     if TYPE_CHECKING:
-        def __init__(self, *, mod: TicketMod, targetid: int, id: int = ..., stage: TicketStage = ...,
-            status: TicketStatus = ..., auditid: Optional[int] = ..., duration: Optional[int] = ...,
-            comment: Optional[str] = ..., list_msgid: Optional[int] = ..., delivered_id: Optional[int] = ...,
-            created_at: datetime = ..., modified_by: Optional[int] = ...) -> None: ...
+        def __init__(self, *, mod: TicketMod, targetid: int, approved: bool, modid: int = ..., id: int = ...,
+            stage: TicketStage = ..., status: TicketStatus = ..., auditid: Optional[int] = ...,
+            duration: Optional[int] = ..., comment: Optional[str] = ..., list_msgid: Optional[int] = ...,
+            delivered_id: Optional[int] = ..., created_at: datetime = ..., modified_by: Optional[int] = ...
+            ) -> None: ...
 
     can_revert = False
 
@@ -721,10 +737,11 @@ class BanTicket(Ticket):
     __mapper_args__ = {"polymorphic_identity": TicketType.BAN}
 
     if TYPE_CHECKING:
-        def __init__(self, *, mod: TicketMod, targetid: int, id: int = ..., stage: TicketStage = ...,
-            status: TicketStatus = ..., auditid: Optional[int] = ..., duration: Optional[int] = ...,
-            comment: Optional[str] = ..., list_msgid: Optional[int] = ..., delivered_id: Optional[int] = ...,
-            created_at: datetime = ..., modified_by: Optional[int] = ...) -> None: ...
+        def __init__(self, *, mod: TicketMod, targetid: int, approved: bool, modid: int = ..., id: int = ...,
+            stage: TicketStage = ..., status: TicketStatus = ..., auditid: Optional[int] = ...,
+            duration: Optional[int] = ..., comment: Optional[str] = ..., list_msgid: Optional[int] = ...,
+            delivered_id: Optional[int] = ..., created_at: datetime = ..., modified_by: Optional[int] = ...
+            ) -> None: ...
 
     can_revert = True
 
@@ -766,10 +783,11 @@ class VCMuteTicket(Ticket):
     __mapper_args__ = {"polymorphic_identity": TicketType.VC_MUTE}
 
     if TYPE_CHECKING:
-        def __init__(self, *, mod: TicketMod, targetid: int, id: int = ..., stage: TicketStage = ...,
-            status: TicketStatus = ..., auditid: Optional[int] = ..., duration: Optional[int] = ...,
-            comment: Optional[str] = ..., list_msgid: Optional[int] = ..., delivered_id: Optional[int] = ...,
-            created_at: datetime = ..., modified_by: Optional[int] = ...) -> None: ...
+        def __init__(self, *, mod: TicketMod, targetid: int, approved: bool, id: int = ..., modid: int = ...,
+            stage: TicketStage = ..., status: TicketStatus = ..., auditid: Optional[int] = ...,
+            duration: Optional[int] = ..., comment: Optional[str] = ..., list_msgid: Optional[int] = ...,
+            delivered_id: Optional[int] = ..., created_at: datetime = ..., modified_by: Optional[int] = ...
+            ) -> None: ...
 
     can_revert = True
 
@@ -826,10 +844,11 @@ class VCDeafenTicket(Ticket):
     __mapper_args__ = {"polymorphic_identity": TicketType.VC_DEAFEN}
 
     if TYPE_CHECKING:
-        def __init__(self, *, mod: TicketMod, targetid: int, id: int = ..., stage: TicketStage = ...,
-            status: TicketStatus = ..., auditid: Optional[int] = ..., duration: Optional[int] = ...,
-            comment: Optional[str] = ..., list_msgid: Optional[int] = ..., delivered_id: Optional[int] = ...,
-            created_at: datetime = ..., modified_by: Optional[int] = ...) -> None: ...
+        def __init__(self, *, mod: TicketMod, targetid: int, approved: bool, id: int = ..., modid: int = ...,
+            stage: TicketStage = ..., status: TicketStatus = ..., auditid: Optional[int] = ...,
+            duration: Optional[int] = ..., comment: Optional[str] = ..., list_msgid: Optional[int] = ...,
+            delivered_id: Optional[int] = ..., created_at: datetime = ..., modified_by: Optional[int] = ...
+            ) -> None: ...
 
     can_revert = True
 
@@ -887,10 +906,11 @@ class AddRoleTicket(Ticket):
     __mapper_args__ = {"polymorphic_identity": TicketType.ADD_ROLE, "polymorphic_load": "inline"}
 
     if TYPE_CHECKING:
-        def __init__(self, *, mod: TicketMod, targetid: int, roleid: int, id: int = ..., stage: TicketStage = ...,
-            status: TicketStatus = ..., auditid: Optional[int] = ..., duration: Optional[int] = ...,
-            comment: Optional[str] = ..., list_msgid: Optional[int] = ..., delivered_id: Optional[int] = ...,
-            created_at: datetime = ..., modified_by: Optional[int] = ...) -> None: ...
+        def __init__(self, *, mod: TicketMod, targetid: int, roleid: int, approved: bool, modid: int = ...,
+            id: int = ..., stage: TicketStage = ..., status: TicketStatus = ..., auditid: Optional[int] = ...,
+            duration: Optional[int] = ..., comment: Optional[str] = ..., list_msgid: Optional[int] = ...,
+            delivered_id: Optional[int] = ..., created_at: datetime = ..., modified_by: Optional[int] = ...
+            ) -> None: ...
 
     can_revert = True
 
@@ -950,10 +970,11 @@ class TimeoutTicket(Ticket):
     __mapper_args__ = {"polymorphic_identity": TicketType.TIMEOUT, "polymorphic_load": "inline"}
 
     if TYPE_CHECKING:
-        def __init__(self, *, mod: TicketMod, targetid: int, id: int = ..., stage: TicketStage = ...,
-            status: TicketStatus = ..., auditid: Optional[int] = ..., duration: Optional[int] = ...,
-            comment: Optional[str] = ..., list_msgid: Optional[int] = ..., delivered_id: Optional[int] = ...,
-            created_at: datetime = ..., modified_by: Optional[int] = ...) -> None: ...
+        def __init__(self, *, mod: TicketMod, targetid: int, approved: bool, modid: int = ..., id: int = ...,
+            stage: TicketStage = ..., status: TicketStatus = ..., auditid: Optional[int] = ...,
+            duration: Optional[int] = ..., comment: Optional[str] = ..., list_msgid: Optional[int] = ...,
+            delivered_id: Optional[int] = ..., created_at: datetime = ..., modified_by: Optional[int] = ...
+            ) -> None: ...
 
     can_revert = True
 
@@ -1063,6 +1084,8 @@ async def init_db() -> None:
                         ORDER BY version DESC LIMIT 1;
                     IF NOT FOUND THEN
                         INSERT INTO tickets.history
+                            ( version, last_modified_at, id, type, stage, status, modid, targetid, roleid, auditid
+                            , duration, comment, approved, list_msgid, delivered_id, created_at, modified_by )
                             VALUES
                                 ( 0
                                 , OLD.created_at
@@ -1076,6 +1099,7 @@ async def init_db() -> None:
                                 , OLD.auditid
                                 , OLD.duration
                                 , OLD.comment
+                                , OLD.approved
                                 , OLD.list_msgid
                                 , OLD.delivered_id
                                 , OLD.created_at
@@ -1084,6 +1108,8 @@ async def init_db() -> None:
                         last_version = 0;
                     END IF;
                     INSERT INTO tickets.history
+                        ( version, last_modified_at, id, type, stage, status, modid, targetid, roleid, auditid
+                        , duration, comment, approved, list_msgid, delivered_id, created_at, modified_by )
                         VALUES
                             ( last_version + 1
                             , CURRENT_TIMESTAMP AT TIME ZONE 'UTC'
@@ -1097,6 +1123,7 @@ async def init_db() -> None:
                             , NULLIF(NEW.auditid, OLD.auditid)
                             , NULLIF(NEW.duration, OLD.duration)
                             , NULLIF(NEW.comment, OLD.comment)
+                            , NULLIF(NEW.approved, OLD.approved)
                             , NULLIF(NEW.list_msgid, OLD.list_msgid)
                             , NULLIF(NEW.delivered_id, OLD.delivered_id)
                             , NULLIF(NEW.created_at, OLD.created_at)
@@ -1450,7 +1477,8 @@ class Tickets(Cog):
 
         if note is not None:
             async with sessionmaker() as session:
-                ticket = await create_note(session, note, modid=ctx.author.id, targetid=target.id)
+                ticket = await create_note(session, note, modid=ctx.author.id, targetid=target.id,
+                    approved=has_privilege("mod", ctx.author))
                 async with Ticket.publish_all(session):
                     await session.commit()
                 await session.commit()
@@ -1685,6 +1713,8 @@ class Tickets(Cog):
                     row.append("<t:{}:f>, <t:{}:R>".format(timestamp, timestamp))
                 if history.modified_by is not None:
                     row.append(format("by {!m}", history.modified_by))
+                if history.approved is not None:
+                    row.append("approved" if history.approved else "not approved")
                 if history.type is not None:
                     row.append(history.type.value)
                 if history.stage is not None:
@@ -1708,6 +1738,22 @@ class Tickets(Cog):
                     row.append("from audit {}".format(history.auditid))
                 items.append(PlainItem(", ".join(row) + "\n"))
             return await pager(ctx, [Page(content=content) for content, _ in chunk_messages(items)])
+
+    @ticket_command.command("approve")
+    async def ticket_approve(self, ctx: Context, ticket: Optional[Union[PartialMessage, int]]) -> None:
+        """Approve a ticket (if it was created by someone without full privileges)."""
+        async with sessionmaker() as session:
+            tkt = await resolve_ticket(ctx.message.reference, ticket, session)
+
+            if tkt.approved:
+                await ctx.send(embed=Embed(description="[#{}]({}): Is already approved!".format(tkt.id, tkt.jump_link)))
+                return
+
+            tkt.approved = True
+            await tkt.publish()
+            await session.commit()
+
+            await ctx.send(embed=Embed(description="[#{}]({}): Ticket approved.".format(tkt.id, tkt.jump_link)))
 
     @Cog.listener("on_member_ban")
     @Cog.listener("on_member_unban")
@@ -1787,7 +1833,7 @@ async def any_visible_tickets(session: AsyncSession, targetid: int) -> bool:
     stmt = select(func.count(Ticket.id)).where(Ticket.targetid == targetid, Ticket.status != TicketStatus.HIDDEN)
     return bool((await session.execute(stmt)).scalar())
 
-async def create_note(session: AsyncSession, note: str, *, modid: int, targetid: int) -> NoteTicket:
+async def create_note(session: AsyncSession, note: str, *, modid: int, targetid: int, approved: bool) -> NoteTicket:
     ticket = NoteTicket(
         mod=await TicketMod.get(session, modid),
         targetid=targetid,
@@ -1795,6 +1841,7 @@ async def create_note(session: AsyncSession, note: str, *, modid: int, targetid:
         modified_by=modid,
         stage=TicketStage.COMMENTED,
         status=TicketStatus.IN_EFFECT,
-        comment=note)
+        comment=note,
+        approved=approved)
     session.add(ticket)
     return ticket

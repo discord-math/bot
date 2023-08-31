@@ -88,7 +88,7 @@ async def do_create_automod_note(target_id: int, index: int) -> None:
         notes = await plugins.tickets.find_notes_prefix(session, "Automod:\n", modid=client.user.id, targetid=target_id)
         if len(notes) == 0:
             await plugins.tickets.create_note(session, serialize_note({index: 1}), modid=client.user.id,
-                targetid=target_id)
+                targetid=target_id, approved=False)
         else:
             data = parse_note(notes[-1].comment)
             data[index] = 1 + data.get(index, 0)
