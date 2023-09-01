@@ -134,7 +134,7 @@ async def autoload_remove(ctx: Context, plugin: PluginConverter) -> None:
 
 @cleanup
 @command("plugins")
-@priv("mod")
+@priv("minimod")
 async def plugins_command(ctx: Context) -> None:
     """List loaded plugins."""
     output = defaultdict(list)

@@ -36,7 +36,7 @@ def disambiguated_name(channel: discord.abc.GuildChannel) -> str:
     chans.sort(key=lambda chan: chan.id)
     return "{} ({})".format(channel.name, 1 + chans.index(channel))
 
-@priv("mod")
+@priv("minimod")
 @command("exportperms")
 async def exportperms(ctx: Context) -> None:
     """Export all role and channel permission settings into CSV."""

@@ -708,7 +708,7 @@ class ClopenCog(Cog):
                 return
             await unsolved(ctx.channel, format("by {!m}", ctx.author))
 
-    @priv("mod")
+    @priv("minimod")
     @command("clopen_sync")
     async def clopen_sync_command(self, ctx: Context) -> None:
         """Try and synchronize the state of clopen channels with Discord in case of errors or outages."""

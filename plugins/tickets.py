@@ -7,7 +7,7 @@ import enum
 import logging
 import re
 from typing import (TYPE_CHECKING, Any, AsyncIterator, Awaitable, Callable, Dict, Iterable, Iterator, List, NamedTuple,
-    Optional, Protocol, Sequence, Set, Tuple, Type, TypeVar, TypedDict, Union, cast)
+    Optional, Protocol, Sequence, Set, Tuple, Type, TypedDict, TypeVar, Union, cast)
 
 import discord
 from discord import (AllowedMentions, AuditLogAction, AuditLogEntry, ChannelType, Embed, Member, Message,
@@ -1486,7 +1486,7 @@ class Tickets(Cog):
                 description="[#{}]({}): Note created!".format(ticket.id, ticket.jump_link)))
 
     @group("ticket", aliases=["tickets"])
-    @priv("mod")
+    @priv("minimod")
     async def ticket_command(self, ctx: Context) -> None:
         """Manage tickets. A ticket can be specified by ID, by Discord message link, or by replying to it."""
         pass
@@ -1739,6 +1739,7 @@ class Tickets(Cog):
                 items.append(PlainItem(", ".join(row) + "\n"))
             return await pager(ctx, [Page(content=content) for content, _ in chunk_messages(items)])
 
+    @priv("mod")
     @ticket_command.command("approve")
     async def ticket_approve(self, ctx: Context, ticket: Optional[Union[PartialMessage, int]]) -> None:
         """Approve a ticket (if it was created by someone without full privileges)."""
