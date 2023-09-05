@@ -27,6 +27,7 @@ import bot.commands
 from bot.commands import Context, cleanup
 from bot.privileges import has_privilege, priv
 from bot.reactions import ReactionMonitor, get_input
+from bot.tasks import task
 import plugins
 import plugins.persistence
 import util.db
@@ -150,7 +151,7 @@ class TicketMod:
         """Update the prompt DM if there is one"""
         if ticket == await self.load_queue():
             await self.update_delivered_message(ticket)
-            delivery_updated()
+            delivery_task.run_coalesced(1)
 
     async def transfer(self, ticket: Ticket, modid: int, *, actorid: int) -> None:
         """
@@ -291,7 +292,7 @@ class TicketMod:
                     pass
 
                 await self.update_delivered_message(ticket)
-                delivery_updated()
+                delivery_task.run_coalesced(1)
 
         self.last_read_msgid = msg.id
 
@@ -406,7 +407,7 @@ class Ticket:
         logger.debug("Publishing Ticket #{}".format(self.id))
 
         # Reschedule or cancel ticket expiry if required
-        expiry_updated()
+        expiry_task.run_coalesced(1)
 
         # Post to or update the ticket list
         if conf.ticket_list:
@@ -1146,200 +1147,134 @@ async def init_db() -> None:
         """)))
 
 # ----------- Audit logs -----------
-audit_log_event = asyncio.Event()
-
-def audit_log_updated() -> None:
-    audit_log_event.set()
-
-async def poll_audit_log() -> None:
-    """
-    Whenever this task is woken up via audit_log_updated, it will read any new audit log events and process them.
-    """
+@task(name="Audit log task", every=600, exc_backoff_base=10)
+async def audit_log_task() -> None:
     await client.wait_until_ready()
     if not conf.guild or not (guild := client.get_guild(conf.guild)):
         logger.error("Guild not configured, or can't find the configured guild! Cannot read audit log.")
         return
 
     last = conf.last_auditid
-    while True:
-        try:
-            try:
-                await asyncio.wait_for(audit_log_event.wait(), timeout=600)
-                while True:
-                    audit_log_event.clear()
-                    await asyncio.wait_for(audit_log_event.wait(), timeout=conf.audit_log_precision)
-            except asyncio.TimeoutError:
-                pass
+    try:
+        logger.debug("Reading audit entries since {}".format(last))
+        # audit_logs(after) is currently broken so we read the entire audit
+        # log in reverse chronological order and reverse it
+        entries = []
+        async for entry in guild.audit_logs(limit=None if last else 1, oldest_first=False):
+            if last and entry.id <= last:
+                break
+            entries.append(entry)
+        async with sessionmaker() as session:
+            for entry in reversed(entries):
+                try:
+                    logger.debug("Processing audit entry {}".format(entry))
+                    last = entry.id
+                    for create_handler in create_handlers.get(entry.action, ()):
+                        for ticket in await create_handler(session, entry):
+                            session.add(ticket)
+                            logger.debug("Created {!r} from audit {}".format(ticket.describe(), entry.id))
+                            await session.commit() # to get ID
+                            await ticket.publish()
+                    for update_handler in update_handlers.get(entry.action, ()):
+                        for ticket in await update_handler(session, entry):
+                            if entry.user is not None:
+                                ticket.modified_by = entry.user.id
+                            logger.debug("Updated Ticket #{} from audit {}".format(ticket.id, entry.id))
+                            await ticket.publish()
+                    for revert_handler in revert_handlers.get(entry.action, ()):
+                        for ticket in await revert_handler(session, entry):
+                            ticket.status = TicketStatus.REVERTED
+                            if entry.user is not None:
+                                ticket.modified_by = entry.user.id
+                            logger.debug("Reverted Ticket #{} from audit {}".format(ticket.id, entry.id))
+                            await ticket.publish()
+                except asyncio.CancelledError:
+                    raise
+                except:
+                    logger.error("Processing audit entry {}".format(entry), exc_info=True)
+            await session.commit()
 
-            logger.debug("Reading audit entries since {}".format(last))
-            # audit_logs(after) is currently broken so we read the entire audit
-            # log in reverse chronological order and reverse it
-            entries = []
-            async for entry in guild.audit_logs(limit=None if last else 1, oldest_first=False):
-                if last and entry.id <= last:
-                    break
-                entries.append(entry)
-            async with sessionmaker() as session:
-                for entry in reversed(entries):
-                    try:
-                        logger.debug("Processing audit entry {}".format(entry))
-                        last = entry.id
-                        for create_handler in create_handlers.get(entry.action, ()):
-                            for ticket in await create_handler(session, entry):
-                                session.add(ticket)
-                                logger.debug("Created {!r} from audit {}".format(ticket.describe(), entry.id))
-                                await session.commit() # to get ID
-                                await ticket.publish()
-                        for update_handler in update_handlers.get(entry.action, ()):
-                            for ticket in await update_handler(session, entry):
-                                if entry.user is not None:
-                                    ticket.modified_by = entry.user.id
-                                logger.debug("Updated Ticket #{} from audit {}".format(ticket.id, entry.id))
-                                await ticket.publish()
-                        for revert_handler in revert_handlers.get(entry.action, ()):
-                            for ticket in await revert_handler(session, entry):
-                                ticket.status = TicketStatus.REVERTED
-                                if entry.user is not None:
-                                    ticket.modified_by = entry.user.id
-                                logger.debug("Reverted Ticket #{} from audit {}".format(ticket.id, entry.id))
-                                await ticket.publish()
-                    except asyncio.CancelledError:
-                        raise
-                    except:
-                        logger.error("Processing audit entry {}".format(entry), exc_info=True)
-                await session.commit()
-
-        except asyncio.CancelledError:
-            raise
-        except:
-            logger.error("Exception in audit log task", exc_info=True)
-            await asyncio.sleep(60)
-        finally:
-            conf.last_auditid = last
-            await conf
-
-audit_log_task: asyncio.Task[None]
+    finally:
+        conf.last_auditid = last
+        await conf
 
 # ----------- Ticket expiry system -----------
-expiration_event = asyncio.Event()
-
-def expiry_updated() -> None:
-    expiration_event.set()
-
-# TODO: scheduling module
-async def expire_tickets() -> None:
+@task(name="Ticket expiry task", every=86400, exc_backoff_base=60)
+async def expiry_task() -> None:
     await client.wait_until_ready()
 
-    while True:
-        try:
-            async with sessionmaker() as session:
-                min_expiry = None
-                now = datetime.utcnow()
-                stmt = select(Ticket).where(Ticket.status == TicketStatus.IN_EFFECT, Ticket.duration != None)
-                for ticket, in await session.execute(stmt):
-                    if (expiry := ticket.expiry) is None:
-                        continue
-                    if expiry <= now:
-                        try:
-                            await ticket.expire()
-                        except asyncio.CancelledError:
-                            raise
-                        except:
-                            logger.error("Exception when expiring Ticket #{}".format(ticket.id), exc_info=True)
-                    elif min_expiry is None or expiry < min_expiry:
-                        min_expiry = expiry
-                async with Ticket.publish_all(session):
-                    await session.commit()
+    async with sessionmaker() as session:
+        min_expiry = None
+        now = datetime.utcnow()
+        stmt = select(Ticket).where(Ticket.status == TicketStatus.IN_EFFECT, Ticket.duration != None)
+        for ticket, in await session.execute(stmt):
+            if (expiry := ticket.expiry) is None:
+                continue
+            if expiry <= now:
+                try:
+                    await ticket.expire()
+                except asyncio.CancelledError:
+                    raise
+                except:
+                    logger.error("Exception when expiring Ticket #{}".format(ticket.id), exc_info=True)
+            elif min_expiry is None or expiry < min_expiry:
+                min_expiry = expiry
+        async with Ticket.publish_all(session):
+            await session.commit()
 
-            delay = (min_expiry - datetime.utcnow()).total_seconds() if min_expiry is not None else 86400.0
-            logger.debug("Waiting for upcoming expiration in {} seconds".format(delay))
-            try:
-                await asyncio.wait_for(expiration_event.wait(), timeout=delay)
-                await asyncio.sleep(1)
-            except asyncio.TimeoutError:
-                pass
-            expiration_event.clear()
-        except asyncio.CancelledError:
-            raise
-        except:
-            logger.error("Exception in ticket expiry task", exc_info=True)
-            await asyncio.sleep(60)
-
-expiry_task: asyncio.Task[None]
+    if min_expiry is not None:
+        delay = (min_expiry - datetime.utcnow()).total_seconds()
+        logger.debug("Waiting for upcoming expiration in {} seconds".format(delay))
+        expiry_task.run_coalesced(delay)
 
 # ----------- Ticket delivery system  -----------
 queued_mods: Set[int] = set()
 
-delivery_event = asyncio.Event()
-
-def delivery_updated() -> None:
-    delivery_event.set()
-
-async def deliver_tickets() -> None:
+@task(name="Ticket delivery task", every=86400, exc_backoff_base=60)
+async def delivery_task() -> None:
     global queued_mods
     await client.wait_until_ready()
 
-    while True:
-        try:
-            async with sessionmaker() as session:
-                stmt = select(TicketMod).options(joinedload(TicketMod.queue_top)).where(TicketMod.queue_top != None)
-                mods = (await session.execute(stmt)).scalars().all()
+    async with sessionmaker() as session:
+        stmt = select(TicketMod).options(joinedload(TicketMod.queue_top)).where(TicketMod.queue_top != None)
+        mods = (await session.execute(stmt)).scalars().all()
 
-                queued_mods = set(mod.modid for mod in mods)
-                logger.debug("Listening for comments from {!r}".format(queued_mods))
+        queued_mods = set(mod.modid for mod in mods)
+        logger.debug("Listening for comments from {!r}".format(queued_mods))
 
-                min_delivery = None
-                now = datetime.utcnow()
-                for mod in mods:
-                    if (ticket := mod.queue_top) is None:
-                        continue
-                    if mod.scheduled_delivery is None or mod.scheduled_delivery <= now:
-                        try:
-                            related = await ticket.get_related(session)
-                            if ticket.stage == TicketStage.NEW:
-                                await mod.try_initial_delivery(ticket, related)
-                            else:
-                                await mod.try_redelivery(ticket, related)
-                        except asyncio.CancelledError:
-                            raise
-                        except:
-                            logger.error(format("Exception when delivering a ticket to {!m}", mod.modid),
-                                exc_info=True)
-                    if mod.scheduled_delivery is not None:
-                        if min_delivery is None or mod.scheduled_delivery < min_delivery:
-                            min_delivery = mod.scheduled_delivery
-                # Can't have any publishable changes
-                await session.commit()
+        min_delivery = None
+        now = datetime.utcnow()
+        for mod in mods:
+            if (ticket := mod.queue_top) is None:
+                continue
+            if mod.scheduled_delivery is None or mod.scheduled_delivery <= now:
+                try:
+                    related = await ticket.get_related(session)
+                    if ticket.stage == TicketStage.NEW:
+                        await mod.try_initial_delivery(ticket, related)
+                    else:
+                        await mod.try_redelivery(ticket, related)
+                except asyncio.CancelledError:
+                    raise
+                except:
+                    logger.error(format("Exception when delivering a ticket to {!m}", mod.modid),
+                        exc_info=True)
+            if mod.scheduled_delivery is not None:
+                if min_delivery is None or mod.scheduled_delivery < min_delivery:
+                    min_delivery = mod.scheduled_delivery
+        # Can't have any publishable changes
+        await session.commit()
 
-            delay = (min_delivery - datetime.utcnow()).total_seconds() if min_delivery is not None else 86400.0
-            logger.debug("Waiting for upcoming delivery in {} seconds".format(delay))
-            try:
-                await asyncio.wait_for(delivery_event.wait(), timeout=delay)
-                await asyncio.sleep(1)
-            except asyncio.TimeoutError:
-                pass
-            delivery_event.clear()
-        except asyncio.CancelledError:
-            raise
-        except:
-            logger.error("Exception in ticket delivery task", exc_info=True)
-            await asyncio.sleep(60)
-
-delivery_task: asyncio.Task[None]
+    if min_delivery is not None:
+        delay = (min_delivery - datetime.utcnow()).total_seconds()
+        logger.debug("Waiting for upcoming delivery in {} seconds".format(delay))
+        delivery_task.run_coalesced(delay)
 
 @plugins.init
 async def init_tasks() -> None:
-    global audit_log_task, expiry_task, delivery_task
-    audit_log_task = asyncio.create_task(poll_audit_log())
-    plugins.finalizer(audit_log_task.cancel)
-    expiry_task = asyncio.create_task(expire_tickets())
-    plugins.finalizer(expiry_task.cancel)
-    delivery_task = asyncio.create_task(deliver_tickets())
-    plugins.finalizer(delivery_task.cancel)
-    audit_log_updated()
-    expiry_updated()
-    delivery_updated()
-
+    audit_log_task.run_coalesced(conf.audit_log_precision)
+    expiry_task.run_coalesced(1)
+    delivery_task.run_coalesced(1)
 
 # ------------ Commands ------------
 
@@ -1581,7 +1516,7 @@ class Tickets(Cog):
                     mod.scheduled_delivery = None
                 else:
                     tkt.stage = TicketStage.COMMENTED
-                delivery_updated()
+                delivery_task.run_coalesced(1)
 
             await tkt.publish()
             await session.commit()
@@ -1759,13 +1694,13 @@ class Tickets(Cog):
     @Cog.listener("on_member_unban")
     @Cog.listener("on_member_remove")
     async def on_member_remove(self, *args: Any) -> None:
-        audit_log_updated()
+        audit_log_task.run_coalesced(conf.audit_log_precision)
 
 
     @Cog.listener("on_voice_state_update")
     async def process_voice_state(self, member: Member, before: VoiceState, after: VoiceState) -> None:
         if before.deaf != after.deaf or before.mute != after.mute:
-            audit_log_updated()
+            audit_log_task.run_coalesced(conf.audit_log_precision)
         if after.channel is not None:
             async with voice_lock:
                 if member.id in conf.pending_unmutes:
@@ -1792,7 +1727,7 @@ class Tickets(Cog):
     @Cog.listener("on_member_update")
     async def process_member_update(self, before: Member, after: Member) -> None:
         if before.roles != after.roles or before.timed_out_until != after.timed_out_until:
-            audit_log_updated()
+            audit_log_task.run_coalesced(conf.audit_log_precision)
 
     @Cog.listener("on_message")
     async def moderator_message(self, msg: Message) -> None:

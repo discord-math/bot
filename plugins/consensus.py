@@ -1,4 +1,3 @@
-import asyncio
 from datetime import datetime, timedelta
 import enum
 import logging
@@ -22,6 +21,7 @@ from bot.cogs import Cog, cog, command
 from bot.commands import Context, cleanup
 from bot.locations import location
 from bot.privileges import priv
+from bot.tasks import task
 import plugins
 import util.db
 from util.discord import DurationConverter, PlainItem, UserError, chunk_messages, format, retry
@@ -101,57 +101,40 @@ class Vote:
         def __init__(self, *, poll_id: int, voter_id: int, vote: VoteType, after_concern: Optional[int], comment: str
             ) -> None: ...
 
-timeout_event = asyncio.Event()
-
-def timeouts_updated() -> None:
-    timeout_event.set()
-
-async def handle_timeouts() -> None:
+@task(name="Poll timeout task", every=86400)
+async def timeout_task() -> None:
     await client.wait_until_ready()
 
-    while True:
+    async with sessionmaker() as session:
+        stmt = select(Poll).where(Poll.timeout_notified == False)
+        polls = (await session.execute(stmt)).scalars().all()
+
+        min_timeout = None
+        now = datetime.utcnow()
         try:
-            async with sessionmaker() as session:
-                stmt = select(Poll).where(Poll.timeout_notified == False)
-                polls = (await session.execute(stmt)).scalars().all()
+            for poll in polls:
+                if poll.timeout <= now:
+                    if (msg := await poll.get_votes_message()) is None:
+                        await session.delete(poll)
+                    else:
+                        try:
+                            reference = msg
+                            channel = msg.channel
+                            await retry(lambda: channel.send(format("Poll timed out {!m}", poll.author_id),
+                                allowed_mentions=user_mentions, reference=reference), attempts=10)
+                        except discord.HTTPException:
+                            pass
+                    poll.timeout_notified = True
+                else:
+                    if min_timeout is None or poll.timeout < min_timeout:
+                        min_timeout = poll.timeout
+        finally:
+            await session.commit()
 
-                min_timeout = None
-                now = datetime.utcnow()
-                try:
-                    for poll in polls:
-                        if poll.timeout <= now:
-                            if (msg := await poll.get_votes_message()) is None:
-                                await session.delete(poll)
-                            else:
-                                try:
-                                    reference = msg
-                                    channel = msg.channel
-                                    await retry(lambda: channel.send(format("Poll timed out {!m}", poll.author_id),
-                                        allowed_mentions=user_mentions, reference=reference), attempts=10)
-                                except discord.HTTPException:
-                                    pass
-                            poll.timeout_notified = True
-                        else:
-                            if min_timeout is None or poll.timeout < min_timeout:
-                                min_timeout = poll.timeout
-                finally:
-                    await session.commit()
-
-            delay = (min_timeout - datetime.utcnow()).total_seconds() if min_timeout is not None else 86400.0
-            logger.debug("Waiting for upcoming timeout in {} seconds".format(delay))
-            try:
-                await asyncio.wait_for(timeout_event.wait(), timeout=delay)
-                await asyncio.sleep(1)
-            except asyncio.TimeoutError:
-                pass
-            timeout_event.clear()
-        except asyncio.CancelledError:
-            raise
-        except:
-            logger.error("Exception in poll timeout task", exc_info=True)
-            await asyncio.sleep(60)
-
-timeout_task: asyncio.Task[None]
+    if min_timeout is not None:
+        delay = (min_timeout - datetime.utcnow()).total_seconds()
+        timeout_task.run_coalesced(delay)
+        logger.debug("Waiting for upcoming timeout in {} seconds".format(delay))
 
 @plugins.init
 async def init() -> None:
@@ -159,8 +142,7 @@ async def init() -> None:
     await util.db.init(util.db.get_ddl(
         CreateSchema("consensus"),
         registry.metadata.create_all))
-    timeout_task = asyncio.create_task(handle_timeouts())
-    plugins.finalizer(timeout_task.cancel)
+    timeout_task.run_coalesced(0)
 
 class PollView(View):
     def __init__(self, poll_id: int) -> None:
@@ -285,7 +267,7 @@ async def raise_concern(interaction: Interaction, poll_id: int, comment: str) ->
             await retry(lambda: msg.channel.send(" ".join(format("{!m}", vote.voter_id) for vote in votes),
                 allowed_mentions=user_mentions, reference=msg))
         await interaction.response.send_message("Concern added.", ephemeral=True, delete_after=60)
-        timeouts_updated()
+        timeout_task.run_coalesced(1)
 
 async def retract_concern(interaction: Interaction, poll_id: int, id: int) -> None:
     async with sessionmaker() as session:
@@ -489,7 +471,7 @@ class ConsensusCog(Cog):
                 thread_id=thread_id, author_id=ctx.author.id, comment=comment, duration=int(duration.total_seconds()),
                 timeout=datetime.utcnow() + duration, timeout_notified=False))
             await session.commit()
-            timeouts_updated()
+            timeout_task.run_coalesced(1)
 
     @cleanup
     @command("polls")

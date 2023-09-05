@@ -25,6 +25,7 @@ from sqlalchemy.schema import DDL, CreateSchema
 from bot.client import client
 from bot.cogs import Cog, cog
 import bot.message_tracker
+from bot.tasks import task
 import plugins
 import util.db
 import util.db.kv
@@ -36,7 +37,6 @@ class LoggerConf(Protocol):
     temp_channel: int
     perm_channel: int
     keep: int
-    interval: int
     file_path: str
 
 conf: LoggerConf
@@ -156,42 +156,34 @@ async def register_messages(msgs: Iterable[Message]) -> None:
                 except FileNotFoundError:
                     pass
 
+@task(name="Log cleanup task", every=3600)
 async def clean_old_messages() -> None:
-    while True:
-        try:
-            await asyncio.sleep(conf.interval)
-            cutoff_time = datetime.utcnow() - timedelta(seconds=conf.keep)
-            cutoff = time_snowflake(cutoff_time)
-            async with sessionmaker() as session:
-                stmt = (delete(SavedFile)
-                    .where(SavedFile.id < cutoff)
-                    .returning(SavedFile.local_filename))
-                for filepath in (await session.execute(stmt)).scalars():
-                    if filepath is not None:
-                        try:
-                            os.unlink(filepath)
-                        except FileNotFoundError:
-                            pass
+    cutoff_time = datetime.utcnow() - timedelta(seconds=conf.keep)
+    cutoff = time_snowflake(cutoff_time)
+    async with sessionmaker() as session:
+        stmt = (delete(SavedFile)
+            .where(SavedFile.id < cutoff)
+            .returning(SavedFile.local_filename))
+        for filepath in (await session.execute(stmt)).scalars():
+            if filepath is not None:
+                try:
+                    os.unlink(filepath)
+                except FileNotFoundError:
+                    pass
 
-                stmt = delete(SavedMessage).where(SavedMessage.id < cutoff)
-                await session.execute(stmt)
+        stmt = delete(SavedMessage).where(SavedMessage.id < cutoff)
+        await session.execute(stmt)
 
-                stmt = delete(SavedUser).where(SavedUser.unset_at < cutoff_time)
-                await session.execute(stmt)
+        stmt = delete(SavedUser).where(SavedUser.unset_at < cutoff_time)
+        await session.execute(stmt)
 
-                stmt = delete(SavedNick).where(SavedNick.unset_at < cutoff_time)
-                await session.execute(stmt)
+        stmt = delete(SavedNick).where(SavedNick.unset_at < cutoff_time)
+        await session.execute(stmt)
 
-                await session.commit()
+        await session.commit()
 
-            if isinstance(channel := client.get_channel(conf.temp_channel), TextChannel):
-                await channel.purge(before=Object(cutoff), limit=None)
-        except asyncio.CancelledError:
-            raise
-        except:
-            logger.error("Exception in cleanup task", exc_info=True)
-
-cleanup_task: asyncio.Task[None]
+    if isinstance(channel := client.get_channel(conf.temp_channel), TextChannel):
+        await channel.purge(before=Object(cutoff), limit=None)
 
 @plugins.init
 async def init() -> None:
@@ -207,8 +199,6 @@ async def init() -> None:
     async def unsubscribe() -> None:
         await bot.message_tracker.unsubscribe(__name__, None)
     plugins.finalizer(unsubscribe)
-    cleanup_task = asyncio.create_task(clean_old_messages())
-    plugins.finalizer(cleanup_task.cancel)
 
 def format_word_diff(old: str, new: str) -> Iterator[PlainItem]:
     for tag, i1, i2, j1, j2 in SequenceMatcher(None, old, new).get_opcodes():

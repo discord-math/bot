@@ -20,6 +20,7 @@ import bot.commands
 from bot.commands import Context
 import bot.message_tracker
 from bot.privileges import PrivCheck, has_privilege, priv
+from bot.tasks import task
 import plugins
 import util.db.kv
 from util.discord import PlainItem, Typing, chunk_messages, format
@@ -106,66 +107,50 @@ logger = logging.getLogger(__name__)
 
 channel_locks: Dict[int, asyncio.Lock] = defaultdict(asyncio.Lock)
 
-scheduler_event = asyncio.Event()
-scheduler_event.set()
-
-def scheduler_updated() -> None:
-    scheduler_event.set()
-
-async def scheduler() -> None:
+@task(name="Clopen scheduler task", exc_backoff_base=10)
+async def scheduler_task() -> None:
     await client.wait_until_ready()
-    while True:
-        try:
-            if sum(conf[id, "state"] == "available" for id in conf.channels) < conf.min_avail:
-                for id in conf.channels:
-                    if conf[id, "state"] == "hidden":
+
+    if sum(conf[id, "state"] == "available" for id in conf.channels) < conf.min_avail:
+        for id in conf.channels:
+            if conf[id, "state"] == "hidden":
+                await make_available(id)
+                break
+        else:
+            if (new_id := await create_channel()) is not None:
+                await make_available(new_id)
+
+    min_next = None
+    for id in conf.channels:
+        async with channel_locks[id]:
+            expiry = conf[id, "expiry"]
+            if conf[id, "state"] == "used" and expiry is not None:
+                if expiry < time():
+                    await make_pending(id)
+                elif min_next is None or expiry < min_next:
+                    min_next = expiry
+            elif conf[id, "state"] == "pending" and expiry is not None:
+                if expiry < time():
+                    await close(id, "Closed due to timeout")
+                elif min_next is None or expiry < min_next:
+                    min_next = expiry
+            elif conf[id, "state"] in ["closed", None]:
+                if expiry is None or expiry < time():
+                    if sum(conf[id, "state"] == "available" for id in conf.channels) >= conf.max_avail:
+                        await make_hidden(id)
+                    else:
                         await make_available(id)
-                        break
-                else:
-                    if (new_id := await create_channel()) is not None:
-                        await make_available(new_id)
+                elif min_next is None or expiry < min_next:
+                    min_next = expiry
 
-            min_next = None
-            for id in conf.channels:
-                async with channel_locks[id]:
-                    expiry = conf[id, "expiry"]
-                    if conf[id, "state"] == "used" and expiry is not None:
-                        if expiry < time():
-                            await make_pending(id)
-                        elif min_next is None or expiry < min_next:
-                            min_next = expiry
-                    elif conf[id, "state"] == "pending" and expiry is not None:
-                        if expiry < time():
-                            await close(id, "Closed due to timeout")
-                        elif min_next is None or expiry < min_next:
-                            min_next = expiry
-                    elif conf[id, "state"] in ["closed", None]:
-                        if expiry is None or expiry < time():
-                            if sum(conf[id, "state"] == "available" for id in conf.channels) >= conf.max_avail:
-                                await make_hidden(id)
-                            else:
-                                await make_available(id)
-                        elif min_next is None or expiry < min_next:
-                            min_next = expiry
-            try:
-                await asyncio.wait_for(scheduler_event.wait(), min_next - time() if min_next is not None else None)
-            except asyncio.TimeoutError:
-                pass
-            scheduler_event.clear()
-        except asyncio.CancelledError:
-            raise
-        except:
-            logger.error("Exception in scheduler", exc_info=True)
-            await asyncio.sleep(300)
-
-scheduler_task: asyncio.Task[None]
+    if min_next is not None:
+        scheduler_task.run_coalesced(min_next - time())
 
 @plugins.init
 async def init() -> None:
     global conf, scheduler_task
     conf = cast(ClopenConf, await util.db.kv.load(__name__))
-    scheduler_task = asyncio.create_task(scheduler())
-    plugins.finalizer(scheduler_task.cancel)
+    scheduler_task.run_coalesced(0)
 
     await bot.message_tracker.subscribe(__name__, None, process_messages, missing=True, retroactive=False)
     async def unsubscribe() -> None:
@@ -237,7 +222,7 @@ async def occupy(id: int, msg_id: int, author: Union[User, Member]) -> None:
     conf[id, "expiry"] = time() + conf.owner_timeout
     await enact_occupied(channel, author, op_id=msg_id, old_op_id=old_op_id)
     await conf
-    scheduler_updated()
+    scheduler_task.run_coalesced(0)
 
 async def enact_occupied(channel: TextChannel, owner: Union[User, Member], *,
     op_id: Optional[int], old_op_id: Optional[int]) -> None:
@@ -300,7 +285,7 @@ async def close(id: int, reason: str, *, reopen: bool = True) -> None:
         pass
     await channel.send(embed=closed_embed(reason, reopen), allowed_mentions=AllowedMentions.none())
     await conf
-    scheduler_updated()
+    scheduler_task.run_coalesced(0)
 
 async def make_available(id: int) -> None:
     logger.debug("Making {} available".format(id))
@@ -310,7 +295,7 @@ async def make_available(id: int) -> None:
     conf[id, "expiry"] = None
     conf[id, "prompt_id"] = await enact_available(channel)
     await conf
-    scheduler_updated()
+    scheduler_task.run_coalesced(0)
 
 async def enact_available(channel: TextChannel) -> int:
     try:
@@ -330,7 +315,7 @@ async def make_hidden(id: int) -> None:
     conf[id, "prompt_id"] = None
     await enact_hidden(channel)
     await conf
-    scheduler_updated()
+    scheduler_task.run_coalesced(0)
 
 async def enact_hidden(channel: TextChannel) -> None:
     try:
@@ -373,7 +358,7 @@ async def extend(id: int) -> None:
     except (discord.NotFound, discord.Forbidden):
         pass
     await conf
-    scheduler_updated()
+    scheduler_task.run_coalesced(0)
 
 async def make_pending(id: int) -> None:
     logger.debug("Prompting {} for closure".format(id))
@@ -390,7 +375,7 @@ async def make_pending(id: int) -> None:
     conf[id, "prompt_id"] = prompt.id
     conf[id, "state"] = "pending"
     await conf
-    scheduler_updated()
+    scheduler_task.run_coalesced(0)
 
 async def reopen(id: int) -> None:
     logger.debug("Reopening {}".format(id))
@@ -417,7 +402,7 @@ async def reopen(id: int) -> None:
     except (discord.NotFound, discord.Forbidden):
         pass
     await conf
-    scheduler_updated()
+    scheduler_task.run_coalesced(0)
 
 async def synchronize_channels() -> List[str]:
     output = []

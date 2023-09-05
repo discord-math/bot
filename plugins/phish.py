@@ -9,6 +9,7 @@ import aiohttp
 from bot.commands import Context, group
 from bot.privileges import priv
 from bot.reactions import get_input
+from bot.tasks import task
 import plugins
 import util.db.kv
 from util.discord import CodeBlock, Inline, Quoted, Typing, format
@@ -47,45 +48,39 @@ domains: Set[str] = set()
 local_blacklist: Set[str] = set()
 local_whitelist: Set[str] = set()
 
-async def watch_websocket() -> None:
+@task(name="Phishing websocket task", every=0, exc_backoff_base=2)
+async def websocket_task() -> None:
     global domains, local_blacklist, local_whitelist
-    while True:
-        try:
-            ws = await session.ws_connect(conf.api + "/feed", headers={"X-Identity": conf.identity})
-            logger.info("Websocket connected: {!r}".format(ws))
-            try:
-                async for msg in ws:
-                    if msg.type == aiohttp.WSMsgType.TEXT:
-                        logger.debug("Got payload: {}".format(msg.data))
-                        payload = json.loads(msg.data)
-                        new_domains = set(payload["domains"])
-                        update_conf = False
-                        if payload["type"] == "add":
-                            domains |= new_domains
-                            if local_blacklist & new_domains:
-                                local_blacklist -= new_domains
-                                update_conf = True
-                        elif payload["type"] == "delete":
-                            domains -= new_domains
-                            if local_whitelist & new_domains:
-                                local_whitelist -= new_domains
-                                update_conf = True
-                        if update_conf:
-                            conf.local_blacklist = FrozenList(local_blacklist)
-                            conf.local_whitelist = FrozenList(local_whitelist)
-                            await conf
-                    elif msg.type == aiohttp.WSMsgType.CLOSED:
-                        break
-                    elif msg.type == aiohttp.WSMsgType.ERROR:
-                        break
-            finally:
-                await ws.close()
-                logger.info("Websocket closed, restarting")
-        except asyncio.CancelledError:
-            raise
-        except:
-            logger.error("Exception in phish websocket", exc_info=True)
-        await asyncio.sleep(60)
+    ws = await session.ws_connect(conf.api + "/feed", headers={"X-Identity": conf.identity})
+    logger.info("Websocket connected: {!r}".format(ws))
+    try:
+        async for msg in ws:
+            if msg.type == aiohttp.WSMsgType.TEXT:
+                logger.debug("Got payload: {}".format(msg.data))
+                payload = json.loads(msg.data)
+                new_domains = set(payload["domains"])
+                update_conf = False
+                if payload["type"] == "add":
+                    domains |= new_domains
+                    if local_blacklist & new_domains:
+                        local_blacklist -= new_domains
+                        update_conf = True
+                elif payload["type"] == "delete":
+                    domains -= new_domains
+                    if local_whitelist & new_domains:
+                        local_whitelist -= new_domains
+                        update_conf = True
+                if update_conf:
+                    conf.local_blacklist = FrozenList(local_blacklist)
+                    conf.local_whitelist = FrozenList(local_whitelist)
+                    await conf
+            elif msg.type == aiohttp.WSMsgType.CLOSED:
+                break
+            elif msg.type == aiohttp.WSMsgType.ERROR:
+                break
+    finally:
+        await ws.close()
+        logger.info("Websocket closed, restarting")
 
 def should_resolve_domain(domain: str) -> bool:
     return domain.lower() in conf.resolve_domains
@@ -230,5 +225,3 @@ async def init() -> None:
         local_blacklist -= domains
         conf.local_blacklist = FrozenList(local_blacklist)
     await conf
-    ws_task = asyncio.create_task(watch_websocket())
-    plugins.finalizer(ws_task.cancel)

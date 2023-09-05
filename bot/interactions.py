@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from typing import Any, Callable, Coroutine, Optional, TypeVar, Union
 from typing_extensions import Concatenate, ParamSpec
@@ -9,6 +8,7 @@ from discord.app_commands import AppCommandError, CheckFailure, Command, Context
 from discord.ui import View
 
 from bot.client import client
+from bot.tasks import task
 import plugins
 from util.discord import format
 
@@ -32,28 +32,11 @@ async def on_error(interaction: Interaction, exc: AppCommandError) -> None:
 def restore_on_error() -> None:
     client.tree.error(old_on_error) # type: ignore
 
-sync_required = asyncio.Event()
-
-async def sync_commands() -> None:
+@task(name="Command tree sync task", exc_backoff_base=1)
+async def sync_task() -> None:
     await client.wait_until_ready()
-
-    while True:
-        try:
-            try:
-                await asyncio.wait_for(sync_required.wait(), timeout=None)
-                while True:
-                    sync_required.clear()
-                    await asyncio.wait_for(sync_required.wait(), timeout=5)
-            except asyncio.TimeoutError:
-                pass
-
-            logger.debug("Syncing command tree")
-            await client.tree.sync()
-        except asyncio.CancelledError:
-            raise
-        except:
-            logger.error("Exception in command synching task", exc_info=True)
-            await asyncio.sleep(60)
+    logger.debug("Syncing command tree")
+    await client.tree.sync()
 
 P = ParamSpec("P")
 T = TypeVar("T")
@@ -68,10 +51,10 @@ def command(name: str, description: Optional[str] = None) -> Callable[
             cmd = discord.app_commands.command(name=name, description=description)(fun)
 
         client.tree.add_command(cmd)
-        sync_required.set()
+        sync_task.run_coalesced(5)
         def finalizer():
             client.tree.remove_command(cmd.name)
-            sync_required.set()
+            sync_task.run_coalesced(5)
         plugins.finalizer(finalizer)
 
         return cmd
@@ -82,10 +65,10 @@ def group(name: str, *, description: str, **kwargs: Any) -> Group:
     cmd = Group(name=name, description=description, **kwargs)
 
     client.tree.add_command(cmd)
-    sync_required.set()
+    sync_task.run_coalesced(5)
     def finalizer():
         client.tree.remove_command(cmd.name)
-        sync_required.set()
+        sync_task.run_coalesced(5)
     plugins.finalizer(finalizer)
 
     return cmd
@@ -106,10 +89,10 @@ def context_menu(name: str) -> Callable[[Union[
         cmd = discord.app_commands.context_menu(name=name)(fun)
 
         client.tree.add_command(cmd)
-        sync_required.set()
+        sync_task.run_coalesced(5)
         def finalizer():
             client.tree.remove_command(cmd.name)
-            sync_required.set()
+            sync_task.run_coalesced(5)
         plugins.finalizer(finalizer)
 
         return cmd
@@ -126,10 +109,3 @@ def persistent_view(view: V) -> V:
     plugins.finalizer(finalizer)
 
     return view
-
-@plugins.init
-async def init():
-    global sync_task
-    sync_task = asyncio.create_task(sync_commands())
-    plugins.finalizer(sync_task.cancel)
-    sync_required.set()

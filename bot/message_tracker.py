@@ -28,6 +28,7 @@ from sqlalchemy.schema import CreateSchema
 
 from bot.client import client
 from bot.cogs import Cog, cog
+from bot.tasks import task
 import plugins
 import util.db
 
@@ -438,63 +439,51 @@ async def fetch_thread_messages(session: AsyncSession, thread: Thread, before_sn
     if exception is not None:
         raise exception
 
-fetch_updated: asyncio.Event = asyncio.Event()
-def update_fetch() -> None:
-    fetch_updated.set()
-
-async def background_fetch() -> None:
+@task(name="Message tracker fetch task", exc_backoff_base=10)
+async def fetch_task() -> None:
     await client.wait_until_ready()
-    while True:
+
+    async with sessionmaker() as session:
+        row = await select_fetch_task(session, fetch_map.keys())
+        if row is None:
+            return
+        else:
+            # There's more so run again after this iteration
+            fetch_task.run_once()
+
+        guild_id, channel_id, thread_id, before_snowflake = row
+
+        logger.debug("Looking at channel {} (thread={}, before={})".format(
+            channel_id, thread_id, before_snowflake))
+
+        if (guild := client.get_guild(guild_id)) is None:
+            logger.warning("Guild {} not found, marking unreachable".format(guild_id))
+            await mark_guild_unreachable(session, guild_id)
+            await session.commit()
+            return
+        channel = guild.get_channel(channel_id)
+        if not isinstance(channel, (TextChannel, VoiceChannel)):
+            logger.warning("Channel {} not found in {}, marking unreachable".format(channel_id, guild_id))
+            await mark_channel_unreachable(session, channel_id)
+            await session.commit()
+            return
+
         try:
-            await fetch_updated.wait()
-
-            async with sessionmaker() as session:
-                row = await select_fetch_task(session, fetch_map.keys())
-                if row is None:
-                    fetch_updated.clear()
-                    continue
-
-                guild_id, channel_id, thread_id, before_snowflake = row
-
-                logger.debug("Looking at channel {} (thread={}, before={})".format(
-                    channel_id, thread_id, before_snowflake))
-
-                if (guild := client.get_guild(guild_id)) is None:
-                    logger.warning("Guild {} not found, marking unreachable".format(guild_id))
-                    await mark_guild_unreachable(session, guild_id)
+            if before_snowflake is None:
+                if isinstance(channel, TextChannel):
+                    await fetch_thread_archive(session, channel)
+            elif thread_id is None:
+                await fetch_channel_messages(session, channel, before_snowflake)
+            else:
+                if not isinstance(thread := await guild.fetch_channel(thread_id), Thread):
+                    logger.warning("Thread {} not found in {}, dropping all requests".format(
+                        thread_id, guild_id))
+                    await drop_thread_requests(session, thread_id)
                     await session.commit()
-                    continue
-                channel = guild.get_channel(channel_id)
-                if not isinstance(channel, (TextChannel, VoiceChannel)):
-                    logger.warning("Channel {} not found in {}, marking unreachable".format(channel_id, guild_id))
-                    await mark_channel_unreachable(session, channel_id)
-                    await session.commit()
-                    continue
-
-                try:
-                    if before_snowflake is None:
-                        if isinstance(channel, TextChannel):
-                            await fetch_thread_archive(session, channel)
-                    elif thread_id is None:
-                        await fetch_channel_messages(session, channel, before_snowflake)
-                    else:
-                        if not isinstance(thread := await guild.fetch_channel(thread_id), Thread):
-                            logger.warning("Thread {} not found in {}, dropping all requests".format(
-                                thread_id, guild_id))
-                            await drop_thread_requests(session, thread_id)
-                            await session.commit()
-                            continue
-                        await fetch_thread_messages(session, thread, before_snowflake)
-                finally:
-                    await session.commit()
-
-        except asyncio.CancelledError:
-            raise
-        except:
-            logger.error("Exception in history fetching task", exc_info=True)
-            await asyncio.sleep(300)
-
-fetch_task: asyncio.Task[None]
+                    return
+                await fetch_thread_messages(session, thread, before_snowflake)
+        finally:
+            await session.commit()
 
 executor_queue: asyncio.Queue[Awaitable[None]] = asyncio.Queue()
 
@@ -535,7 +524,7 @@ executor_task: asyncio.Task[None]
 
 @plugins.init
 async def init_executor() -> None:
-    global executor_task, fetch_task
+    global executor_task
     executor_task = asyncio.create_task(executor())
     async def cancel_executor() -> None:
         async def kill_executor() -> None:
@@ -550,13 +539,12 @@ async def init_executor() -> None:
             except asyncio.CancelledError:
                 pass
     plugins.finalizer(cancel_executor)
-    fetch_task = asyncio.create_task(background_fetch())
-    plugins.finalizer(fetch_task.cancel)
     if client.is_ready():
         chans = [channel for guild in client.guilds
             for channel in guild.channels if isinstance(channel, (TextChannel, VoiceChannel))]
         last_msgs, thread_last_msgs = take_snapshot(chans)
         schedule(process_ready(last_msgs, thread_last_msgs))
+    fetch_task.run_once()
 
 async def process_ready(last_msgs: Dict[int, int], thread_last_msgs: Dict[int, Dict[int, int]]) -> None:
     async with sessionmaker() as session:
@@ -647,7 +635,7 @@ async def process_ready(last_msgs: Dict[int, int], thread_last_msgs: Dict[int, D
                     state.last_message_id = last_msgs[state.channel_id]
 
         await session.commit()
-        update_fetch()
+        fetch_task.run_once()
 
 async def process_thread_unarchival(thread: Thread, ts: datetime) -> None:
     async with sessionmaker() as session:
@@ -662,7 +650,7 @@ async def process_thread_unarchival(thread: Thread, ts: datetime) -> None:
             session.add(ThreadRequest(thread_id=thread.id, channel_id=state.channel_id, subscriber=state.subscriber,
                 after_snowflake=thread.id, before_snowflake=before))
         await session.commit()
-        update_fetch()
+        fetch_task.run_once()
 
 async def process_permission_update(channel_id: int) -> None:
     async with sessionmaker() as session:
@@ -670,7 +658,7 @@ async def process_permission_update(channel_id: int) -> None:
         stmt = update(Channel).where(Channel.id == channel_id).values(reachable=True)
         await session.execute(stmt)
         await session.commit()
-        update_fetch()
+        fetch_task.run_once()
 
 async def process_channel_creation(channel_id: int, guild_id: int) -> None:
     async with sessionmaker() as session:
@@ -731,7 +719,7 @@ async def process_message(msg: Message) -> None:
         await session.execute(stmt)
         await session.commit()
     if requests_added:
-        update_fetch()
+        fetch_task.run_once()
 
 @cog
 class MessageTracker(Cog):
@@ -869,7 +857,7 @@ async def process_subscription(subscriber: str, event_dict: Dict[str, Callback],
 
         await session.commit()
         fetch_map[subscriber] = cb
-        update_fetch()
+        fetch_task.run_once()
         event_dict[subscriber] = cb
 
 async def subscribe(name: str, channels: Optional[Union[Guild, TextChannel, VoiceChannel]], cb: Callback, *,

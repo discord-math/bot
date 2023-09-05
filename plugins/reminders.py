@@ -1,4 +1,3 @@
-import asyncio
 from datetime import datetime, timezone
 import logging
 from operator import itemgetter
@@ -11,6 +10,7 @@ from discord import AllowedMentions, MessageReference, Object, TextChannel, Thre
 from bot.client import client
 from bot.commands import Context, cleanup, command, group
 from bot.privileges import priv
+from bot.tasks import task
 import plugins
 import util.db.kv
 from util.discord import DurationConverter, PlainItem, UserError, chunk_messages, format
@@ -72,39 +72,25 @@ async def handle_reminder(user_id: int, reminder: Reminder) -> None:
     conf[user_id] = reminders_optional.without(reminder)
     await conf
 
-expiration_updated = asyncio.Semaphore(value=0)
-
-async def expire_reminders() -> None:
+@task(name="Reminder expiry task", every=86400, exc_backoff_base=60)
+async def expiry_task() -> None:
     await client.wait_until_ready()
+    now = datetime.now(timezone.utc).timestamp()
+    next_expiry = None
+    for user_id, in conf:
+        reminders = conf[int(user_id)]
+        if reminders is None: continue
+        for reminder in reminders:
+            if int(reminder["time"]) < now:
+                logger.debug("Expiring reminder for user #{}".format(user_id))
+                await handle_reminder(int(user_id), reminder)
+            elif next_expiry is None or int(reminder["time"]) < next_expiry:
+                next_expiry = int(reminder["time"])
+    if next_expiry is not None:
+        delay = next_expiry - now
+        expiry_task.run_coalesced(delay)
+        logger.debug("Waiting for next reminder to expire in {} seconds".format(delay))
 
-    while True:
-        try:
-            now = datetime.now(timezone.utc).timestamp()
-            next_expiry = None
-            for user_id, in conf:
-                reminders = conf[int(user_id)]
-                if reminders is None: continue
-                for reminder in reminders:
-                    if int(reminder["time"]) < now:
-                        logger.debug("Expiring reminder for user #{}".format(user_id))
-                        await handle_reminder(int(user_id), reminder)
-                    elif next_expiry is None or int(reminder["time"]) < next_expiry:
-                        next_expiry = int(reminder["time"])
-            delay = 86400.0
-            if next_expiry is not None:
-                delay = next_expiry - now
-                logger.debug("Waiting for next reminder to expire in {} seconds".format(delay))
-            try:
-                await asyncio.wait_for(expiration_updated.acquire(), timeout=delay)
-                while True:
-                    await asyncio.wait_for(expiration_updated.acquire(), timeout=1)
-            except asyncio.TimeoutError:
-                pass
-        except asyncio.CancelledError:
-            raise
-        except:
-            logger.error("Exception in reminder expiry task", exc_info=True)
-            await asyncio.sleep(60)
 
 @plugins.init
 async def init() -> None:
@@ -118,8 +104,7 @@ async def init() -> None:
             msg=int(rem["msg"]), time=int(rem["time"]), contents=rem["contents"]) for rem in obj)
     await conf
 
-    expiry_task: asyncio.Task[None] = asyncio.create_task(expire_reminders(), name="Reminders")
-    plugins.finalizer(expiry_task.cancel)
+    expiry_task.run_coalesced(0)
 
 @cleanup
 @command("remindme", aliases=["remind"])
@@ -138,7 +123,7 @@ async def remindme_command(ctx: Context, interval: DurationConverter, *, text: O
     reminders.sort(key=lambda a: a["time"])
     conf[ctx.author.id] = FrozenList(reminders)
     await conf
-    expiration_updated.release()
+    expiry_task.run_coalesced(0)
 
     await ctx.send("Created reminder {}".format(format_reminder(reminder))[:2000],
         allowed_mentions=AllowedMentions.none())
@@ -167,6 +152,6 @@ async def reminder_remove(ctx: Context, index: int) -> None:
     del reminders[index - 1]
     conf[ctx.author.id] = FrozenList(reminders)
     await conf
-    expiration_updated.release()
+    expiry_task.run_coalesced(0)
     await ctx.send("Removed reminder {}".format(format_reminder(reminder))[:2000],
         allowed_mentions=AllowedMentions.none())
