@@ -145,5 +145,5 @@ async def plugins_command(ctx: Context) -> None:
             except KeyError:
                 key = "???"
             output[key].append(name)
-    await ctx.send("\n".join(format("{!i}: {}", key, ", ".join(format("{!i}", name) for name in plugins))
+    await ctx.send("\n".join(format("{!i}: {}", key, ", ".join(format("{!i}", name) for name in sorted(plugins)))
         for key, plugins in output.items()))

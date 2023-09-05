@@ -76,7 +76,7 @@ class PluginManager:
 
     def is_plugin(self, name: str) -> bool:
         """Does a given plugin name fall in our namespaces?"""
-        return any((name + ".").startswith(namespace + ".") for namespace in self.namespaces)
+        return name != __name__ and any((name + ".").startswith(namespace + ".") for namespace in self.namespaces)
 
     def __str__(self) -> str:
         return "<PluginManager for {} at {:#x}>".format(
