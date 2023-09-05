@@ -666,7 +666,7 @@ async def audit_ticket_data(session: AsyncSession, audit: AuditLogEntry, *,
     need_duration: bool = True, can_have_duration: bool = True) -> AuditData:
     assert isinstance(audit.target, (User, Member))
     assert audit.user is not None
-    mod_id = audit.user.id
+    mod = audit.user
     stage = TicketStage.NEW
     duration = None
     have_duration = False
@@ -676,6 +676,8 @@ async def audit_ticket_data(session: AsyncSession, audit: AuditLogEntry, *,
             stage = TicketStage.COMMENTED
         elif (match := blame_re.match(audit.reason)) is not None:
             mod_id = int(match.group(1))
+            if (mod := audit.guild.get_member(mod_id)) is None:
+                mod = cast(User, discord.Object(mod_id))
             duration, have_duration, comment = TicketMod.parse_duration_comment(match.group(2))
         else:
             comment = audit.reason
@@ -687,15 +689,15 @@ async def audit_ticket_data(session: AsyncSession, audit: AuditLogEntry, *,
     if comment and (have_duration or not need_duration):
         stage = TicketStage.COMMENTED
     return {
-        "mod": await TicketMod.get(session, mod_id),
-        "modid": mod_id,
+        "mod": await TicketMod.get(session, mod.id),
+        "modid": mod.id,
         "targetid": audit.target.id,
         "auditid": audit.id,
         "created_at": audit.created_at.replace(tzinfo=None),
         "comment": comment,
         "stage": stage,
         "duration": duration if can_have_duration else None,
-        "approved": has_privilege("mod", audit.user)}
+        "approved": has_privilege("mod", mod)}
 
 @registry.mapped
 @register_action
@@ -1446,15 +1448,12 @@ async def pager(dest: Messageable, pages: List[Page]) -> None:
                     await msg.remove_reaction(payload.emoji, Object(payload.user_id))
                 except discord.HTTPException:
                     pass
-            else:
-                # Remove the reactions
-                try:
-                    for r in reactions:
-                        await msg.clear_reaction(r)
-                except discord.HTTPException:
-                    pass
         except asyncio.TimeoutError:
-            pass
+            try:
+                for r in reactions:
+                    await msg.clear_reaction(r)
+            except discord.HTTPException:
+                pass
         except asyncio.CancelledError:
             pass
 
