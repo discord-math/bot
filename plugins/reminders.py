@@ -69,9 +69,7 @@ async def handle_reminder(user_id: int, reminder: Reminder) -> None:
 
     reminders_optional = conf[user_id]
     if reminders_optional is None: return
-    reminders = reminders_optional.copy()
-    reminders.remove(reminder)
-    conf[user_id] = FrozenList(reminders)
+    conf[user_id] = reminders_optional.without(reminder)
     await conf
 
 expiration_updated = asyncio.Semaphore(value=0)

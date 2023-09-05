@@ -173,9 +173,7 @@ async def priv_remove_user(ctx: PrivContext, user: PartialUserConverter) -> None
     if user.id not in users:
         raise UserError(format("User {!m} is already not in priv {!i}", user.id, priv))
 
-    musers = users.copy()
-    musers.remove(user.id)
-    conf[priv, "users"] = musers
+    conf[priv, "users"] = users.without(user.id)
     await conf
 
     await ctx.send(format("Removed user {!m} from priv {!i}", user.id, priv),
@@ -189,9 +187,7 @@ async def priv_remove_role(ctx: PrivContext, role: PartialRoleConverter) -> None
     if role.id not in roles:
         raise UserError(format("Role {!M} is already not in priv {!i}", role.id, priv))
 
-    mroles = roles.copy()
-    mroles.remove(role.id)
-    conf[priv, "roles"] = mroles
+    conf[priv, "roles"] = roles.without(role.id)
     await conf
 
     await ctx.send(format("Removed role {!M} from priv {!i}", role.id, priv),

@@ -157,9 +157,7 @@ async def location_remove_channel(ctx: LocContext, chan: PartialChannelConverter
     if chan.id not in chans:
         raise UserError(format("Channel {!c} is already not in location {!i}", chan.id, loc))
 
-    mchans = chans.copy()
-    mchans.remove(chan.id)
-    conf[loc, "channels"] = mchans
+    conf[loc, "channels"] = chans.without(chan.id)
     await conf
 
     await ctx.send(format("Removed channel {!c} from location {!i}", chan.id, loc))
@@ -172,9 +170,7 @@ async def location_remove_category(ctx: LocContext, cat: PartialCategoryChannelC
     if cat.id not in cats:
         raise UserError(format("Category {!c} is already not in location {!i}", cat.id, loc))
 
-    mcats = cats.copy()
-    mcats.remove(cat.id)
-    conf[loc, "categories"] = mcats
+    conf[loc, "categories"] = cats.without(cat.id)
     await conf
 
     await ctx.send(format("Added category {!c} to location {!i}", cat.id, loc))

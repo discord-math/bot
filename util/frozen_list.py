@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from typing import (Any, Generic, Iterable, Iterator, List, Optional,
-    SupportsIndex, TypeVar, Union, overload)
+from typing import Generic, Iterable, Iterator, List, Optional, SupportsIndex, TypeVar, Union, overload
 
 T = TypeVar("T", covariant=True)
 
@@ -12,7 +11,8 @@ class FrozenList(Generic[T]):
     """
 
     __slots__ = ("___iter__", "__getitem__", "__len__", "__str__", "__repr__", "__gt__", "__lt__", "__ge__", "__le__",
-        "__eq__", "__ne__", "__mul__", "__rmul__", "__add__", "__radd__", "__contains__", "copy", "index", "count")
+        "__eq__", "__ne__", "__mul__", "__rmul__", "__add__", "__radd__", "__contains__", "copy", "index", "count",
+        "without")
 
     def __init__(self, gen: Iterable[T] = (), /):
         lst = list(gen)
@@ -22,8 +22,8 @@ class FrozenList(Generic[T]):
         @overload
         def __getitem__(index: SupportsIndex, /) -> T: ...
         @overload
-        def __getitem__(index: slice, /) -> T: ...
-        def __getitem__(index: Any, /) -> Any:
+        def __getitem__(index: slice, /) -> FrozenList[T]: ...
+        def __getitem__(index: Union[SupportsIndex, slice], /) -> Union[T, FrozenList[T]]:
             if isinstance(index, slice):
                 return FrozenList(lst.__getitem__(index))
             else:
@@ -50,10 +50,10 @@ class FrozenList(Generic[T]):
         def __le__(other: Union[List[T], FrozenList[T]], /) -> bool:
             return other.__ge__(lst) if isinstance(other, FrozenList) else lst.__le__(other)
         self.__le__ = __le__
-        def __eq__(other: Any, /) -> bool:
+        def __eq__(other: object, /) -> bool:
             return other.__eq__(lst) if isinstance(other, FrozenList) else lst.__eq__(other)
         self.__eq__ = __eq__
-        def __ne__(other: Any, /) -> bool:
+        def __ne__(other: object, /) -> bool:
             return other.__ne__(lst) if isinstance(other, FrozenList) else lst.__ne__(other)
         self.__ne__ = __ne__
         def __mul__(other: SupportsIndex, /) -> FrozenList[T]:
@@ -68,32 +68,35 @@ class FrozenList(Generic[T]):
         def __radd__(other: Union[List[T], FrozenList[T]], /) -> FrozenList[T]:
             return other.__add__(lst) if isinstance(other, FrozenList) else FrozenList(other.__add__(lst))
         self.__radd__ = __radd__
-        def __contains__(other: Any, /) -> bool:
+        def __contains__(other: object, /) -> bool:
             return lst.__contains__(other)
         self.__contains__ = __contains__
         def copy() -> List[T]:
             return lst.copy()
         self.copy = copy
         @overload
-        def index(value: Any, /) -> int: ...
+        def index(value: object, /) -> int: ...
         @overload
-        def index(value: Any, start: SupportsIndex, /) -> int: ...
+        def index(value: object, start: SupportsIndex, /) -> int: ...
         @overload
-        def index(value: Any, start: SupportsIndex, stop: SupportsIndex, /) -> int: ...
-        def index(value: Any, start: Optional[SupportsIndex] = None, stop: Optional[SupportsIndex] = None, /) -> int:
+        def index(value: object, start: SupportsIndex, stop: SupportsIndex, /) -> int: ...
+        def index(value: object, start: Optional[SupportsIndex] = None, stop: Optional[SupportsIndex] = None, /) -> int:
             if stop is None:
                 if start is None:
-                    return lst.index(value)
+                    return lst.index(value) # type: ignore
                 else:
-                    return lst.index(value, start)
+                    return lst.index(value, start) # type: ignore
             elif start is None:
-                return lst.index(value, 0, stop)
+                return lst.index(value, 0, stop) # type: ignore
             else:
-                return lst.index(value, start, stop)
+                return lst.index(value, start, stop) # type: ignore
         self.index = index
-        def count(other: Any) -> int:
-            return lst.count(other)
+        def count(other: object) -> int:
+            return lst.count(other) # type: ignore
         self.count = count
+        def without(other: object) -> FrozenList[T]:
+            return FrozenList(value for value in lst if value != other)
+        self.without = without
 
     def __iter__(self) -> Iterator[T]:
         return self.___iter__()
