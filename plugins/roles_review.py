@@ -1,10 +1,11 @@
+import enum
 import logging
-from typing import TYPE_CHECKING, Iterator, List, Optional, Protocol, Tuple, TypedDict, cast
+from typing import TYPE_CHECKING, Iterator, List, Optional, Protocol, Tuple, TypedDict, Union, cast
 from typing_extensions import NotRequired
 
 import discord
-from discord import (AllowedMentions, ButtonStyle, Interaction, InteractionType, Member, Role, TextChannel, TextStyle,
-    Thread)
+from discord import (AllowedMentions, ButtonStyle, Guild, Interaction, InteractionType, Member, Message, Object, Role,
+    TextChannel, TextStyle, Thread, User)
 if TYPE_CHECKING:
     import discord.types.interactions
 from discord.abc import Messageable
@@ -28,6 +29,7 @@ logger = logging.getLogger(__name__)
 
 class ReviewedRole(TypedDict):
     prompt: FrozenList[str]
+    invitation: str
     review_channel: int
     review_role: NotRequired[int]
     veto_role: NotRequired[int]
@@ -38,6 +40,7 @@ class ReviewedRole(TypedDict):
 
 class RolesReviewConf(Protocol):
     def __getitem__(self, index: int) -> Optional[ReviewedRole]: ...
+    def __iter__(self) -> Iterator[Tuple[str]]: ...
 
 conf: RolesReviewConf
 
@@ -87,8 +90,10 @@ async def init() -> None:
         registry.metadata.create_all))
 
 class RolePromptModal(Modal):
-    def __init__(self, prompt_roles: List[Role]) -> None:
+    def __init__(self, guild: Guild, prompt_roles: List[Role], message: Optional[Message] = None) -> None:
         super().__init__(title="Additional information", timeout=1200)
+        self.guild = guild
+        self.message = message
         self.inputs = {}
         for role in prompt_roles:
             self.inputs[role] = []
@@ -107,23 +112,29 @@ class RolePromptModal(Modal):
                 self.add_item(input)
 
     async def on_submit(self, interaction: Interaction) -> None:
-        if not isinstance(interaction.user, Member):
-            await interaction.response.send_message("This can only be done in a server.", ephemeral=True,
-                delete_after=60)
-            return
+        if isinstance(interaction.user, Member):
+            member = interaction.user
+        else:
+            if (member := self.guild.get_member(interaction.user.id)) is None:
+                await interaction.response.send_message("You have left the server.")
+                if self.message:
+                    await self.message.delete()
+                return
+
         await interaction.response.defer(ephemeral=True)
 
         outputs = []
         for role, inputs in self.inputs.items():
-            output = await apply(interaction.user, role, [(input.label, str(input)) for input in inputs])
-            if output is True:
-                outputs.append(format("{!M} assigned.", role))
-            elif output is False:
-                outputs.append(format("You have already applied for {!M}.", role))
+            output = await apply(member, role, [(input.label, str(input)) for input in inputs])
+            if output == ApplicationStatus.APPROVED:
+                outputs.append("{} assigned.".format(role.name))
             elif output is None:
-                outputs.append(format("Your application for {!M} has been submitted for review.", role))
-
+                outputs.append("Your application for {} has been submitted for review.".format(role.name))
+            else:
+                outputs.append("You have already applied for {}.".format(role.name))
         await interaction.followup.send("\n".join(outputs), ephemeral=True)
+        if self.message:
+            await self.message.delete()
 
 class ApproveRoleView(View):
     def __init__(self, msg_id: int) -> None:
@@ -285,6 +296,23 @@ class VetoModal(Modal):
         elif str(self.decision)[:1].upper() == "N":
             await cast_vote(interaction, self.msg_id, False, veto=str(self.reason))
 
+class PromptRoleView(View):
+    def __init__(self, guild_id: int, role_id: int) -> None:
+        super().__init__(timeout=None)
+        self.add_item(Button(style=ButtonStyle.success, label="Get started",
+            custom_id="{}:{}:Prompt:{}".format(__name__, guild_id, role_id)))
+
+async def prompt_role(interaction: Interaction, guild_id: int, role_id: int, message: Message) -> None:
+    assert (guild := interaction.client.get_guild(guild_id))
+    assert (role := guild.get_role(role_id))
+
+    pre = await pre_apply(interaction.user, role)
+    if pre is not None:
+        await interaction.response.send_message("You have already applied for this role.", ephemeral=True)
+        await message.delete()
+    else:
+        await interaction.response.send_modal(RolePromptModal(guild, [role], message))
+
 @cog
 class RolesReviewCog(Cog):
     @Cog.listener()
@@ -299,19 +327,52 @@ class RolesReviewCog(Cog):
         mod, rest = data["custom_id"].split(":", 1)
         if mod != __name__ or ":" not in rest:
             return
-        msg_id, action = rest.split(":", 1)
+        id, action = rest.split(":", 1)
         try:
-            msg_id = int(msg_id)
+            id = int(id)
         except ValueError:
             return
         if action == "Approve":
-            await cast_vote(interaction, msg_id, True)
+            await cast_vote(interaction, id, True)
         elif action == "Deny":
-            await cast_vote(interaction, msg_id, False)
+            await cast_vote(interaction, id, False)
         elif action == "Retract":
-            await cast_vote(interaction, msg_id, None)
+            await cast_vote(interaction, id, None)
         elif action == "Veto":
-            await interaction.response.send_modal(VetoModal(msg_id))
+            await interaction.response.send_modal(VetoModal(id))
+        elif action.startswith("Prompt:"):
+            _, role_id = action.split(":", 1)
+            try:
+                role_id = int(role_id)
+            except ValueError:
+                return
+            if not interaction.message:
+                return
+            await prompt_role(interaction, id, role_id, interaction.message)
+
+    @Cog.listener()
+    async def on_member_update(self, before: Member, after: Member) -> None:
+        for pending_role in set(after.roles) - set(before.roles):
+            for role_id, in conf:
+                role_id = int(role_id)
+                review = conf[role_id]
+                assert review
+                if "pending_role" in review and review["pending_role"] == pending_role.id:
+                    role = after.guild.get_role(role_id)
+                    assert role
+                    pre = await pre_apply(after, role)
+                    if pre == ApplicationStatus.APPROVED:
+                        await after.remove_roles(pending_role)
+                        await after.add_roles(role)
+                    elif pre == ApplicationStatus.DENIED:
+                        if "denied_role" in review:
+                            await after.add_roles(Object(review["denied_role"]))
+                        await after.remove_roles(pending_role)
+                    elif pre is None:
+                        try:
+                            await after.send(review["invitation"], view=PromptRoleView(after.guild.id, role_id))
+                        except discord.Forbidden:
+                            pass
 
     @cleanup
     @command("review_queue")
@@ -377,11 +438,17 @@ class RolesReviewCog(Cog):
                 await ctx.send(format("{!m} has no resolved applications for {!M}.", user, role),
                     allowed_mentions=AllowedMentions.none())
 
-async def check_applications(member: Member, role: Role, session: AsyncSession) -> Optional[bool]:
+class ApplicationStatus(enum.Enum):
+    APPROVED = 0
+    PENDING = 1
+    DENIED = 2
+
+async def check_applications(member: Union[User, Member], role: Role, session: AsyncSession) -> Optional[ApplicationStatus]:
     """
     If the user wants the role, depending on whether they have previous applications:
-    - the role can be just given to them, returning True,
-    - we can deny it, returning False,
+    - the role can be just given to them, returning APPROVED,
+    - if they have a pending application, we can do nothing, returning PENDING
+    - we can deny it, returning DENIED,
     - if they had no previous applications, we can direct them to answer the questions, returning None
     """
     stmt = (select(Application.decision)
@@ -389,36 +456,39 @@ async def check_applications(member: Member, role: Role, session: AsyncSession) 
         .limit(1))
     for decision in (await session.execute(stmt)).scalars():
         logger.debug(format("Found old application {!m} {!M} with decision={!r}", member, role, decision))
-        return bool(decision)
+        if decision is None:
+            return ApplicationStatus.PENDING
+        elif decision:
+            return ApplicationStatus.APPROVED
+        else:
+            return ApplicationStatus.DENIED
     return None
 
 
-async def pre_apply(member: Member, role: Role) -> Optional[bool]:
+async def pre_apply(member: Union[User, Member], role: Role) -> Optional[ApplicationStatus]:
     if conf[role.id] is None:
-        logger.debug(format("Not a reviewed role: {!M}", role))
-        return True
+        return ApplicationStatus.APPROVED
     async with sessionmaker() as session:
         pre = await check_applications(member, role, session)
-        logger.debug(format("Pre-application {!m} {!M}: {}", member, role,
-            "grant" if pre else "prompt" if pre is None else "deny"))
+        logger.debug(format("Pre-application {!m} {!M}: {!r}", member, role, pre))
         return pre
 
-async def apply(member: Member, role: Role, inputs: List[Tuple[str, str]]) -> Optional[bool]:
+async def apply(member: Member, role: Role, inputs: List[Tuple[str, str]]) -> Optional[ApplicationStatus]:
     """
     If somehow the previous application status has changed while they were filling out the answers:
-    - we can just give them the role (actually do it), returning True,
-    - we can deny it, returning False,
+    - we can just give them the role (actually do it), returning APPROVED,
+    - we can deny it, returning FALSE or PENDING,
     - we can submit it for review, returning None.
     """
     if (review := conf[role.id]) is None:
         logger.debug(format("Application from {!m} for a non-reviewed role {!M}", member, role))
         await retry(lambda: member.add_roles(role, reason="Application for non-reviewed role"))
-        return True
+        return ApplicationStatus.APPROVED
     async with sessionmaker() as session:
         pre = await check_applications(member, role, session)
-        logger.debug(format("Application {!m} {!M}: {}", member, role,
-            "give" if pre else "review" if pre is None else "deny"))
-        if pre:
+        logger.debug(format("Application {!m} {!M}: {!r}", member, role, pre))
+
+        if pre == ApplicationStatus.APPROVED:
             await retry(lambda: member.add_roles(role, reason="Previously approved"))
         if pre is not None:
             return pre

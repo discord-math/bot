@@ -66,14 +66,14 @@ class RoleSelect(Select["RolesView"]):
                 remove_roles.add(role)
             if role not in member.roles and role in selected_roles:
                 pre = await plugins.roles_review.pre_apply(member, role)
-                if pre is True:
+                if pre == plugins.roles_review.ApplicationStatus.APPROVED:
                     add_roles.add(role)
                 elif pre is None:
                     prompt_roles.append(role)
                 # TODO: tell them if False?
 
         if prompt_roles:
-            await interaction.response.send_modal(plugins.roles_review.RolePromptModal(prompt_roles))
+            await interaction.response.send_modal(plugins.roles_review.RolePromptModal(member.guild, prompt_roles))
         else:
             await interaction.response.defer(ephemeral=True)
 
