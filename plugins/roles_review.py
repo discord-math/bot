@@ -3,7 +3,8 @@ from typing import TYPE_CHECKING, Iterator, List, Optional, Protocol, Tuple, Typ
 from typing_extensions import NotRequired
 
 import discord
-from discord import AllowedMentions, ButtonStyle, Interaction, InteractionType, Member, Message, Role, TextChannel, TextStyle
+from discord import (AllowedMentions, ButtonStyle, Interaction, InteractionType, Member, Role, TextChannel, TextStyle,
+    Thread)
 if TYPE_CHECKING:
     import discord.types.interactions
 from discord.abc import Messageable
@@ -353,12 +354,18 @@ class RolesReviewCog(Cog):
             for listing_id, voting_id in await session.execute(stmt):
                 seen = True
                 try:
+                    if voting_id is not None:
+                        await chan.get_partial_message(voting_id).delete()
+                except (discord.NotFound, discord.Forbidden):
+                    pass
+                try:
                     await chan.get_partial_message(listing_id).delete()
                 except (discord.NotFound, discord.Forbidden):
                     pass
                 try:
-                    if voting_id is not None:
-                        await chan.get_partial_message(voting_id).delete()
+                    thread = await ctx.bot.fetch_channel(listing_id)
+                    if isinstance(thread, Thread):
+                        await thread.delete()
                 except (discord.NotFound, discord.Forbidden):
                     pass
 
