@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING, Iterator, List, Optional, Protocol, Tuple, Typ
 from typing_extensions import NotRequired
 
 import discord
-from discord import AllowedMentions, ButtonStyle, Interaction, InteractionType, Member, Role, TextChannel, TextStyle
+from discord import AllowedMentions, ButtonStyle, Interaction, InteractionType, Member, Message, Role, TextChannel, TextStyle
 if TYPE_CHECKING:
     import discord.types.interactions
 from discord.abc import Messageable
@@ -172,6 +172,9 @@ async def cast_vote(interaction: Interaction, msg_id: int, dir: Optional[bool], 
         review = conf[app.role_id]
         assert review
 
+        channel = interaction.guild.get_channel(review["review_channel"])
+        assert isinstance(channel, Messageable)
+
         logger.debug(format("Vote {!r} from {!m} for {!m} {!M} veto={!r}", dir, interaction.user, app.user_id,
             app.role_id, bool(veto)))
 
@@ -233,29 +236,34 @@ async def cast_vote(interaction: Interaction, msg_id: int, dir: Optional[bool], 
             comment = "veto {}: {}".format(comment, veto)
 
         voting_id = interaction.message.id
-        channel = interaction.channel
-        async def update_message():
-            msg = await channel.fetch_message(voting_id)
-            await msg.edit(content=format("{}\n{!m}: {}{}", msg.content, interaction.user, comment,
-                "" if decision is None else "\nDecision: \u2705" if decision else "\nDecision: \u274C"),
+        thread = interaction.channel
+        async def update_messages():
+            voting = await thread.fetch_message(voting_id)
+            await voting.edit(content=format("{}\n{!m}: {}", voting.content, interaction.user, comment),
                 view=ApproveRoleView(msg_id) if decision is None else None,
                 allowed_mentions=AllowedMentions.none())
-        await retry(update_message, attempts=10)
+            if decision is not None:
+                listing = await channel.fetch_message(app.listing_id)
+                await listing.edit(content=listing.content + "\nDecision: \u2705" if decision else "\nDecision: \u274C",
+                    allowed_mentions=AllowedMentions.none())
 
-        if decision is not None:
-            app.decision = decision
-            await session.commit()
+        try:
+            await retry(update_messages, attempts=10)
+        finally:
+            if decision is not None:
+                app.decision = decision
+                await session.commit()
 
-        if decision is not None and (user := interaction.guild.get_member(app.user_id)) is not None:
-            if "pending_role" in review:
-                if (p_role := interaction.guild.get_role(review["pending_role"])):
-                    await retry(lambda: user.remove_roles(p_role, reason=format("Granted {!m}", app.role_id)))
-            if decision == True:
-                if (role := interaction.guild.get_role(app.role_id)) is not None:
-                    await retry(lambda: user.add_roles(role, reason="By vote"))
-            elif "denied_role" in review:
-                if (d_role := interaction.guild.get_role(review["denied_role"])):
-                    await retry(lambda: user.add_roles(d_role, reason=format("Denied {!m}", app.role_id)))
+            if decision is not None and (user := interaction.guild.get_member(app.user_id)) is not None:
+                if "pending_role" in review:
+                    if (p_role := interaction.guild.get_role(review["pending_role"])):
+                        await retry(lambda: user.remove_roles(p_role, reason=format("Granted {!m}", app.role_id)))
+                if decision == True:
+                    if (role := interaction.guild.get_role(app.role_id)) is not None:
+                        await retry(lambda: user.add_roles(role, reason="By vote"))
+                elif "denied_role" in review:
+                    if (d_role := interaction.guild.get_role(review["denied_role"])):
+                        await retry(lambda: user.add_roles(d_role, reason=format("Denied {!m}", app.role_id)))
 
 class VetoModal(Modal):
     reason = TextInput(style=TextStyle.paragraph, required=False, label="Reason for the veto")
@@ -411,17 +419,30 @@ async def apply(member: Member, role: Role, inputs: List[Tuple[str, str]]) -> Op
         channel = member.guild.get_channel(review["review_channel"])
         assert isinstance(channel, TextChannel)
 
-        msg = await retry(lambda: channel.send(format("{!m} ({}#{} {}) requested {!M}:\n\n{}", member, member.name,
-                member.discriminator, member.id, role,
-                "\n\n".join("**{}**: {}".format(question, answer) for question, answer in inputs)),
-            allowed_mentions=AllowedMentions.none()))
-        app = Application(listing_id=msg.id, user_id=member.id, role_id=role.id)
-        session.add(app)
-        await session.commit()
-        voting = await retry(lambda: channel.send("Votes:",
-            view=ApproveRoleView(msg.id), allowed_mentions=AllowedMentions.none()))
-        app.voting_id = voting.id
-        await session.commit()
+        async def post_application() -> None:
+            listing = None
+            thread = None
+            voting = None
+            try:
+                listing = await channel.send(format("{!m} ({}) requested {!M}:\n\n{}", member, member.display_name,
+                        role, "\n\n".join("**{}**: {}".format(question, answer) for question, answer in inputs)),
+                    allowed_mentions=AllowedMentions.none())
+                thread = await listing.create_thread(name=member.display_name)
+                voting = await thread.send("Votes:", view=ApproveRoleView(listing.id),
+                    allowed_mentions=AllowedMentions.none())
+                app = Application(listing_id=listing.id, voting_id=voting.id, user_id=member.id, role_id=role.id)
+                session.add(app)
+                await session.commit()
+            except:
+                if voting is not None:
+                    await retry(voting.delete)
+                if thread is not None:
+                    await retry(thread.delete)
+                if listing is not None:
+                    await retry(listing.delete)
+                raise
+
+        await retry(post_application)
 
         if "pending_role" in review:
             if (repl := member.guild.get_role(review["pending_role"])) is not None:

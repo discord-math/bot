@@ -4,7 +4,7 @@ from typing import Awaitable, Callable, Optional
 
 import plugins
 
-logger: logging.Logger = logging.getLogger()
+logger: logging.Logger = logging.getLogger(__name__)
 
 class Task(asyncio.Task[None]):
     __slots__ = "cb", "timeout", "exc_backoff_base", "exc_backoff_multiplier", "queue"
