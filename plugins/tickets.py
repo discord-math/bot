@@ -1292,7 +1292,10 @@ async def update_unapproved_list() -> None:
                 all_ok = False
                 break
 
-        if all_ok and len(messages) == len(conf.unapproved_list or ()):
+        if len(messages) != len(conf.unapproved_list or ()):
+            all_ok = False
+
+        if all_ok:
             for id, (content, _) in zip(conf.unapproved_list, messages):
                 try:
                     await channel.get_partial_message(id).edit(content=content, allowed_mentions=AllowedMentions.none())
