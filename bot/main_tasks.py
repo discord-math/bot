@@ -6,7 +6,7 @@ import asyncio
 import logging
 from typing import Any, Coroutine, List, Optional, TypeVar
 
-tasks: List[asyncio.Task[Any]]
+tasks: List[asyncio.Task[object]]
 try:
     # Keep the list of tasks if we're being reloaded
     tasks # type: ignore

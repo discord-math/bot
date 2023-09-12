@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from typing import (Any, Dict, Generic, Iterable, Iterator, Optional, Tuple,
-    TypeVar, Union, overload)
+from typing import Dict, Generic, Iterable, Iterator, Optional, Tuple, TypeVar, Union, overload
 
 K = TypeVar("K")
 V = TypeVar("V", covariant=True)
@@ -16,7 +15,7 @@ class FrozenDict(Generic[K, V]):
     __slots__ = ("___iter__", "__getitem__", "__len__", "__str__", "__repr__", "__eq__", "__ne__", "__or__", "__ror__",
         "__contains__", "__reversed__", "copy", "get", "items", "keys", "values")
 
-    def __init__(self, *args: Any, **kwargs: Any):
+    def __init__(self, *args: object, **kwargs: object):
         dct: Dict[K, V] = dict(*args, **kwargs)
         def __iter__() -> Iterator[K]:
             return dct.__iter__()
@@ -33,10 +32,10 @@ class FrozenDict(Generic[K, V]):
         def __repr__() -> str:
             return "FrozenDict({})".format(dct.__repr__())
         self.__repr__ = __repr__
-        def __eq__(other: Any, /) -> bool:
+        def __eq__(other: object, /) -> bool:
             return other.__eq__(dct) if isinstance(other, FrozenDict) else dct.__eq__(other)
         self.__eq__ = __eq__
-        def __ne__(other: Any, /) -> bool:
+        def __ne__(other: object, /) -> bool:
             return other.__ne__(dct) if isinstance(other, FrozenDict) else dct.__ne__(other)
         self.__ne__ = __ne__
         def __or__(other: Union[Dict[K, T], FrozenDict[K, T]], /) -> FrozenDict[K, Union[V, T]]:
@@ -45,7 +44,7 @@ class FrozenDict(Generic[K, V]):
         def __ror__(other: Union[Dict[K, T], FrozenDict[K, T]], /) -> FrozenDict[K, Union[V, T]]:
             return other.__or__(dct) if isinstance(other, FrozenDict) else FrozenDict(dct.__ror__(other))
         self.__ror__ = __ror__
-        def __contains__(key: Any, /) -> bool:
+        def __contains__(key: object, /) -> bool:
             return dct.__contains__(key)
         self.__contains__ = __contains__
         def __reversed__() -> Iterator[K]:

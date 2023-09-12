@@ -18,7 +18,7 @@ severity_map = {
     "FATAL": logging.ERROR,
     "PANIC": logging.ERROR}
 
-def filter_single(log_data: Union[bool, Collection[int]], data: Sequence[Any]) -> str:
+def filter_single(log_data: Union[bool, Collection[int]], data: Sequence[object]) -> str:
     spec: Callable[[int], bool]
     if isinstance(log_data, bool):
         log_data_bool = log_data
@@ -28,7 +28,7 @@ def filter_single(log_data: Union[bool, Collection[int]], data: Sequence[Any]) -
         spec = lambda i: i in log_data_set
     return "({})".format(",".join(repr(data[i]) if spec(i + 1) else "?" for i in range(len(data))))
 
-def filter_multi(log_data: Union[bool, Collection[int]], data: Sequence[Sequence[Any]]) -> str:
+def filter_multi(log_data: Union[bool, Collection[int]], data: Sequence[Sequence[object]]) -> str:
     spec: Callable[[int], bool]
     if isinstance(log_data, bool):
         log_data_bool = log_data
@@ -40,13 +40,13 @@ def filter_multi(log_data: Union[bool, Collection[int]], data: Sequence[Sequence
         "({})".format(",".join(repr(datum[i]) if spec(i + 1) else "?" for i in range(len(datum))))
         for datum in data)
 
-def fmt_query_single(query: str, log_data: Union[bool, Collection[int]], args: Sequence[Any]) -> str:
+def fmt_query_single(query: str, log_data: Union[bool, Collection[int]], args: Sequence[object]) -> str:
     if log_data:
         return "{} % {}".format(query, filter_single(log_data, args))
     else:
         return query
 
-def fmt_query_multi(query: str, log_data: Union[bool, Collection[int]], args: Sequence[Sequence[Any]]) -> str:
+def fmt_query_multi(query: str, log_data: Union[bool, Collection[int]], args: Sequence[Sequence[object]]) -> str:
     if log_data:
         return "{} % {}".format(query, filter_multi(log_data, args))
     else:
@@ -70,49 +70,49 @@ class LoggingConnection(Connection):
         self.add_log_listener(log_message)
         self.add_termination_listener(log_termination)
 
-    async def copy_from_query(self, query: str, *args: Any, log_data: Union[bool, Collection[int]] = True,
-        **kwargs: Any) -> str:
+    async def copy_from_query(self, query: str, *args: object, log_data: Union[bool, Collection[int]] = True,
+        **kwargs: object) -> str:
         logger.debug("{} copy_from_query: {}".format(id(self), fmt_query_single(query, log_data, args)))
         return await super().copy_from_query(query, *args, **kwargs)
 
-    async def copy_from_table(self, table_name: str, schema_name: Optional[str] = None, **kwargs: Any) -> str:
+    async def copy_from_table(self, table_name: str, schema_name: Optional[str] = None, **kwargs: object) -> str:
         logger.debug("{}: copy_from_table: {}".format(id(self), fmt_table(table_name, schema_name)))
         return await super().copy_from_table(table_name, schema_name=schema_name, **kwargs)
 
-    async def copy_records_to_table(self, table_name: str, schema_name: Optional[str] = None, **kwargs: Any) -> str:
+    async def copy_records_to_table(self, table_name: str, schema_name: Optional[str] = None, **kwargs: object) -> str:
         logger.debug("{}: copy_records_to_table: {}".format(id(self), fmt_table(table_name, schema_name)))
         return await super().copy_records_to_table(table_name, schema_name=schema_name, **kwargs)
 
-    async def copy_to_table(self, table_name: str, schema_name: Optional[str] = None, **kwargs: Any) -> str:
+    async def copy_to_table(self, table_name: str, schema_name: Optional[str] = None, **kwargs: object) -> str:
         logger.debug("{}: copy_to_table: {}".format(id(self), fmt_table(table_name, schema_name)))
         return await super().copy_to_table(table_name, schema_name=schema_name, **kwargs)
 
-    def cursor(self, query: str, *args: Any, log_data: Union[bool, Collection[int]] = True, **kwargs: Any
+    def cursor(self, query: str, *args: object, log_data: Union[bool, Collection[int]] = True, **kwargs: object
         ) -> CursorFactory:
         logger.debug("{}: cursor: {}".format(id(self), fmt_query_single(query, log_data, args)))
         return super().cursor(query, *args, **kwargs)
 
-    async def execute(self, query: str, *args: Any, log_data: Union[bool, Collection[int]] = True,
+    async def execute(self, query: str, *args: object, log_data: Union[bool, Collection[int]] = True,
         **kwargs: Any) -> str:
         logger.debug("{} execute: {}".format(id(self), fmt_query_single(query, log_data, args)))
         return await super().execute(query, *args, **kwargs)
 
-    async def executemany(self, query: str, args: Sequence[Sequence[Any]],
+    async def executemany(self, query: str, args: Sequence[Sequence[object]],
         log_data: Union[bool, Collection[int]] = True, **kwargs: Any) -> None:
         logger.debug("{} executemany: {}".format(id(self), fmt_query_multi(query, log_data, args)))
         return await super().executemany(query, args, **kwargs)
 
-    async def fetch(self, query: str, *args: Any, # type: ignore
-        log_data: Union[bool, Collection[int]] = True, **kwargs: Any) -> Sequence[Record]:
+    async def fetch(self, query: str, *args: object, # type: ignore
+        log_data: Union[bool, Collection[int]] = True, **kwargs: object) -> Sequence[Record]:
         logger.debug("{} fetch: {}".format(id(self), fmt_query_single(query, log_data, args)))
         return await super().fetch(query, *args, **kwargs)
 
-    async def fetchrow(self, query: str, *args: Any, # type: ignore
-        log_data: Union[bool, Collection[int]] = True, **kwargs: Any) -> Optional[Record]:
+    async def fetchrow(self, query: str, *args: object, # type: ignore
+        log_data: Union[bool, Collection[int]] = True, **kwargs: object) -> Optional[Record]:
         logger.debug("{} fetchrow: {}".format(id(self), fmt_query_single(query, log_data, args)))
         return await super().fetchrow(query, *args, **kwargs)
 
-    async def fetchval(self, query: str, *args: Any, # type: ignore
+    async def fetchval(self, query: str, *args: object, # type: ignore
         log_data: Union[bool, Collection[int]] = True, **kwargs: Any) -> Optional[Record]:
         logger.debug("{} fetchval: {}".format(id(self), fmt_query_single(query, log_data, args)))
         return await super().fetchval(query, *args, **kwargs)
@@ -121,7 +121,7 @@ class LoggingConnection(Connection):
         logger.debug("{} transaction".format(id(self)))
         return super().transaction(**kwargs)
 
-    async def prepare(self, query: str, **kwargs: Any) -> PreparedStatement:
+    async def prepare(self, query: str, **kwargs: object) -> PreparedStatement:
         logger.debug("{} prepare: {}".format(id(self), query))
         # TODO: hook into PreparedStatement
         return await super().prepare(query, **kwargs)

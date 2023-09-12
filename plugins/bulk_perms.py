@@ -1,11 +1,12 @@
 from collections import defaultdict
 import csv
 from io import BytesIO, StringIO
-from typing import Any, Awaitable, Callable, Dict, List, Optional, Set, Tuple, Union
+from typing import Awaitable, Callable, Dict, List, Optional, Set, Tuple, Union
 
 from discord import (AllowedMentions, CategoryChannel, File, ForumChannel, Member, Object, PermissionOverwrite,
     Permissions, Role, StageChannel, TextChannel, VoiceChannel)
 import discord.abc
+import discord.flags
 
 from bot.commands import Context, command
 from bot.privileges import priv
@@ -98,11 +99,11 @@ def edit_role_perms(role: Role, add_mask: int, remove_mask: int
         role.permissions.value & ~remove_mask | add_mask))
 
 def edit_channel_category(channel: SubChannel, category: Optional[CategoryChannel]
-    ) -> Callable[[], Awaitable[Any]]:
+    ) -> Callable[[], Awaitable[object]]:
     return lambda: channel.edit(category=category)
 
 def edit_channel_overwrites(channel: GuildChannel,
-    overwrites: Dict[Union[Role, Member], Tuple[int, int, int]]) -> Callable[[], Awaitable[Any]]:
+    overwrites: Dict[Union[Role, Member], Tuple[int, int, int]]) -> Callable[[], Awaitable[object]]:
     if isinstance(channel, (VoiceChannel, CategoryChannel, StageChannel)):
         return lambda: channel.edit(overwrites={target:
             tweak_overwrite(overwrites_for(channel, target), add_mask, remove_mask, reset_mask)
@@ -112,7 +113,7 @@ def edit_channel_overwrites(channel: GuildChannel,
             tweak_overwrite(overwrites_for(channel, target), add_mask, remove_mask, reset_mask)
             for target, (add_mask, remove_mask, reset_mask) in overwrites.items()})
 
-def sync_channel(channel: SubChannel) -> Callable[[], Awaitable[Any]]:
+def sync_channel(channel: SubChannel) -> Callable[[], Awaitable[object]]:
     return lambda: channel.edit(sync_permissions=True)
 
 @priv("admin")
@@ -133,14 +134,14 @@ async def importperms(ctx: Context) -> None:
     if len(header) < 3 or header[0] != "Category" or header[1] != "Channel" or header[2] != "Role/User":
         raise UserError("Invalid header.")
 
-    flags: List[Tuple[Any, str]] = []
+    flags: List[Tuple[discord.flags.flag_value, str]] = []
     for perm in header[3:]:
         try:
             flags.append((getattr(Permissions, perm), perm))
         except AttributeError:
             raise UserError("Unknown permission: {!r}".format(perm))
 
-    actions: List[Callable[[], Awaitable[Any]]] = []
+    actions: List[Callable[[], Awaitable[object]]] = []
     output: List[str] = []
     new_overwrites: Dict[GuildChannel, Dict[Union[Role, Member], Tuple[int, int, int]]]
     new_overwrites = defaultdict(dict)

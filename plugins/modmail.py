@@ -1,7 +1,7 @@
 import asyncio
 from datetime import datetime, timedelta
 import logging
-from typing import TYPE_CHECKING, Any, Awaitable, Dict, Optional, Protocol, cast
+from typing import TYPE_CHECKING, Awaitable, Dict, Optional, Protocol, cast
 
 import discord
 from discord import (Activity, ActivityType, AllowedMentions, Client, DMChannel, Intents, Message, MessageReference,
@@ -111,7 +111,7 @@ class ModMailClient(Client):
     async def on_ready(self) -> None:
         await self.change_presence(activity=Activity(type=ActivityType.watching, name="DMs"))
 
-    async def on_error(self, event_method: str, *args: Any, **kwargs: Any) -> None:
+    async def on_error(self, event_method: str, *args: object, **kwargs: object) -> None:
         logger.error("Exception in modmail client {}".format(event_method), exc_info=True)
 
     async def on_message(self, msg: Message) -> None:

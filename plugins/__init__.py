@@ -11,7 +11,7 @@ import logging
 import pkgutil
 import sys
 from types import ModuleType
-from typing import Any, Awaitable, Callable, Dict, Iterable, Iterator, List, Optional, Sequence, Tuple, TypeVar, Union
+from typing import Awaitable, Callable, Dict, Iterable, Iterator, List, Optional, Sequence, Tuple, TypeVar, Union
 
 from util.digraph import Digraph
 
@@ -92,7 +92,7 @@ class PluginManager:
             import_stack.pop()
 
     @staticmethod
-    async def exc_foreach(fun: Callable[[A], Awaitable[Any]], values: Iterable[A],
+    async def exc_foreach(fun: Callable[[A], Awaitable[object]], values: Iterable[A],
         map_exc: Callable[[Exception, A], Tuple[Exception, Optional[BaseException]]] = lambda e, _: (e, e.__cause__)
         ) -> None:
         gen = iter(values)
@@ -349,7 +349,7 @@ class Plugin:
         finally:
             self.finalizers.clear()
 
-T = TypeVar("T", bound=Union[Callable[[], Any], Callable[[], Awaitable[Any]]])
+T = TypeVar("T", bound=Union[Callable[[], object], Callable[[], Awaitable[object]]])
 
 def init(init: T) -> T:
     """
@@ -389,8 +389,8 @@ def finalizer(fin: T) -> T:
     current_plugin().finalizers.append(afin)
     return ret
 
-def trace_import(name: str, globals: Optional[Dict[str, Any]] = None, locals: Optional[Dict[str, Any]] = None,
-    fromlist: Sequence[str] = (), level: int = 0) -> Any:
+def trace_import(name: str, globals: Optional[Dict[str, object]] = None, locals: Optional[Dict[str, object]] = None,
+    fromlist: Sequence[str] = (), level: int = 0) -> object:
     current = current_plugin()
     current_manager = PluginManager.of(current.name)
     assert current_manager

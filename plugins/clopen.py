@@ -2,8 +2,8 @@ import asyncio
 from collections import defaultdict
 import logging
 from time import time
-from typing import (TYPE_CHECKING, Any, Awaitable, Dict, Iterable, List, Literal, Optional, Protocol, Tuple, Union,
-    cast, overload)
+from typing import (TYPE_CHECKING, Awaitable, Dict, Iterable, List, Literal, Optional, Protocol, Tuple, Union, cast,
+    overload)
 
 import discord
 from discord import (AllowedMentions, ButtonStyle, CategoryChannel, Embed, ForumChannel, ForumTag, Interaction,
@@ -157,7 +157,7 @@ async def init() -> None:
         await bot.message_tracker.unsubscribe(__name__, None)
     plugins.finalizer(unsubscribe)
 
-rename_tasks: Dict[int, asyncio.Task[Any]] = {}
+rename_tasks: Dict[int, asyncio.Task[object]] = {}
 last_rename: Dict[int, float] = {}
 
 def request_rename(chan: TextChannel, name: str) -> None:

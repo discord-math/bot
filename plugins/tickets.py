@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 import enum
 import logging
 import re
-from typing import (TYPE_CHECKING, Any, AsyncIterator, Awaitable, Callable, Dict, Iterable, Iterator, List, NamedTuple,
+from typing import (TYPE_CHECKING, AsyncIterator, Awaitable, Callable, Dict, Iterable, Iterator, List, NamedTuple,
     Optional, Protocol, Sequence, Set, Tuple, Type, TypedDict, TypeVar, Union, cast)
 
 import discord
@@ -1745,7 +1745,7 @@ class Tickets(Cog):
     @Cog.listener("on_member_ban")
     @Cog.listener("on_member_unban")
     @Cog.listener("on_member_remove")
-    async def on_member_remove(self, *args: Any) -> None:
+    async def on_member_remove(self, *args: object) -> None:
         audit_log_task.run_coalesced(conf.audit_log_precision)
 
 

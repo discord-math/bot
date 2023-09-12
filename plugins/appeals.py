@@ -1,5 +1,5 @@
 import logging
-from typing import TYPE_CHECKING, Any, NoReturn, Optional, Protocol, cast
+from typing import TYPE_CHECKING, NoReturn, Optional, Protocol, cast
 
 from aiohttp import (ClientSession, DummyCookieJar, FormData, TraceConfig, TraceRequestEndParams,
     TraceRequestExceptionParams, TraceRequestStartParams)
@@ -224,13 +224,13 @@ app = Application()
 app.add_routes(routes)
 aiohttp_session.setup(app, aiohttp_session.SimpleCookieStorage())
 
-async def on_request_start(session: ClientSession, context: Any, params: TraceRequestStartParams) -> None:
+async def on_request_start(session: ClientSession, context: object, params: TraceRequestStartParams) -> None:
     logger.debug("Sending request to {}".format(params.url))
 
-async def on_request_end(session: ClientSession, context: Any, params: TraceRequestEndParams) -> None:
+async def on_request_end(session: ClientSession, context: object, params: TraceRequestEndParams) -> None:
     logger.debug("Request to {} received {}".format(params.url, params.response.status))
 
-async def on_request_exception(session: ClientSession, context: Any, params: TraceRequestExceptionParams) -> None:
+async def on_request_exception(session: ClientSession, context: object, params: TraceRequestExceptionParams) -> None:
     logger.debug("Request to {} received exception".format(params.url), exc_info=params.exception)
 
 @plugins.init

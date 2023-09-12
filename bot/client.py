@@ -3,7 +3,6 @@ This module defines the "client" singleton. Reloading the module restarts the co
 """
 
 import logging
-from typing import Any
 
 from discord import AllowedMentions, Intents
 from discord.ext.commands import Bot
@@ -24,11 +23,11 @@ client = Bot(
 
 # Disable command functionality until reenabled again in bot.commands
 @client.event
-async def on_message(*args: Any, **kwargs: Any) -> None:
+async def on_message(*args: object, **kwargs: object) -> None:
     pass
 
 @client.event
-async def on_error(event: str, *args: Any, **kwargs: Any) -> None:
+async def on_error(event: str, *args: object, **kwargs: object) -> None:
     logger.error("Uncaught exception in {}".format(event), exc_info=True)
 
 async def main_task() -> None:

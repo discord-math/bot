@@ -1,5 +1,5 @@
 import contextlib
-from typing import Any, AsyncIterator, Callable, Dict, Union
+from typing import AsyncIterator, Callable, Dict, Union
 
 import asyncpg
 import sqlalchemy
@@ -25,14 +25,13 @@ async def connection() -> AsyncIterator[util_db_log.LoggingConnection]:
     finally:
         await conn.close()
 
-def create_async_engine(connect_args: Dict[str, Any] = {}, **kwargs: Any) -> sqlalchemy.ext.asyncio.AsyncEngine:
+def create_async_engine(connect_args: Dict[str, object] = {}, **kwargs: object) -> sqlalchemy.ext.asyncio.AsyncEngine:
     args = connect_args.copy()
     args.setdefault("connection_class", util_db_log.LoggingConnection)
     return sqlalchemy.ext.asyncio.create_async_engine(async_connection_uri,
         pool_pre_ping=True, connect_args=args, **kwargs)
 
-from util.db.initialization import init as init
-from util.db.initialization import init_for as init_for
+from util.db.initialization import init as init, init_for as init_for
 
 def get_ddl(*cbs: Union[DDLElement, Callable[[Connection], None]]) -> str:
     # By default sqlalchemy treats asyncpg as if it had paramstyle="format", which means it tries to escape percent
@@ -41,7 +40,7 @@ def get_ddl(*cbs: Union[DDLElement, Callable[[Connection], None]]) -> str:
     dialect = sqlalchemy.dialects.postgresql.dialect(paramstyle="qmark")
     ddls = []
 
-    def executor(sql: ExecutableDDLElement, *args: Any, **kwargs: Any) -> None:
+    def executor(sql: ExecutableDDLElement, *args: object, **kwargs: object) -> None:
         ddls.append(str(sql.compile(dialect=dialect)) + ";")
     conn = sqlalchemy.create_mock_engine(sqlalchemy.make_url("postgresql://"), executor)
     for cb in cbs:

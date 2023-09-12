@@ -1,8 +1,8 @@
 from collections import defaultdict
 from typing import Any, List, Mapping, Optional, Set
 
-from discord.ext.commands import Command, Group, Cog
 import discord.ext.commands
+from discord.ext.commands import Cog, Command, Group
 
 from bot.client import client
 from bot.privileges import PrivCheck

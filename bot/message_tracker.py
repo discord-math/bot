@@ -10,8 +10,8 @@ import asyncio
 import bisect
 from datetime import datetime, timedelta
 import logging
-from typing import (TYPE_CHECKING, Any, Awaitable, Callable, Dict, Iterable, List, Optional, Sequence, Tuple, TypeVar,
-    Union, cast, overload)
+from typing import (TYPE_CHECKING, Awaitable, Callable, Dict, Iterable, List, Optional, Sequence, Tuple, TypeVar, Union,
+    cast, overload)
 
 import discord
 from discord import Guild, Message, Object, TextChannel, Thread, VoiceChannel
@@ -164,7 +164,7 @@ class MessageIDList(Sequence[int]):
     def __getitem__(self, i: int) -> int: ...
     @overload
     def __getitem__(self, i: slice) -> Sequence[int]: ...
-    def __getitem__(self, i: Any) -> Any:
+    def __getitem__(self, i: object) -> object:
         assert isinstance(i, int)
         id = self.msgs[i].id
         return -id if self.negate else id

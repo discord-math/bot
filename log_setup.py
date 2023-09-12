@@ -1,7 +1,7 @@
 import logging
 import logging.handlers
 import time
-from typing import Any, Callable, List, Optional, TextIO, Tuple, Type, Union
+from typing import Callable, List, Optional, TextIO, Tuple, Type, Union
 import warnings
 
 import static_config
@@ -34,7 +34,7 @@ class Formatter(logging.Formatter):
     default_time_format = "%Y-%m-%dT%H:%M:%S"
     default_msec_format = "%s.%03d"
 
-    def format(self, record: Any) -> str:
+    def format(self, record: logging.LogRecord) -> str:
         record.asctime = self.formatTime(record, self.datefmt)
         if record.exc_info:
             if not record.exc_text:

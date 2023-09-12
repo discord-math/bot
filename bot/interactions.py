@@ -74,17 +74,17 @@ def group(name: str, *, description: str, **kwargs: Any) -> Group:
     return cmd
 
 def context_menu(name: str) -> Callable[[Union[
-        Callable[[Interaction, Member], Coroutine[Any, Any, Any]],
-        Callable[[Interaction, User], Coroutine[Any, Any, Any]],
-        Callable[[Interaction, Message], Coroutine[Any, Any, Any]],
-        Callable[[Interaction, Union[Member, User]], Coroutine[Any, Any, Any]]
+        Callable[[Interaction, Member], Coroutine[Any, Any, object]],
+        Callable[[Interaction, User], Coroutine[Any, Any, object]],
+        Callable[[Interaction, Message], Coroutine[Any, Any, object]],
+        Callable[[Interaction, Union[Member, User]], Coroutine[Any, Any, object]]
     ]], ContextMenu]:
     """Decorator for a context menu command that is added/removed together with the plugin."""
     def decorator(fun: Union[
-        Callable[[Interaction, Member], Coroutine[Any, Any, Any]],
-        Callable[[Interaction, User], Coroutine[Any, Any, Any]],
-        Callable[[Interaction, Message], Coroutine[Any, Any, Any]],
-        Callable[[Interaction, Union[Member, User]], Coroutine[Any, Any, Any]]]
+        Callable[[Interaction, Member], Coroutine[Any, Any, object]],
+        Callable[[Interaction, User], Coroutine[Any, Any, object]],
+        Callable[[Interaction, Message], Coroutine[Any, Any, object]],
+        Callable[[Interaction, Union[Member, User]], Coroutine[Any, Any, object]]]
         ) -> ContextMenu:
         cmd = discord.app_commands.context_menu(name=name)(fun)
 

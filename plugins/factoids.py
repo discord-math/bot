@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 import json
-from typing import TYPE_CHECKING, Any, Optional, Protocol, TypedDict, Union, cast, overload
+from typing import TYPE_CHECKING, Mapping, Optional, Protocol, TypedDict, Union, cast, overload
 from typing_extensions import NotRequired
 
 from discord import AllowedMentions, Embed, Message, MessageReference, Thread
@@ -41,7 +41,7 @@ class Factoid:
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     message_text: Mapped[Optional[str]] = mapped_column(TEXT)
-    embed_data: Mapped[Optional[Any]] = mapped_column(JSONB)
+    embed_data: Mapped[Optional[Mapping[str, object]]] = mapped_column(JSONB)
     author_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False)
     uses: Mapped[int] = mapped_column(BigInteger, nullable=False)
@@ -50,8 +50,8 @@ class Factoid:
 
     if TYPE_CHECKING:
         def __init__(self, /, author_id: int, created_at: datetime, uses: int, id: Optional[int] = ...,
-            message_text: Optional[str] = ..., embed_data: Optional[Any] = ...,
-            used_at: Optional[datetime] = ..., flags: Optional[Any] = ...) -> None: ...
+            message_text: Optional[str] = ..., embed_data: Optional[Mapping[str, object]] = ...,
+            used_at: Optional[datetime] = ..., flags: Optional[Mapping[str, object]] = ...) -> None: ...
 
 @registry.mapped
 class Alias:

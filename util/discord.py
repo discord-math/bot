@@ -10,15 +10,15 @@ import logging
 import math
 import re
 import string
-from typing import (Any, AsyncContextManager, Callable, Dict, Generic, Iterable, Iterator, List, Optional, Protocol,
-    Sequence, Tuple, Type, TypeVar, Union, cast, Awaitable)
+from typing import (Any, AsyncContextManager, Awaitable, Callable, Dict, Generic, Iterable, Iterator, List, Optional,
+    Protocol, Sequence, Tuple, Type, TypeVar, Union, cast)
 
 import discord
 from discord import (CategoryChannel, File, ForumChannel, Member, Message, Object, PartialMessage, Role, StageChannel,
     TextChannel, User, VoiceChannel)
 from discord.abc import GuildChannel, Messageable, Snowflake
 import discord.context_managers
-from discord.ext.commands import (ArgumentParsingError, BadArgument, CommandError, Context, MessageNotFound,
+from discord.ext.commands import (ArgumentParsingError, BadArgument, Bot, CommandError, Context, MessageNotFound,
     NoPrivateMessage, PartialMessageConverter, UserInputError)
 import discord.ext.commands.view
 from discord.ext.commands.view import StringView
@@ -43,7 +43,7 @@ class Quoted:
         return "Quoted({!r})".format(self.text)
 
     @classmethod
-    async def convert(cls, ctx: Context[Any], arg: str) -> Quoted:
+    async def convert(cls, ctx: Context[Bot], arg: str) -> Quoted:
         return cls(arg)
 
 def undo_get_quoted_word(view: StringView, arg: str) -> int:
@@ -88,7 +88,7 @@ class CodeBlock(Quoted):
     codeblock_re: re.Pattern[str] = re.compile(r"```(?:(?P<language>\S*)\n(?!```))?(?P<block>(?:(?!```).)+)```", re.S)
 
     @classmethod
-    async def convert(cls, ctx: Context[Any], arg: str) -> CodeBlock:
+    async def convert(cls, ctx: Context[Bot], arg: str) -> CodeBlock:
         if (match := cls.codeblock_re.match(ctx.view.buffer, pos=undo_get_quoted_word(ctx.view, arg))) is not None:
             ctx.view.index = match.end()
             return cls(match["block"], language=match["language"] or None)
@@ -120,7 +120,7 @@ class Inline(Quoted):
     inline_re: re.Pattern[str] = re.compile(r"``((?:(?!``).)+)``|`([^`]+)`", re.S)
 
     @classmethod
-    async def convert(cls, ctx: Context[Any], arg: str) -> Inline:
+    async def convert(cls, ctx: Context[Bot], arg: str) -> Inline:
         if (match := cls.inline_re.match(ctx.view.buffer, pos=undo_get_quoted_word(ctx.view, arg))) is not None:
             ctx.view.index = match.end()
             return cls(match[1] or match[2])
@@ -141,7 +141,7 @@ class Formatter(string.Formatter):
 
     __slots__ = ()
 
-    def convert_field(self, value: Any, conversion: str) -> Any:
+    def convert_field(self, value: object, conversion: str) -> object:
         if conversion == "i":
             return str(Inline(str(value)))
         elif conversion == "b":
@@ -169,7 +169,7 @@ class Formatter(string.Formatter):
                 return "<#{}>".format(value)
         return super().convert_field(value, conversion)
 
-    def format_field(self, value: Any, fmt: str) -> Any:
+    def format_field(self, value: object, fmt: str) -> object:
         if isinstance(value, CodeBlock):
             if fmt:
                 value.language = fmt
@@ -298,7 +298,7 @@ class TempMessage(AsyncContextManager[Message]):
     kwargs: Any
     message: Optional[Message]
 
-    def __init__(self, sendable: Messageable, *args: Any, **kwargs: Any):
+    def __init__(self, sendable: Messageable, *args: object, **kwargs: object):
         self.sendable = sendable
         self.args = args
         self.kwargs = kwargs
@@ -359,7 +359,7 @@ class PartialUserConverter(Snowflake):
     discrim_re: re.Pattern[str] = re.compile(r"(.*)#(\d{4})")
 
     @classmethod
-    async def convert(cls, ctx: Context[Any], arg: str) -> Snowflake:
+    async def convert(cls, ctx: Context[Bot], arg: str) -> Snowflake:
         if match := cls.mention_re.fullmatch(arg):
             return Object(int(match[1]))
         elif match := cls.id_re.fullmatch(arg):
@@ -390,7 +390,7 @@ class PartialUserConverter(Snowflake):
 
 class MemberConverter(User):
     @classmethod
-    async def convert(cls, ctx: Context[Any], arg: str) -> Optional[Member]:
+    async def convert(cls, ctx: Context[Bot], arg: str) -> Optional[Member]:
         if ctx.guild is None:
             raise NoPrivateMessage(format("Cannot obtain member outside a server"))
 
@@ -409,7 +409,7 @@ class MemberConverter(User):
 
 class UserConverter(User):
     @classmethod
-    async def convert(cls, ctx: Context[Any], arg: str) -> Optional[User]:
+    async def convert(cls, ctx: Context[Bot], arg: str) -> Optional[User]:
         obj = await PartialUserConverter.convert(ctx, arg)
         if isinstance(obj, User):
             return obj
@@ -427,7 +427,7 @@ class PartialRoleConverter(Snowflake):
     id_re: re.Pattern[str] = re.compile(r"\d{15,}")
 
     @classmethod
-    async def convert(cls, ctx: Context[Any], arg: str) -> Snowflake:
+    async def convert(cls, ctx: Context[Bot], arg: str) -> Snowflake:
         if match := cls.mention_re.fullmatch(arg):
             return Object(int(match[1]))
         elif match := cls.id_re.fullmatch(arg):
@@ -446,7 +446,7 @@ class PartialRoleConverter(Snowflake):
 
 class RoleConverter(Role):
     @classmethod
-    async def convert(cls, ctx: Context[Any], arg: str) -> Role:
+    async def convert(cls, ctx: Context[Bot], arg: str) -> Role:
         obj = await PartialRoleConverter.convert(ctx, arg)
         if isinstance(obj, Role):
             return obj
@@ -476,7 +476,7 @@ class PCConv(Generic[C]):
 
 
     @classmethod
-    async def partial_convert(cls, ctx: Context[Any], arg: str, ty: Type[C]) -> Snowflake:
+    async def partial_convert(cls, ctx: Context[Bot], arg: str, ty: Type[C]) -> Snowflake:
         if match := cls.mention_re.fullmatch(arg):
             return Object(int(match[1]))
         elif match := cls.id_re.fullmatch(arg):
@@ -507,7 +507,7 @@ class PCConv(Generic[C]):
             raise BadArgument(format("Could not find {} {} on this server", kind, arg))
 
     @classmethod
-    async def convert(cls, ctx: Context[Any], arg: str, ty: Type[C]) -> C:
+    async def convert(cls, ctx: Context[Bot], arg: str, ty: Type[C]) -> C:
         obj = await cls.partial_convert(ctx, arg, ty)
         if isinstance(obj, ty):
             return obj
@@ -529,28 +529,28 @@ class PCConv(Generic[C]):
 
 class PartialChannelConverter(GuildChannel):
     @classmethod
-    async def convert(cls, ctx: Context[Any], arg: str) -> Snowflake:
+    async def convert(cls, ctx: Context[Bot], arg: str) -> Snowflake:
         return await PCConv.partial_convert(ctx, arg, GuildChannel)
 
 class PartialTextChannelConverter(GuildChannel):
     @classmethod
-    async def convert(cls, ctx: Context[Any], arg: str) -> Snowflake:
+    async def convert(cls, ctx: Context[Bot], arg: str) -> Snowflake:
         return await PCConv.partial_convert(ctx, arg, TextChannel)
 
 class PartialCategoryChannelConverter(GuildChannel):
     @classmethod
-    async def convert(cls, ctx: Context[Any], arg: str) -> Snowflake:
+    async def convert(cls, ctx: Context[Bot], arg: str) -> Snowflake:
         return await PCConv.partial_convert(ctx, arg, CategoryChannel)
 
 class ChannelConverter(GuildChannel):
     @classmethod
-    async def convert(cls, ctx: Context[Any], arg: str) -> GuildChannel:
+    async def convert(cls, ctx: Context[Bot], arg: str) -> GuildChannel:
         return await PCConv.convert(ctx, arg, GuildChannel)
 
 def partial_message(channel: Snowflake, id: int) -> PartialMessage:
     return PartialMessage(channel=client.get_partial_messageable(channel.id), id=id)
 
-def partial_from_reply(pmsg: Optional[PartialMessage], ctx: Context[Any]) -> PartialMessage:
+def partial_from_reply(pmsg: Optional[PartialMessage], ctx: Context[Bot]) -> PartialMessage:
     if pmsg is not None:
         return pmsg
     if (ref := ctx.message.reference) is not None:
@@ -570,7 +570,7 @@ class ReplyConverter(PartialMessage):
     this is the last non-optional parameter, wrap it in Optional, and pass the result via partial_from_reply.
     """
     @classmethod
-    async def convert(cls, ctx: Context[Any], arg: str) -> PartialMessage:
+    async def convert(cls, ctx: Context[Bot], arg: str) -> PartialMessage:
         pos = undo_get_quoted_word(ctx.view, arg)
         if ctx.message.reference is not None:
             ctx.view.index = pos
@@ -617,7 +617,7 @@ def parse_duration(text: str) -> Tuple[timedelta, int]:
 
 class DurationConverter(timedelta):
     @classmethod
-    async def convert(cls, ctx: Context[Any], arg: str) -> timedelta:
+    async def convert(cls, ctx: Context[Bot], arg: str) -> timedelta:
         pos = undo_get_quoted_word(ctx.view, arg)
         delta, offset = parse_duration(ctx.view.buffer[pos:])
         if offset:
@@ -691,7 +691,7 @@ def chunk_messages(items: Iterable[Union[PlainItem, CodeItem]]) -> Iterator[Tupl
 def HTTPMeta(status: int) -> Type[type]:
     class HTTPMeta(type):
         @staticmethod
-        def __instancecheck__(instance: Any) -> bool:
+        def __instancecheck__(instance: object) -> bool:
             return isinstance(instance, discord.HTTPException) and instance.status == status
     return HTTPMeta
 

@@ -87,7 +87,7 @@ class ReactionMonitor(ContextManager['ReactionMonitor[T]'], Generic[T]):
         author_id: Optional[int] = None, emoji: Optional[Union[PartialEmoji, Emoji, str, int]] = None,
         loop: Optional[asyncio.AbstractEventLoop] = None, timeout_each: Optional[float] = None,
         timeout_total: Optional[float] = None) -> None: ...
-    def __init__(self: ReactionMonitor[Any], *, event: Optional[str] = None,
+    def __init__(self: ReactionMonitor[object], *, event: Optional[str] = None,
         filter: Optional[Callable[[str, Any], bool]] = None,
         guild_id: Optional[int] = None, channel_id: Optional[int] = None, message_id: Optional[int] = None,
         author_id: Optional[int] = None, emoji: Optional[Union[PartialEmoji, Emoji, str, int]] = None,

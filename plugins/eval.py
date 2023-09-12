@@ -26,14 +26,14 @@ async def exec_command(ctx: Context, args: Greedy[Union[CodeBlock, Inline, str]]
     and "client". The print function is redirected. The code can also use top-level "await".
     """
     outputs = []
-    code_scope: Dict[str, Any] = dict(sys.modules)
+    code_scope: Dict[str, object] = dict(sys.modules)
     # Using real builtins to avoid dependency tracking
     code_scope["__builtins__"] = builtins
     code_scope.update(builtins.__dict__)
     code_scope["ctx"] = ctx
     code_scope["client"] = client
     def mk_code_print(fp: StringIO) -> Callable[..., None]:
-        def code_print(*args: Any, sep: str = " ", end: str = "\n", file: Any = fp, flush: bool = False):
+        def code_print(*args: object, sep: str = " ", end: str = "\n", file: Any = fp, flush: bool = False):
             return print(*args, sep=sep, end=end, file=file, flush=flush)
         return code_print
     fp = StringIO()

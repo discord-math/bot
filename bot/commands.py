@@ -4,7 +4,7 @@ Utilities for registering basic commands. Commands are triggered by a configurab
 
 import asyncio
 import logging
-from typing import Any, Callable, Coroutine, Optional, Protocol, Set, Type, TypeVar, Union, cast, overload
+from typing import Any, Awaitable, Callable, Coroutine, Optional, Protocol, Set, Type, TypeVar, Union, cast, overload
 from typing_extensions import Concatenate, ParamSpec
 
 import discord
@@ -55,7 +55,7 @@ class Commands(Cog):
                 return
             elif isinstance(exc, UserInputError):
                 if isinstance(exc, BadUnionArgument):
-                    def conv_name(conv: Any) -> Any:
+                    def conv_name(conv: type) -> str:
                         try:
                             return conv.__name__
                         except AttributeError:
@@ -108,29 +108,28 @@ CommandT = TypeVar("CommandT", bound=Command[Any, Any, Any])
 
 class _CommandDecorator:
     @overload
-    def __call__(self, func: Callable[Concatenate[CogT, ContextT, P], Coroutine[Any, Any, T]], /
+    def __call__(self, func: Callable[Concatenate[CogT, ContextT, P], Awaitable[T]], /
         ) -> Command[CogT, P, T]: ...
     @overload
-    def __call__(self, func: Callable[Concatenate[ContextT, P], Coroutine[Any, Any, T]], /
+    def __call__(self, func: Callable[Concatenate[ContextT, P], Awaitable[T]], /
         ) -> Command[None, P, T]: ...
-    def __call__(self, func: Callable[..., Coroutine[Any, Any, Any]], /) -> Any: ...
+    def __call__(self, func: Callable[..., Awaitable[object]], /) -> object: ...
 
 @overload
-def command(name: Optional[str], cls: Type[CommandT], **attrs: Any) -> Callable[
-    [Union[Callable[Concatenate[ContextT, P], Coroutine[Any, Any, Any]],
-        Callable[Concatenate[Any, ContextT, P], Coroutine[Any, Any, Any]]]], CommandT]: ...
+def command(name: Optional[str], cls: Type[CommandT], **attrs: object) -> Callable[
+    [Union[Callable[Concatenate[ContextT, P], Awaitable[object]],
+        Callable[Concatenate[CogT, ContextT, P], Awaitable[object]]]], CommandT]: ... # type: ignore
 @overload
-def command(name: Optional[str] = ..., **attrs: Any,) -> _CommandDecorator: ...
-def command(name: Optional[str] = None, cls: Any = Command, *args: Any, **kwargs: Any) -> Any:
+def command(name: Optional[str] = ..., cls: Type[CommandT] = Command, **attrs: object) -> _CommandDecorator: ...
+def command(name: Optional[str] = None, cls: Type[CommandT] = Command, *args: object, **kwargs: object) -> object:
     def decorator(fun: Callable[Concatenate[ContextT, P], Coroutine[Any, Any, T]]
         ) -> Callable[Concatenate[ContextT, P], Coroutine[Any, Any, T]]:
-        cmd: Command[None, P, T]
         if isinstance(fun, Command):
             if args or kwargs:
                 raise TypeError("the provided object is already a Command (args/kwargs have no effect)")
-            cmd = fun
+            cmd = cast(Command[None, P, T], fun)
         else:
-            cmd = discord.ext.commands.command(name=name, cls=cls, *args, **kwargs)(fun) # type: ignore
+            cmd = discord.ext.commands.command(name=cast(str, name), cls=cls, *args, **kwargs)(fun)
         client.add_command(cmd)
         def cleanup_command() -> None:
             client.remove_command(cmd.name)
@@ -138,9 +137,9 @@ def command(name: Optional[str] = None, cls: Any = Command, *args: Any, **kwargs
         return cmd
     return decorator
 
-def group(name: Optional[str] = None, *args: Any, **kwargs: Any) -> Callable[
-    [Union[Callable[Concatenate[ContextT, P], Coroutine[Any, Any, Any]],
-        Callable[Concatenate[CogT, ContextT, P], Coroutine[Any, Any, Any]]]], Group[CogT, P, ContextT]]:
+def group(name: Optional[str] = None, *args: object, **kwargs: object) -> Callable[
+    [Union[Callable[Concatenate[ContextT, P], Awaitable[object]],
+        Callable[Concatenate[CogT, ContextT, P], Awaitable[object]]]], Group[CogT, P, ContextT]]:
     return command(name, cls=Group, *args, **kwargs)
 
 def suppress_usage(cmd: T) -> T:

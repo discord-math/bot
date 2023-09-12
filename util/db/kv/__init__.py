@@ -9,8 +9,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
-from typing import (Any, AsyncIterator, Dict, Iterator, Optional, Sequence,
-    Set, Tuple, Union, cast)
+from typing import AsyncIterator, Dict, Iterator, Optional, Sequence, Set, Tuple, Union, cast
 from weakref import WeakValueDictionary
 
 import util.asyncio
@@ -35,7 +34,7 @@ async def init_schema() -> None:
             """)
         schema_initialized = True
 
-def json_freeze(value: Optional[Any]) -> Optional[Any]:
+def json_freeze(value: Optional[object]) -> Optional[object]:
     if isinstance(value, list):
         return FrozenList(json_freeze(v) for v in value)
     elif isinstance(value, dict):
@@ -45,7 +44,7 @@ def json_freeze(value: Optional[Any]) -> Optional[Any]:
 
 class ThawingJSONEncoder(json.JSONEncoder):
     __slots__ = ()
-    def default(self, obj: Any) -> Any:
+    def default(self, obj: object) -> object:
         if isinstance(obj, FrozenList):
             return obj.copy()
         elif isinstance(obj, FrozenDict):
@@ -53,10 +52,10 @@ class ThawingJSONEncoder(json.JSONEncoder):
         else:
             return super().default(obj)
 
-def json_encode(value: Any) -> Optional[str]:
+def json_encode(value: object) -> Optional[str]:
     return json.dumps(value, cls=ThawingJSONEncoder) if value is not None else None
 
-def json_decode(text: Optional[str]) -> Any:
+def json_decode(text: Optional[str]) -> object:
     return json_freeze(json.loads(text)) if text is not None else None
 
 @contextlib.asynccontextmanager
@@ -121,7 +120,7 @@ class ConfigStore(Dict[Tuple[str, ...], str]):
     __slots__ = ("__weakref__", "ready")
     ready: asyncio.Event
 
-    def __init__(self, *args: Any, **kwargs: Any):
+    def __init__(self, *args: object, **kwargs: object):
         super().__init__(*args, **kwargs)
         self.ready = asyncio.Event()
 
@@ -158,10 +157,10 @@ class Config:
     def __iter__(self) -> Iterator[Tuple[str, ...]]:
         return self._store.__iter__()
 
-    def __getitem__(self, key: KeyType) -> Any:
+    def __getitem__(self, key: KeyType) -> object:
         return json_decode(self._store.get(encode_key(key)))
 
-    def __setitem__(self, key: KeyType, value: Any) -> None:
+    def __setitem__(self, key: KeyType, value: object) -> None:
         ek = encode_key(key)
         ev = json_encode(value)
         if ev is None:
@@ -180,12 +179,12 @@ class Config:
             self._dirty.update(dirty)
             raise
 
-    def __getattr__(self, key: str) -> Any:
+    def __getattr__(self, key: str) -> object:
         if key.startswith("_"):
             return None
         return self[key]
 
-    def __setattr__(self, key: str, value: Any) -> None:
+    def __setattr__(self, key: str, value: object) -> None:
         if key.startswith("_"):
             return super().__setattr__(key, value)
         self[key] = value
