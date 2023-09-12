@@ -668,7 +668,8 @@ async def audit_ticket_data(session: AsyncSession, audit: AuditLogEntry, *,
     need_duration: bool = True, can_have_duration: bool = True) -> AuditData:
     assert isinstance(audit.target, (User, Member))
     assert audit.user is not None
-    mod = audit.user
+    if (mod := audit.guild.get_member(audit.user.id)) is None:
+        mod = audit.user
     stage = TicketStage.NEW
     duration = None
     have_duration = False
