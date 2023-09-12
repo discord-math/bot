@@ -256,7 +256,7 @@ async def cast_vote(interaction: Interaction, msg_id: int, dir: Optional[bool], 
                 allowed_mentions=AllowedMentions.none())
             if decision is not None:
                 listing = await channel.fetch_message(app.listing_id)
-                await listing.edit(content=listing.content + ("\nDecision: \u2705" if decision else "\nDecision: \u274C"),
+                await listing.edit(content=listing.content + "\nDecision: " + ("\u2705" if decision else "\u274C"),
                     allowed_mentions=AllowedMentions.none())
 
         try:

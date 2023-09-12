@@ -49,6 +49,7 @@ class TicketsConf(Awaitable[None], Protocol):
     pending_undeafens: FrozenList[int] # List of users peding VC undeafen
     audit_log_precision: float # How long to allow the audit log to catch up
     cleanup_delay: Optional[float] # How long to wait before cleaning up junk messages in the ticket list
+    unapproved_list: FrozenList[int] # List of messages that represent the unapproved tickets
 
 conf: TicketsConf
 
@@ -1172,6 +1173,7 @@ async def audit_log_task() -> None:
                     for create_handler in create_handlers.get(entry.action, ()):
                         for ticket in await create_handler(session, entry):
                             session.add(ticket)
+                            update_unapproved_list.run_coalesced(30)
                             logger.debug("Created {!r} from audit {}".format(ticket.describe(), entry.id))
                             await session.commit() # to get ID
                             await ticket.publish()
@@ -1270,11 +1272,55 @@ async def delivery_task() -> None:
         logger.debug("Waiting for upcoming delivery in {} seconds".format(delay))
         delivery_task.run_coalesced(delay)
 
+@task(name="Unapproved ticket listing task", every=3600, exc_backoff_base=60)
+async def update_unapproved_list() -> None:
+    await client.wait_until_ready()
+    if not isinstance(channel := client.get_channel(conf.ticket_list), TextChannel):
+        return
+
+    async with sessionmaker() as session:
+        stmt = select(Ticket).where(Ticket.approved == False).order_by(Ticket.id)
+        items: List[PlainItem] = []
+        items.append(PlainItem("# Unapproved Tickets\n"))
+        for ticket in (await session.execute(stmt)).scalars().all():
+            items.append(PlainItem("{}\n".format(ticket.jump_link)))
+        messages = list(chunk_messages(items))
+
+        all_ok = True
+        if conf.unapproved_list:
+            async for msg in channel.history(limit=1, after=Object(conf.unapproved_list[-1])):
+                all_ok = False
+                break
+
+        if all_ok and len(messages) == len(conf.unapproved_list or ()):
+            for id, (content, _) in zip(conf.unapproved_list, messages):
+                try:
+                    await channel.get_partial_message(id).edit(content=content, allowed_mentions=AllowedMentions.none())
+                except (discord.NotFound, discord.Forbidden):
+                    all_ok = False
+                    break
+
+        if not all_ok:
+            for id in conf.unapproved_list or ():
+                try:
+                    await channel.get_partial_message(id).delete()
+                except discord.NotFound:
+                    pass
+                conf.unapproved_list = conf.unapproved_list.without(id)
+                await conf
+
+            for content, _ in messages:
+                msg = await channel.send(content, allowed_mentions=AllowedMentions.none())
+                cleanup_exempt.add(msg.id)
+                conf.unapproved_list = (conf.unapproved_list or FrozenList()) + [msg.id]
+                await conf
+
 @plugins.init
 async def init_tasks() -> None:
     audit_log_task.run_coalesced(conf.audit_log_precision)
     expiry_task.run_coalesced(1)
     delivery_task.run_coalesced(1)
+    update_unapproved_list.run_coalesced(30)
 
 # ------------ Commands ------------
 
@@ -1413,6 +1459,8 @@ class Tickets(Cog):
             async with sessionmaker() as session:
                 ticket = await create_note(session, note, modid=ctx.author.id, targetid=target.id,
                     approved=has_privilege("mod", ctx.author))
+                if not ticket.approved:
+                    update_unapproved_list.run_coalesced(30)
                 async with Ticket.publish_all(session):
                     await session.commit()
                 await session.commit()
@@ -1684,6 +1732,7 @@ class Tickets(Cog):
                 await ctx.send(embed=Embed(description="[#{}]({}): Is already approved!".format(tkt.id, tkt.jump_link)))
                 return
 
+            update_unapproved_list.run_coalesced(30)
             tkt.approved = True
             await tkt.publish()
             await session.commit()
