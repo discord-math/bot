@@ -212,7 +212,7 @@ class Factoids(Cog):
             if (alias := await session.get(Alias, name)) is None:
                 raise UserError(format("The factoid {!i} does not exist", conf.prefix + name))
 
-            if alias.factoid.flags is not None and not PrivCheck("admin")(ctx):
+            if alias.factoid.flags is not None and not PrivCheck("mod")(ctx):
                 raise UserError(format(
                     "This factoid can only be edited by admins because it has special behaviors"))
 
