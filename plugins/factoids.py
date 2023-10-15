@@ -301,7 +301,7 @@ class Factoids(Cog):
             await ctx.send("\n".join(format("{!i}: {} uses", conf.prefix + name, uses)
                 for name, uses in results))
 
-    @priv("admin")
+    @priv("mod")
     @tag_command.command("flags")
     async def tag_flags(self, ctx: Context, name: str,
         flags: Optional[Union[CodeBlock, Inline, Quoted]]) -> None:
@@ -333,8 +333,8 @@ async def prompt_contents(ctx: Context) -> Optional[Union[str, Embed]]:
     except:
         pass
     else:
-        if not PrivCheck("admin")(ctx):
-            raise UserError("Creating factoids with embeds is only available for admins")
+        if not PrivCheck("mod")(ctx):
+            raise UserError("Creating factoids with embeds is only available for moderators")
         try:
             embed = Embed.from_dict(embed_data)
         except Exception as exc:

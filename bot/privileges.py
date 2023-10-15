@@ -66,7 +66,7 @@ class PrivContext(Context):
 
 @cleanup
 @group("priv")
-@priv("shell")
+@priv("minimod")
 async def priv_command(ctx: Context) -> None:
     """Manage privilege sets."""
     pass
@@ -79,6 +79,7 @@ def validate_priv(priv: str) -> None:
         raise UserError(format("Priv {!i} does not exist", priv))
 
 @priv_command.command("new")
+@priv("shell")
 async def priv_new(ctx: Context, priv: str) -> None:
     """Create a new priv."""
     if priv_exists(priv):
@@ -91,6 +92,7 @@ async def priv_new(ctx: Context, priv: str) -> None:
     await ctx.send(format("Created priv {!i}", priv))
 
 @priv_command.command("delete")
+@priv("shell")
 async def priv_delete(ctx: Context, priv: str) -> None:
     """Delete a priv."""
     validate_priv(priv)
@@ -102,6 +104,7 @@ async def priv_delete(ctx: Context, priv: str) -> None:
     await ctx.send(format("Removed priv {!i}", priv))
 
 @priv_command.command("show")
+@priv("minimod")
 async def priv_show(ctx: Context, priv: str) -> None:
     """Show the users and roles in a priv."""
     validate_priv(priv)
@@ -126,12 +129,14 @@ async def priv_show(ctx: Context, priv: str) -> None:
         allowed_mentions=AllowedMentions.none())
 
 @priv_command.group("add")
+@priv("shell")
 async def priv_add(ctx: PrivContext, priv: str) -> None:
     """Add a user or role to a priv."""
     validate_priv(priv)
     ctx.priv = priv
 
 @priv_add.command("user")
+@priv("shell")
 async def priv_add_user(ctx: PrivContext, user: PartialUserConverter) -> None:
     """Add a user to a priv."""
     priv = ctx.priv
@@ -146,6 +151,7 @@ async def priv_add_user(ctx: PrivContext, user: PartialUserConverter) -> None:
         allowed_mentions=AllowedMentions.none())
 
 @priv_add.command("role")
+@priv("shell")
 async def priv_add_role(ctx: PrivContext, role: PartialRoleConverter) -> None:
     """Add a role to a priv."""
     priv = ctx.priv
@@ -160,12 +166,14 @@ async def priv_add_role(ctx: PrivContext, role: PartialRoleConverter) -> None:
         allowed_mentions=AllowedMentions.none())
 
 @priv_command.group("remove")
+@priv("shell")
 async def priv_remove(ctx: PrivContext, priv: str) -> None:
     """Remove a user or role from a priv."""
     validate_priv(priv)
     ctx.priv = priv
 
 @priv_remove.command("user")
+@priv("shell")
 async def priv_remove_user(ctx: PrivContext, user: PartialUserConverter) -> None:
     """Remove a user from a priv."""
     priv = ctx.priv
@@ -180,6 +188,7 @@ async def priv_remove_user(ctx: PrivContext, user: PartialUserConverter) -> None
         allowed_mentions=AllowedMentions.none())
 
 @priv_remove.command("role")
+@priv("shell")
 async def priv_remove_role(ctx: PrivContext, role: PartialRoleConverter) -> None:
     """Remove a role from a priv."""
     priv = ctx.priv

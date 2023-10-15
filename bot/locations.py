@@ -53,7 +53,7 @@ class LocContext(Context):
 
 @cleanup
 @group("location")
-@priv("shell")
+@priv("minimod")
 async def location_command(ctx: Context) -> None:
     """Manage locations where a command can be invoked."""
     pass
@@ -66,6 +66,7 @@ def validate_location(loc: str) -> None:
         raise UserError(format("Location {!i} does not exist", loc))
 
 @location_command.command("new")
+@priv("admin")
 async def location_new(ctx: Context, loc: str) -> None:
     """Create a new location."""
     if location_exists(loc):
@@ -78,6 +79,7 @@ async def location_new(ctx: Context, loc: str) -> None:
     await ctx.send(format("Created location {!i}", loc))
 
 @location_command.command("delete")
+@priv("admin")
 async def location_delete(ctx: Context, loc: str) -> None:
     """Delete a location."""
     validate_location(loc)
@@ -89,6 +91,7 @@ async def location_delete(ctx: Context, loc: str) -> None:
     await ctx.send(format("Removed location {!i}", loc))
 
 @location_command.command("show")
+@priv("minimod")
 async def location_show(ctx: Context, loc: str) -> None:
     """Show the channels and categories in a location."""
     validate_location(loc)
@@ -112,12 +115,14 @@ async def location_show(ctx: Context, loc: str) -> None:
     await ctx.send(format("Location {!i} includes: {}", loc, "; ".join(output)))
 
 @location_command.group("add")
+@priv("admin")
 async def location_add(ctx: LocContext, loc: str) -> None:
     """Add a channel or category to a location."""
     validate_location(loc)
     ctx.loc = loc
 
 @location_add.command("channel")
+@priv("admin")
 async def location_add_channel(ctx: LocContext, chan: PartialChannelConverter) -> None:
     """Add a channel to a location."""
     loc = ctx.loc
@@ -131,6 +136,7 @@ async def location_add_channel(ctx: LocContext, chan: PartialChannelConverter) -
     await ctx.send(format("Added channel {!c} to location {!i}", chan.id, loc))
 
 @location_add.command("category")
+@priv("admin")
 async def location_add_category(ctx: LocContext, cat: PartialCategoryChannelConverter) -> None:
     """Add a category to a location."""
     loc = ctx.loc
@@ -144,12 +150,14 @@ async def location_add_category(ctx: LocContext, cat: PartialCategoryChannelConv
     await ctx.send(format("Added category {!c} to location {!i}", cat.id, loc))
 
 @location_command.group("remove")
+@priv("admin")
 async def location_remove(ctx: LocContext, loc: str) -> None:
     """Remove a channel or category from a location."""
     validate_location(loc)
     ctx.loc = loc
 
 @location_remove.command("channel")
+@priv("admin")
 async def location_remove_channel(ctx: LocContext, chan: PartialChannelConverter) -> None:
     """Remove a channel from a location."""
     loc = ctx.loc
@@ -163,6 +171,7 @@ async def location_remove_channel(ctx: LocContext, chan: PartialChannelConverter
     await ctx.send(format("Removed channel {!c} from location {!i}", chan.id, loc))
 
 @location_remove.command("category")
+@priv("admin")
 async def location_remove_category(ctx: LocContext, cat: PartialCategoryChannelConverter) -> None:
     """Remove a category from a location."""
     loc = ctx.loc
