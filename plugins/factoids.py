@@ -5,7 +5,7 @@ from typing_extensions import NotRequired
 
 from discord import AllowedMentions, Embed, Message, MessageReference, Thread
 from discord.abc import GuildChannel
-from sqlalchemy import TEXT, TIMESTAMP, BigInteger, ForeignKey, Integer, delete, func, select
+from sqlalchemy import TEXT, TIMESTAMP, BigInteger, ForeignKey, Integer, Boolean, delete, func, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import async_sessionmaker
 import sqlalchemy.orm
@@ -33,6 +33,7 @@ class Flags(TypedDict):
     mentions: NotRequired[bool]
     priv: NotRequired[str]
     location: NotRequired[str]
+    help: NotRequired[bool]
 
 @registry.mapped
 class Factoid:
@@ -300,6 +301,25 @@ class Factoids(Cog):
             results = list(await session.execute(stmt))
             await ctx.send("\n".join(format("{!i}: {} uses", conf.prefix + name, uses)
                 for name, uses in results))
+            
+    @tag_command.command("showhelp")
+    async def tag_showhelp(self, ctx: Context) -> None:
+        """Show factoids with the 'help' flag."""
+        async with sessionmaker() as session:
+            aliases = aliased(Alias)
+            stmt = (select(Alias)
+                .join(Alias.factoid)
+                .where (Factoid.flags["help"].astext.cast(Boolean) == True)
+                .where(Alias.name == (select(aliases.name)
+                    .where(aliases.id == Factoid.id)
+                    .order_by(aliases.created_at.desc())
+                    .limit(1)
+                    .scalar_subquery()))
+                .order_by(Factoid.uses.desc()))
+            aliases = (await session.execute(stmt)).scalars()
+            msg = "## Help-related factoids:\n"
+            msg += "\n".join(f"### {conf.prefix + alias.name}\n{alias.factoid.message_text}" for alias in aliases)
+            await ctx.send(msg)
 
     @priv("mod")
     @tag_command.command("flags")
