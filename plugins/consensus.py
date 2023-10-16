@@ -479,7 +479,7 @@ class ConsensusCog(Cog):
     async def polls(self, ctx: Context) -> None:
         async with sessionmaker() as session:
             items = []
-            stmt = select(Poll)
+            stmt = select(Poll).where(Poll.timeout >= datetime.utcnow()).order_by(Poll.timeout)
             for poll in (await session.execute(stmt)).scalars():
                 channel_id = poll.channel_id if poll.thread_id is None else poll.thread_id
                 channel = ctx.bot.get_partial_messageable(channel_id, guild_id=ctx.guild and ctx.guild.id)
