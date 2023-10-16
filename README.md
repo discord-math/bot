@@ -233,6 +233,7 @@ Commands:
 - `tag unalias <name>` -- remove an alias. The last alias for a factoid cannot be removed -- use `tag delete` instead.
 - `tag info <name>` -- show info about a factoid.
 - `tag top` -- show factoid usage statistics.
+- `tag showhelp` -- show factoids with the `help` flag.
 - ``tag flags <name> `<json>` `` -- set flags on a factoid. Factoids with flags can only be edited by admins. The flags are a JSON dictionary with the following keys:
     - `"mentions"` -- if true, an invocation of the factoid will ping the roles and users in its contents.
     - `"priv"` -- a string referring to a privilege set (configured with `priv`) that is required to use the factoid.
