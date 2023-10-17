@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Generic, Iterable, Iterator, List, Optional, SupportsIndex, TypeVar, Union, overload
 
+import yaml
+
 T = TypeVar("T", covariant=True)
 
 class FrozenList(Generic[T]):
@@ -100,3 +102,5 @@ class FrozenList(Generic[T]):
 
     def __iter__(self) -> Iterator[T]:
         return self.___iter__()
+
+yaml.add_representer(FrozenList, lambda dumper, data: dumper.represent_list(data))

@@ -2,5 +2,6 @@ aiohttp
 aiohttp-session
 asyncpg
 datrie
+PyYAML
 sqlalchemy
 typing_extensions
