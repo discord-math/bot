@@ -4,3 +4,4 @@ asyncpg
 datrie
 sqlalchemy
 typing_extensions
+yaml

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Dict, Generic, Iterable, Iterator, Optional, Tuple, TypeVar, Union, overload
 
+import yaml
+
 K = TypeVar("K")
 V = TypeVar("V", covariant=True)
 T = TypeVar("T")
@@ -72,3 +74,5 @@ class FrozenDict(Generic[K, V]):
 
     def __iter__(self) -> Iterator[K]:
         return self.___iter__()
+
+yaml.add_representer(FrozenDict, lambda dumper, data: dumper.represent_dict(data)) # type: ignore
