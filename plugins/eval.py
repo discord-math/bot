@@ -9,16 +9,16 @@ from typing import Any, Callable, Dict, TypeVar, Union
 
 from discord.ext.commands import Greedy
 
+from bot.acl import privileged
 from bot.client import client
 from bot.commands import Context, cleanup, command
-from bot.privileges import priv
 from util.discord import CodeBlock, CodeItem, Inline, PlainItem, Typing, chunk_messages
 
 T = TypeVar("T")
 
 @cleanup
 @command("exec", aliases=["eval"])
-@priv("shell")
+@privileged
 async def exec_command(ctx: Context, args: Greedy[Union[CodeBlock, Inline, str]]) -> None:
     """
     Execute all code blocks in the command line as python code.

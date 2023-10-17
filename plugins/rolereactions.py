@@ -5,10 +5,10 @@ from discord import AllowedMentions, Emoji, Guild, Message, Object, PartialEmoji
 from discord.abc import Snowflake
 import discord.utils
 
+from bot.acl import privileged
 from bot.client import client
 from bot.cogs import Cog, cog, group
 from bot.commands import Context, cleanup
-from bot.privileges import priv
 import plugins
 import util.db.kv
 from util.discord import (InvocationError, PartialRoleConverter, ReplyConverter, UserError, format, partial_from_reply,
@@ -132,12 +132,13 @@ class RoleReactions(Cog):
 
     @cleanup
     @group("rolereact")
-    @priv("admin")
+    @privileged
     async def rolereact_command(self, ctx: Context) -> None:
         """Manage role reactions."""
         pass
 
     @rolereact_command.command("new")
+    @privileged
     async def rolereact_new(self, ctx: Context, message: Optional[ReplyConverter]) -> None:
         """Make the given message a role react message."""
         msg = partial_from_reply(message, ctx)
@@ -150,6 +151,7 @@ class RoleReactions(Cog):
         await ctx.send("Created role reactions on {}".format(format_partial_msg(msg)))
 
     @rolereact_command.command("delete")
+    @privileged
     async def rolereact_delete(self, ctx: Context, message: Optional[ReplyConverter]) -> None:
         """Make the given message not a role react message."""
         msg = partial_from_reply(message, ctx)
@@ -160,11 +162,13 @@ class RoleReactions(Cog):
         await ctx.send("Removed role reactions on {}".format(format_partial_msg(msg)))
 
     @rolereact_command.command("list")
+    @privileged
     async def rolereact_list(self, ctx: Context) -> None:
         """List role react messages."""
         await ctx.send("Role reactions exist on:\n{}".format("\n".join(retrieve_msg_link(int(id)) for id, in conf)))
 
     @rolereact_command.command("show")
+    @privileged
     async def rolereact_show(self, ctx: Context, message: Optional[ReplyConverter]) -> None:
         """List roles on a role react message."""
         msg = partial_from_reply(message, ctx)
@@ -176,6 +180,7 @@ class RoleReactions(Cog):
             allowed_mentions=AllowedMentions.none())
 
     @rolereact_command.command("add")
+    @privileged
     async def rolereact_add(self, ctx: Context, message: ReplyConverter, emoji: Union[PartialEmoji, str],
         role: PartialRoleConverter) -> None:
         """Add an emoji/role to a role react message."""
@@ -197,6 +202,7 @@ class RoleReactions(Cog):
             allowed_mentions=AllowedMentions.none())
 
     @rolereact_command.command("remove")
+    @privileged
     async def rolereact_remove(self, ctx: Context, message: ReplyConverter, emoji: Union[PartialEmoji, str]) -> None:
         """Remove an emoji from a role react message."""
         if (obj := conf[message.id]) is None:

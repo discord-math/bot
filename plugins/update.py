@@ -2,8 +2,8 @@ import asyncio
 import asyncio.subprocess
 from typing import Optional, Protocol, cast
 
+from bot.acl import privileged
 from bot.commands import Context, cleanup, command
-from bot.privileges import priv
 import plugins
 import util.db.kv
 from util.discord import CodeItem, Typing, chunk_messages
@@ -20,7 +20,7 @@ async def init() -> None:
 
 @cleanup
 @command("update")
-@priv("admin")
+@privileged
 async def update_command(ctx: Context, bot_directory: Optional[str]) -> None:
     """Pull changes from git remote."""
     cwd = conf[bot_directory] if bot_directory is not None else None

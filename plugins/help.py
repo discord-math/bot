@@ -7,7 +7,6 @@ from discord.ext.commands import Cog, Command, Group
 import bot.acl
 from bot.acl import ACLCheck, EvalResult, evaluate_acl, evaluate_ctx
 from bot.client import client
-from bot.privileges import PrivCheck
 import plugins
 from util.discord import format
 
@@ -22,11 +21,7 @@ class HelpCommand(discord.ext.commands.HelpCommand):
             for cmd in cmds:
                 allowed = True
                 for check in cmd.checks:
-                    if isinstance(check, PrivCheck):
-                        if not check(self.context): # type: ignore
-                            allowed = False
-                            break
-                    elif isinstance(check, ACLCheck):
+                    if isinstance(check, ACLCheck):
                         acl = bot.acl.conf["command", cmd.qualified_name]
                         if evaluate_acl(acl, self.context.author, None) == EvalResult.FALSE:
                             allowed = False
@@ -54,11 +49,7 @@ class HelpCommand(discord.ext.commands.HelpCommand):
 
         privnote = ""
         for check in command.checks:
-            if isinstance(check, PrivCheck):
-                if not check(self.context): # type: ignore
-                    privnote = "\nYou are not allowed to use this command."
-                    break
-            elif isinstance(check, ACLCheck):
+            if isinstance(check, ACLCheck):
                 acl = bot.acl.conf["command", command.qualified_name]
                 if evaluate_acl(acl, self.context.author, None) == EvalResult.FALSE:
                     privnote = "\nYou are not allowed to use this command."
@@ -96,11 +87,7 @@ class HelpCommand(discord.ext.commands.HelpCommand):
 
         privnote = ""
         for check in group.checks:
-            if isinstance(check, PrivCheck):
-                if not check(self.context): # type: ignore
-                    privnote = "\nYou are not allowed to use this command."
-                    break
-            elif isinstance(check, ACLCheck):
+            if isinstance(check, ACLCheck):
                 acl = bot.acl.conf["command", group.qualified_name]
                 if evaluate_acl(acl, self.context.author, None) == EvalResult.FALSE:
                     privnote = "\nYou are not allowed to use this command."

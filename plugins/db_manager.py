@@ -12,7 +12,6 @@ from bot.acl import (ACL, ACLCheck, EvalResult, MessageableChannel, evaluate_acl
 from bot.client import client
 import bot.commands
 from bot.commands import Context, cleanup, command, group
-from bot.privileges import priv
 from bot.reactions import get_reaction
 import util.db
 import util.db.kv
@@ -20,7 +19,7 @@ from util.discord import CodeBlock, CodeItem, Inline, PlainItem, Quoted, Typing,
 
 @cleanup
 @group("config", invoke_without_command=True)
-@priv("shell")
+@privileged
 async def config_command(ctx: Context, namespace: Optional[str], key: Optional[str],
     value: Optional[Union[CodeBlock, Inline, Quoted]]) -> None:
     """Edit the key-value configs."""
@@ -65,7 +64,7 @@ async def config_command(ctx: Context, namespace: Optional[str], key: Optional[s
     await ctx.send("\u2705")
 
 @config_command.command("--delete")
-@priv("shell")
+@privileged
 async def config_delete(ctx: Context, namespace: str, key: str) -> None:
     """Delete the provided key from the config."""
     conf = await util.db.kv.load(namespace)
@@ -76,7 +75,7 @@ async def config_delete(ctx: Context, namespace: str, key: str) -> None:
 
 @cleanup
 @command("sql")
-@priv("shell")
+@privileged
 async def sql_command(ctx: Context, args: Greedy[Union[CodeBlock, Inline, str]]) -> None:
     """Execute arbitrary SQL statements in the database."""
     data_outputs: List[List[str]] = []
@@ -142,6 +141,7 @@ async def sql_command(ctx: Context, args: Greedy[Union[CodeBlock, Inline, str]])
 
 @cleanup
 @group("acl")
+@privileged
 async def acl_command(ctx: Context) -> None:
     """Manage Access Control Lists, their mapping to commands and actions."""
 

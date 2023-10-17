@@ -16,9 +16,9 @@ import sqlalchemy.orm
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.schema import CreateSchema
 
+from bot.acl import privileged
 from bot.cogs import Cog, cog, command
 from bot.commands import Context, cleanup
-from bot.privileges import priv
 import plugins
 import util.db
 import util.db.kv
@@ -376,7 +376,7 @@ class RolesReviewCog(Cog):
 
     @cleanup
     @command("review_queue")
-    @priv("mod")
+    @privileged
     async def review_queue(self, ctx: Context) -> None:
         """List unresolved applications."""
         async with sessionmaker() as session:
@@ -399,7 +399,7 @@ class RolesReviewCog(Cog):
 
     @cleanup
     @command("review_reset")
-    @priv("mod")
+    @privileged
     async def review_reset(self, ctx: Context, user: PartialUserConverter, role: PartialRoleConverter) -> None:
         """
         If a user's application for a particular role has been denied, this command will allow them to apply again.

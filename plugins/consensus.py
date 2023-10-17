@@ -16,11 +16,10 @@ import sqlalchemy.orm
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.schema import CreateSchema
 
+from bot.acl import privileged
 from bot.client import client
 from bot.cogs import Cog, cog, command
 from bot.commands import Context, cleanup
-from bot.locations import location
-from bot.privileges import priv
 from bot.tasks import task
 import plugins
 import util.db
@@ -446,7 +445,7 @@ class ConsensusCog(Cog):
 
     @cleanup
     @command("poll")
-    @location("poll")
+    @privileged
     async def poll(self, ctx: Context, duration: DurationConverter, *, comment: str) -> None:
         """
         Create a poll with the specified timeout duration and the given message.
@@ -475,7 +474,7 @@ class ConsensusCog(Cog):
 
     @cleanup
     @command("polls")
-    @priv("mod")
+    @privileged
     async def polls(self, ctx: Context) -> None:
         async with sessionmaker() as session:
             items = []

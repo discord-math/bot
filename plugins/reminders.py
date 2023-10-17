@@ -7,9 +7,9 @@ from typing import Awaitable, Iterator, Optional, Protocol, Tuple, TypedDict, ca
 import discord
 from discord import AllowedMentions, MessageReference, Object, TextChannel, Thread
 
+from bot.acl import privileged
 from bot.client import client
 from bot.commands import Context, cleanup, command, group
-from bot.privileges import priv
 from bot.tasks import task
 import plugins
 import util.db.kv
@@ -108,7 +108,7 @@ async def init() -> None:
 
 @cleanup
 @command("remindme", aliases=["remind"])
-@priv("remind")
+@privileged
 async def remindme_command(ctx: Context, interval: DurationConverter, *, text: Optional[str]) -> None:
     """Set a reminder with a given message."""
     if ctx.guild is None:
@@ -130,7 +130,7 @@ async def remindme_command(ctx: Context, interval: DurationConverter, *, text: O
 
 @cleanup
 @group("reminder", aliases=["reminders"], invoke_without_command=True)
-@priv("remind")
+@privileged
 async def reminder_command(ctx: Context) -> None:
     """Display your reminders."""
     reminders = conf[ctx.author.id] or FrozenList()
@@ -141,7 +141,7 @@ async def reminder_command(ctx: Context) -> None:
         await ctx.send(content, allowed_mentions=AllowedMentions.none())
 
 @reminder_command.command("remove")
-@priv("remind")
+@privileged
 async def reminder_remove(ctx: Context, index: int) -> None:
     """Delete a reminder."""
     reminders_optional = conf[ctx.author.id]

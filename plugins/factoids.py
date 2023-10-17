@@ -12,11 +12,9 @@ import sqlalchemy.orm
 from sqlalchemy.orm import Mapped, aliased, mapped_column, raiseload, relationship
 from sqlalchemy.schema import CreateSchema
 
-from bot.acl import EvalResult, evaluate_acl, evaluate_ctx, register_action
+from bot.acl import EvalResult, evaluate_acl, evaluate_ctx, privileged, register_action
 from bot.cogs import Cog, cog, group
 from bot.commands import Context, cleanup
-from bot.locations import in_location
-from bot.privileges import has_privilege, priv
 from bot.reactions import get_input, get_reaction
 import plugins
 import util.db
@@ -32,8 +30,6 @@ sessionmaker = async_sessionmaker(engine, future=True)
 
 class Flags(TypedDict):
     mentions: NotRequired[bool]
-    priv: NotRequired[str]
-    location: NotRequired[str]
     acl: NotRequired[str]
 
 @registry.mapped
@@ -118,10 +114,6 @@ class Factoids(Cog):
             if (flags := alias.factoid.flags) is not None:
                 if "acl" in flags and not evaluate_acl(flags["acl"], msg.author, msg.channel):
                     return
-                if "priv" in flags and not has_privilege(flags["priv"], msg.author):
-                    return
-                if "location" in flags and not in_location(flags["location"], msg.channel):
-                    return
                 if "mentions" in flags and flags["mentions"]:
                     mentions = AllowedMentions(roles=True, users=True)
 
@@ -152,11 +144,12 @@ class Factoids(Cog):
 
     @cleanup
     @group("tag")
+    @privileged
     async def tag_command(self, ctx: Context) -> None:
         """Manage factoids."""
         pass
 
-    @priv("factoids")
+    @privileged
     @tag_command.command("add")
     async def tag_add(self, ctx: Context, *, name: str) -> None:
         """Add a factoid. You will be prompted to enter the contents as a separate message."""
@@ -182,7 +175,7 @@ class Factoids(Cog):
             await session.commit()
         await ctx.send(format("Factoid created, use with {!i}", conf.prefix + name))
 
-    @priv("factoids")
+    @privileged
     @tag_command.command("alias")
     async def tag_alias(self, ctx: Context, name: str, *, newname: str) -> None:
         """
@@ -207,7 +200,7 @@ class Factoids(Cog):
             await session.commit()
         await ctx.send(format("Aliased {!i} to {!i}", conf.prefix + newname, conf.prefix + name))
 
-    @priv("factoids")
+    @privileged
     @tag_command.command("edit")
     async def tag_edit(self, ctx: Context, *, name: str) -> None:
         """
@@ -232,7 +225,7 @@ class Factoids(Cog):
             await session.commit()
         await ctx.send(format("Factoid updated, use with {!i}", conf.prefix + name))
 
-    @priv("factoids")
+    @privileged
     @tag_command.command("unalias")
     async def tag_unalias(self, ctx: Context, *, name: str) -> None:
         """
@@ -250,7 +243,7 @@ class Factoids(Cog):
             await session.commit()
         await ctx.send(format("Alias removed"))
 
-    @priv("factoids")
+    @privileged
     @tag_command.command("delete")
     async def tag_delete(self, ctx: Context, *, name: str) -> None:
         """Delete a factoid and all its aliases."""
@@ -266,6 +259,7 @@ class Factoids(Cog):
             await session.commit()
         await ctx.send(format("Factoid deleted"))
 
+    @privileged
     @tag_command.command("info")
     async def tag_info(self, ctx: Context, *, name: str) -> None:
         """Show information about a factoid."""
@@ -290,6 +284,7 @@ class Factoids(Cog):
                         conf.prefix + alias.name, alias.uses) for alias in aliases)),
                 allowed_mentions=AllowedMentions.none())
 
+    @privileged
     @tag_command.command("top")
     async def tag_top(self, ctx: Context) -> None:
         """Show most used factoids."""
@@ -308,15 +303,14 @@ class Factoids(Cog):
             await ctx.send("\n".join(format("{!i}: {} uses", conf.prefix + name, uses)
                 for name, uses in results))
 
-    @priv("mod")
+    @privileged
     @tag_command.command("flags")
     async def tag_flags(self, ctx: Context, name: str,
         flags: Optional[Union[CodeBlock, Inline, Quoted]]) -> None:
         """
         Configure admin-only flags for a factoid. The flags are a JSON dictionary with the following keys:
         - "mentions": a boolean, if true, makes the factoid invocation ping the roles and users it involves
-        - "priv": a string referring to a priv (configurable with `priv`) required to use the factoid
-        - "location": a string referring to a location (configuratble with `location`) in which the factoid can be used
+        - "acl": a string referring to an ACL (configurable with `acl`) required to use the factoid
         """
         name = validate_name(name)
         async with sessionmaker() as session:

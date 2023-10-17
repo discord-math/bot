@@ -15,13 +15,12 @@ if TYPE_CHECKING:
     import discord.types.interactions
 from discord.ui import Button, Modal, Select, TextInput, View
 
-from bot.acl import EvalResult, evaluate_ctx, evaluate_interaction, register_action
+from bot.acl import EvalResult, evaluate_ctx, evaluate_interaction, privileged, register_action
 from bot.client import client
 from bot.cogs import Cog, cog, command
 import bot.commands
 from bot.commands import Context
 import bot.message_tracker
-from bot.privileges import priv
 from bot.tasks import task
 import plugins
 import util.db.kv
@@ -669,6 +668,7 @@ class ClopenCog(Cog):
             if action == "title":
                 await manage_title(interaction, thread_id)
 
+    @privileged
     @command("close")
     async def close_command(self, ctx: Context) -> None:
         """For use in help channels and help forum posts. Close a channel and/or mark the post as solved."""
@@ -686,6 +686,7 @@ class ClopenCog(Cog):
             await solved(ctx.channel, format("by {!m}", ctx.author))
             asyncio.create_task(wait_close_post(ctx.channel, format("Closed by {!m}", ctx.author)))
 
+    @privileged
     @command("reopen")
     async def reopen_command(self, ctx: Context) -> None:
         """For use in help channels and help forum posts. Reopen a recently closed channel and/or mark the post as
@@ -705,7 +706,7 @@ class ClopenCog(Cog):
                     return
             await unsolved(ctx.channel, format("by {!m}", ctx.author))
 
-    @priv("minimod")
+    @privileged
     @command("clopen_sync")
     async def clopen_sync_command(self, ctx: Context) -> None:
         """Try and synchronize the state of clopen channels with Discord in case of errors or outages."""
@@ -717,6 +718,7 @@ class ClopenCog(Cog):
         else:
             await ctx.send("\u2705", allowed_mentions=AllowedMentions.none())
 
+    @privileged
     @command("solved")
     async def solved_command(self, ctx: Context) -> None:
         """For use in help forum posts. Mark the post as solved."""
@@ -726,6 +728,7 @@ class ClopenCog(Cog):
                     return
             await solved(ctx.channel, format("by {!m}", ctx.author))
 
+    @privileged
     @command("unsolved")
     async def unsolved_command(self, ctx: Context) -> None:
         """For use in help forum posts. Mark the post as unsolved."""

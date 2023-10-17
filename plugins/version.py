@@ -1,12 +1,12 @@
 import asyncio.subprocess
 
+from bot.acl import privileged
 from bot.commands import Context, cleanup, command
-from bot.privileges import priv
 from util.discord import format
 
 @cleanup
 @command("version")
-@priv("minimod")
+@privileged
 async def version_command(ctx: Context) -> None:
     """Display running bot version including any local changes."""
     git_log = await asyncio.subprocess.create_subprocess_exec(
