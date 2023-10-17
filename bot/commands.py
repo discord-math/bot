@@ -64,7 +64,7 @@ class Commands(Cog):
                             return conv.__class__.__name__
 
                     exc_str = "Could not interpret \"{}\" as:\n{}".format(exc.param.name,
-                        "\n".join("{}: {}".format(conv_name(conv), sub_exc)
+                        "\n".join("- {}: {}".format(conv_name(conv), sub_exc)
                             for conv, sub_exc in zip(exc.converters, exc.errors)))
                 else:
                     exc_str = str(exc)
