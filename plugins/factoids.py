@@ -12,10 +12,11 @@ import sqlalchemy.orm
 from sqlalchemy.orm import Mapped, aliased, mapped_column, raiseload, relationship
 from sqlalchemy.schema import CreateSchema
 
+from bot.acl import EvalResult, evaluate_acl, evaluate_ctx, register_action
 from bot.cogs import Cog, cog, group
 from bot.commands import Context, cleanup
 from bot.locations import in_location
-from bot.privileges import PrivCheck, has_privilege, priv
+from bot.privileges import has_privilege, priv
 from bot.reactions import get_input, get_reaction
 import plugins
 import util.db
@@ -33,6 +34,7 @@ class Flags(TypedDict):
     mentions: NotRequired[bool]
     priv: NotRequired[str]
     location: NotRequired[str]
+    acl: NotRequired[str]
 
 @registry.mapped
 class Factoid:
@@ -83,6 +85,9 @@ class FactoidsConf(Protocol):
 
 conf: FactoidsConf
 
+use_tags = register_action("use_tags")
+manage_tag_flags = register_action("manage_tag_flags")
+
 @plugins.init
 async def init() -> None:
     global conf
@@ -99,7 +104,7 @@ class Factoids(Cog):
         if msg.author.bot: return
         if not isinstance(msg.channel, (GuildChannel, Thread)): return
         if not msg.content.startswith(conf.prefix): return
-        if not in_location("factoids", msg.channel): return
+        if use_tags.evaluate(msg.author, msg.channel) != EvalResult.TRUE: return
         text = " ".join(msg.content[len(conf.prefix):].split()).lower()
         if not len(text): return
         async with sessionmaker() as session:
@@ -111,6 +116,8 @@ class Factoids(Cog):
 
             mentions = AllowedMentions.none()
             if (flags := alias.factoid.flags) is not None:
+                if "acl" in flags and not evaluate_acl(flags["acl"], msg.author, msg.channel):
+                    return
                 if "priv" in flags and not has_privilege(flags["priv"], msg.author):
                     return
                 if "location" in flags and not in_location(flags["location"], msg.channel):
@@ -212,7 +219,7 @@ class Factoids(Cog):
             if (alias := await session.get(Alias, name)) is None:
                 raise UserError(format("The factoid {!i} does not exist", conf.prefix + name))
 
-            if alias.factoid.flags is not None and not PrivCheck("mod")(ctx):
+            if alias.factoid.flags is not None and manage_tag_flags.evaluate(*evaluate_ctx(ctx)) != EvalResult.TRUE:
                 raise UserError(format(
                     "This factoid can only be edited by admins because it has special behaviors"))
 
@@ -333,7 +340,7 @@ async def prompt_contents(ctx: Context) -> Optional[Union[str, Embed]]:
     except:
         pass
     else:
-        if not PrivCheck("mod")(ctx):
+        if manage_tag_flags.evaluate(*evaluate_ctx(ctx)) != EvalResult.TRUE:
             raise UserError("Creating factoids with embeds is only available for moderators")
         try:
             embed = Embed.from_dict(embed_data)

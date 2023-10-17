@@ -4,6 +4,8 @@ from typing import Any, List, Mapping, Optional, Set
 import discord.ext.commands
 from discord.ext.commands import Cog, Command, Group
 
+import bot.acl
+from bot.acl import ACLCheck, EvalResult, evaluate_acl, evaluate_ctx
 from bot.client import client
 from bot.privileges import PrivCheck
 import plugins
@@ -22,6 +24,11 @@ class HelpCommand(discord.ext.commands.HelpCommand):
                 for check in cmd.checks:
                     if isinstance(check, PrivCheck):
                         if not check(self.context): # type: ignore
+                            allowed = False
+                            break
+                    elif isinstance(check, ACLCheck):
+                        acl = bot.acl.conf["command", cmd.qualified_name]
+                        if evaluate_acl(acl, self.context.author, None) == EvalResult.FALSE:
                             allowed = False
                             break
                 if allowed:
@@ -45,13 +52,20 @@ class HelpCommand(discord.ext.commands.HelpCommand):
             for alias in command.aliases))
         desc = command.help
 
-        allowed = True
+        privnote = ""
         for check in command.checks:
             if isinstance(check, PrivCheck):
                 if not check(self.context): # type: ignore
-                    allowed = False
+                    privnote = "\nYou are not allowed to use this command."
                     break
-        privnote = "" if allowed else "\nYou are not allowed to use this command."
+            elif isinstance(check, ACLCheck):
+                acl = bot.acl.conf["command", command.qualified_name]
+                if evaluate_acl(acl, self.context.author, None) == EvalResult.FALSE:
+                    privnote = "\nYou are not allowed to use this command."
+                    break
+                elif evaluate_acl(acl, *evaluate_ctx(self.context)) == EvalResult.FALSE: # type: ignore
+                    privnote = "\nYou are not allowed to use this command here specifically."
+                    break
 
         await self.get_destination().send(format("**Usage:** {!i}{}\n{}{}",
             usage, akanote, desc, privnote))
@@ -80,13 +94,23 @@ class HelpCommand(discord.ext.commands.HelpCommand):
                 args.insert(0, parent.name)
             subcommands.append(format("{!i}", prefix + " ".join(s for s in args if s)))
 
-        allowed = True
+        privnote = ""
         for check in group.checks:
             if isinstance(check, PrivCheck):
                 if not check(self.context): # type: ignore
-                    allowed = False
+                    privnote = "\nYou are not allowed to use this command."
                     break
-        privnote = "" if allowed else "\nYou are not allowed to use this command."
+            elif isinstance(check, ACLCheck):
+                acl = bot.acl.conf["command", group.qualified_name]
+                if evaluate_acl(acl, self.context.author, None) == EvalResult.FALSE:
+                    privnote = "\nYou are not allowed to use this command."
+                    break
+                elif evaluate_acl(acl, *evaluate_ctx(self.context)) == EvalResult.FALSE: # type: ignore
+                    privnote = "\nYou are not allowed to use this command here specifically."
+                    break
+
+        await self.get_destination().send(format("**Usage:** {!i}{}\n{}{}",
+            usage, akanote, desc, privnote))
 
         await self.get_destination().send(format(
             "**Usage:** {!i}{}\n{}\n**Sub-commands:**\n{}{}\n\nType {!i} for more info on a sub-command.",

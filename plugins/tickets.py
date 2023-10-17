@@ -21,11 +21,13 @@ import sqlalchemy.orm
 from sqlalchemy.orm import Mapped, joinedload, mapped_column, relationship
 from sqlalchemy.schema import DDL, CreateSchema
 
+import bot.acl
+from bot.acl import EvalResult
 from bot.client import client
 from bot.cogs import Cog, cog, command, group
 import bot.commands
 from bot.commands import Context, cleanup
-from bot.privileges import has_privilege, priv
+from bot.privileges import priv
 from bot.reactions import ReactionMonitor, get_input
 from bot.tasks import task
 import plugins
@@ -52,6 +54,8 @@ class TicketsConf(Awaitable[None], Protocol):
     unapproved_list: FrozenList[int] # List of messages that represent the unapproved tickets
 
 conf: TicketsConf
+
+auto_approve_tickets = bot.acl.register_action("auto_approve_tickets")
 
 cleanup_exempt: Set[int] = set()
 
@@ -700,7 +704,7 @@ async def audit_ticket_data(session: AsyncSession, audit: AuditLogEntry, *,
         "comment": comment,
         "stage": stage,
         "duration": duration if can_have_duration else None,
-        "approved": has_privilege("mod", mod)}
+        "approved": auto_approve_tickets.evaluate(mod, None) == EvalResult.TRUE}
 
 @registry.mapped
 @register_action
@@ -1462,7 +1466,7 @@ class Tickets(Cog):
         if note is not None:
             async with sessionmaker() as session:
                 ticket = await create_note(session, note, modid=ctx.author.id, targetid=target.id,
-                    approved=has_privilege("mod", ctx.author))
+                    approved=auto_approve_tickets.evaluate(ctx.author, None) == EvalResult.TRUE)
                 if not ticket.approved:
                     update_unapproved_list.run_coalesced(30)
                 async with Ticket.publish_all(session):

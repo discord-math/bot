@@ -21,13 +21,14 @@ from collections import defaultdict
 import enum
 from functools import total_ordering
 import logging
-from typing import Any, Awaitable, Callable, Coroutine, Dict, Iterator, List, Literal, Optional, Protocol, Set, Tuple, TypedDict, Union, cast, overload
-from bot.commands import Context
+from typing import (Any, Awaitable, Callable, Coroutine, Dict, Iterator, List, Literal, Optional, Protocol, Set, Tuple,
+    TypedDict, Union, cast, overload)
 
-from discord import DMChannel, GroupChannel, Member, User
+from discord import DMChannel, GroupChannel, Interaction, Member, Thread, User
 from discord.abc import GuildChannel
 import discord.ext.commands
 
+from bot.commands import Context
 import plugins
 import util.db.kv
 from util.discord import format
@@ -98,7 +99,7 @@ class EvalResult(enum.Enum):
     def __lt__(self, other: EvalResult) -> bool:
         return self.value < other.value
 
-MessageableChannel = Union[GuildChannel, DMChannel, GroupChannel]
+MessageableChannel = Union[GuildChannel, Thread, DMChannel, GroupChannel]
 
 class ACL(ABC):
     @abstractmethod
@@ -271,8 +272,7 @@ class ACLCheck:
     def __call__(self, ctx: Context) -> bool:
         assert ctx.command
         acl = conf["command", ctx.command.qualified_name]
-        channel = cast(MessageableChannel, ctx.channel)
-        if max(acl_override.evaluate(ctx.author, channel), evaluate_acl(acl, ctx.author, channel)) == EvalResult.TRUE:
+        if max(acl_override.evaluate(*evaluate_ctx(ctx)), evaluate_acl(acl, *evaluate_ctx(ctx))) == EvalResult.TRUE:
             return True
         else:
             logger.warn(format("{!m}/{!c} did not match ACL {!r} for command {!r}",
@@ -319,3 +319,9 @@ def evaluate_acl_meta(acl: Optional[str], user: Optional[Union[Member, User]], c
     if acl is not None:
         result = max(result, evaluate_acl(conf["meta", acl], user, channel))
     return result
+
+def evaluate_ctx(ctx: Context) -> Tuple[Union[Member, User], MessageableChannel]:
+    return ctx.author, cast(MessageableChannel, ctx.channel)
+
+def evaluate_interaction(interaction: Interaction) -> Tuple[Union[Member, User], Optional[MessageableChannel]]:
+    return interaction.user, interaction.channel
