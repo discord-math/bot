@@ -625,7 +625,11 @@ class ClopenCog(Cog):
         if payload.channel_id in conf.channels and payload.message_id == conf[payload.channel_id, "op_id"]:
             async with channel_locks[payload.channel_id]:
                 if conf[payload.channel_id, "state"] in ["used", "pending"]:
-                    await close(payload.channel_id, "Closed due to the original message being deleted", reopen=False)
+                    await close(payload.channel_id,
+                        "Channel closed due to the original message being deleted. \n"
+                        "If you did not intend to do this, please **open a new help channel**, \n"
+                        "as this action is irreversible, and this channel may abruptly lock.",
+                        reopen=False)
                 else:
                     conf[payload.channel_id, "owner"] = None
 
