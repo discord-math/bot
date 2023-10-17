@@ -21,11 +21,12 @@ import sqlalchemy.orm
 from sqlalchemy.orm import Mapped, joinedload, mapped_column, relationship
 from sqlalchemy.schema import DDL, CreateSchema
 
+import bot.acl
+from bot.acl import EvalResult, privileged
 from bot.client import client
 from bot.cogs import Cog, cog, command, group
 import bot.commands
 from bot.commands import Context, cleanup
-from bot.privileges import has_privilege, priv
 from bot.reactions import ReactionMonitor, get_input
 from bot.tasks import task
 import plugins
@@ -52,6 +53,8 @@ class TicketsConf(Awaitable[None], Protocol):
     unapproved_list: FrozenList[int] # List of messages that represent the unapproved tickets
 
 conf: TicketsConf
+
+auto_approve_tickets = bot.acl.register_action("auto_approve_tickets")
 
 cleanup_exempt: Set[int] = set()
 
@@ -700,7 +703,7 @@ async def audit_ticket_data(session: AsyncSession, audit: AuditLogEntry, *,
         "comment": comment,
         "stage": stage,
         "duration": duration if can_have_duration else None,
-        "approved": has_privilege("mod", mod)}
+        "approved": auto_approve_tickets.evaluate(mod, None) == EvalResult.TRUE}
 
 @registry.mapped
 @register_action
@@ -1449,7 +1452,7 @@ class Tickets(Cog):
     """Manage infraction history"""
     @cleanup
     @command("note")
-    @priv("mod")
+    @privileged
     async def note_command(self, ctx: Context, target: PartialUserConverter, *, note: Optional[str]) -> None:
         """Create a note on the target user."""
         if note is None:
@@ -1462,7 +1465,7 @@ class Tickets(Cog):
         if note is not None:
             async with sessionmaker() as session:
                 ticket = await create_note(session, note, modid=ctx.author.id, targetid=target.id,
-                    approved=has_privilege("mod", ctx.author))
+                    approved=auto_approve_tickets.evaluate(ctx.author, None) == EvalResult.TRUE)
                 if not ticket.approved:
                     update_unapproved_list.run_coalesced(30)
                 async with Ticket.publish_all(session):
@@ -1472,13 +1475,14 @@ class Tickets(Cog):
                 description="[#{}]({}): Note created!".format(ticket.id, ticket.jump_link)))
 
     @group("ticket", aliases=["tickets"])
-    @priv("minimod")
+    @privileged
     async def ticket_command(self, ctx: Context) -> None:
         """Manage tickets. A ticket can be specified by ID, by Discord message link, or by replying to it."""
         pass
 
     @cleanup
     @ticket_command.command("top")
+    @privileged
     async def ticket_top(self, ctx: Context) -> None:
         """Re-deliver the ticket at the top of your queue to your DMs."""
         async with sessionmaker() as session:
@@ -1497,6 +1501,7 @@ class Tickets(Cog):
 
     @cleanup
     @ticket_command.command("queue")
+    @privileged
     async def ticket_queue(self, ctx: Context, mod: Optional[PartialUserConverter]) -> None:
         """Show the specified moderator's (or your own) ticket queue."""
         user = ctx.author if mod is None else mod
@@ -1515,6 +1520,7 @@ class Tickets(Cog):
                 allowed_mentions=AllowedMentions.none())
 
     @ticket_command.command("take")
+    @privileged
     async def ticket_take(self, ctx: Context, ticket: Optional[Union[PartialMessage, int]]) -> None:
         """Assign the specified ticket to yourself."""
         async with sessionmaker() as session:
@@ -1529,6 +1535,7 @@ class Tickets(Cog):
                 await ctx.send("You have claimed Ticket #{}.".format(tkt.id))
 
     @ticket_command.command("assign")
+    @privileged
     async def ticket_assign(self, ctx: Context, ticket: Optional[Union[PartialMessage, int]], mod: PartialUserConverter
         ) -> None:
         """Assign the specified ticket to the specified moderator."""
@@ -1546,6 +1553,7 @@ class Tickets(Cog):
                     allowed_mentions=AllowedMentions.none())
 
     @ticket_command.command("set")
+    @privileged
     async def ticket_set(self, ctx: Context, ticket: Optional[Union[PartialMessage, int]], *, duration_comment: str
         ) -> None:
         """Set the duration and comment for a ticket."""
@@ -1577,6 +1585,7 @@ class Tickets(Cog):
                 tkt.id, tkt.jump_link, message)))
 
     @ticket_command.command("append")
+    @privileged
     async def ticket_append(self, ctx: Context, ticket: Optional[Union[PartialMessage, int]], *, comment: str) -> None:
         """Append to a ticket's comment."""
         async with sessionmaker() as session:
@@ -1593,6 +1602,7 @@ class Tickets(Cog):
                 tkt.id, tkt.jump_link)))
 
     @ticket_command.command("revert")
+    @privileged
     async def ticket_revert(self, ctx: Context, ticket: Optional[Union[PartialMessage, int]]) -> None:
         """Manually revert a ticket."""
         async with sessionmaker() as session:
@@ -1613,6 +1623,7 @@ class Tickets(Cog):
                 description="[#{}]({}): Ticket reverted.".format(tkt.id, tkt.jump_link)))
 
     @ticket_command.command("hide")
+    @privileged
     async def ticket_hide(self, ctx: Context, ticket: Optional[Union[PartialMessage, int]], *, comment: Optional[str]
         ) -> None:
         """Hide (and revert) a ticket."""
@@ -1630,6 +1641,7 @@ class Tickets(Cog):
 
     @cleanup
     @ticket_command.command("show", usage="<user | ticket>")
+    @privileged
     async def ticket_show(self, ctx: Context, *, user_or_id: Union[PartialUserConverter, PartialMessage, int]) -> None:
         """Show tickets affecting given user, or a ticket with a specific ID."""
         async with sessionmaker() as session:
@@ -1664,6 +1676,7 @@ class Tickets(Cog):
 
     @cleanup
     @ticket_command.command("showhidden", usage="<user | ticket>")
+    @privileged
     async def ticket_showhidden(self, ctx: Context, *, user_or_id: Union[PartialUserConverter, PartialMessage, int]
         ) -> None:
         """Show hidden tickets affecting given user, or a ticket with a specific ID."""
@@ -1686,6 +1699,7 @@ class Tickets(Cog):
 
     @cleanup
     @ticket_command.command("history")
+    @privileged
     async def ticket_history(self, ctx: Context, *, ticket: Optional[Union[PartialMessage, int]]) -> None:
         """Show revision history for a ticket."""
         async with sessionmaker() as session:
@@ -1725,7 +1739,7 @@ class Tickets(Cog):
                 items.append(PlainItem(", ".join(row) + "\n"))
             return await pager(ctx, [Page(content=content) for content, _ in chunk_messages(items)])
 
-    @priv("mod")
+    @privileged
     @ticket_command.command("approve")
     async def ticket_approve(self, ctx: Context, ticket: Optional[Union[PartialMessage, int]]) -> None:
         """Approve a ticket (if it was created by someone without full privileges)."""

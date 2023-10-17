@@ -10,10 +10,10 @@ from discord.abc import Snowflake
 from discord.ext.commands import Greedy
 import discord.utils
 
+from bot.acl import privileged
 from bot.client import client
 from bot.commands import Context, cleanup, group
 import bot.message_tracker
-from bot.privileges import priv
 import plugins
 import plugins.phish
 import plugins.tickets
@@ -243,12 +243,13 @@ async def init() -> None:
 
 @cleanup
 @group("automod")
-@priv("mod")
+@privileged
 async def automod_command(ctx: Context) -> None:
     """Manage automod."""
     pass
 
 @automod_command.group("exempt", invoke_without_command=True)
+@privileged
 async def automod_exempt(ctx: Context) -> None:
     """Manage roles exempt from automod."""
     output = []
@@ -262,6 +263,7 @@ async def automod_exempt(ctx: Context) -> None:
         allowed_mentions=AllowedMentions.none())
 
 @automod_exempt.command("add")
+@privileged
 async def automod_exempt_add(ctx: Context, role: PartialRoleConverter) -> None:
     """Make a role exempt from automod."""
     roles = set(conf.exempt_roles)
@@ -272,6 +274,7 @@ async def automod_exempt_add(ctx: Context, role: PartialRoleConverter) -> None:
         allowed_mentions=AllowedMentions.none())
 
 @automod_exempt.command("remove")
+@privileged
 async def automod_exempt_remove(ctx: Context, role: PartialRoleConverter) -> None:
     """Make a role not exempt from automod."""
     roles = set(conf.exempt_roles)
@@ -282,6 +285,7 @@ async def automod_exempt_remove(ctx: Context, role: PartialRoleConverter) -> Non
         allowed_mentions=AllowedMentions.none())
 
 @automod_command.command("list")
+@privileged
 async def automod_list(ctx: Context) -> None:
     """List all automod patterns (CW)."""
     items = [PlainItem("**Automod patterns**:\n")]
@@ -299,6 +303,7 @@ async def automod_list(ctx: Context) -> None:
         await ctx.send(content)
 
 @automod_command.command("add")
+@privileged
 async def automod_add(ctx: Context, kind: Literal["substring", "word", "regex"],
     patterns: Greedy[Union[CodeBlock, Inline, str]]) -> None:
     """
@@ -341,6 +346,7 @@ async def automod_add(ctx: Context, kind: Literal["substring", "word", "regex"],
         ", ".join(format("||{!i}||", keyword) for keyword in keywords), i))
 
 @automod_command.command("remove")
+@privileged
 async def automod_remove(ctx: Context, number: int) -> None:
     """Remove an automod pattern by ID."""
     keywords = conf[number, "keyword"]
@@ -359,6 +365,7 @@ async def automod_remove(ctx: Context, number: int) -> None:
         await ctx.send("No such pattern")
 
 @automod_command.command("action")
+@privileged
 async def automod_action(ctx: Context, number: int, action: Literal["delete", "note", "mute", "kick", "ban"],
     duration: Optional[DurationConverter]) -> None:
     """Assign an action to an automod pattern. (All actions imply deletion)."""

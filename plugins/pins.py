@@ -4,10 +4,9 @@ from typing import Dict, Optional
 import discord
 from discord import MessageType, RawReactionActionEvent
 
+from bot.acl import privileged
 from bot.client import client
 from bot.commands import Context, add_cleanup, cleanup, command
-from bot.locations import location
-from bot.privileges import priv
 from bot.reactions import ReactionMonitor
 from util.discord import ReplyConverter, TempMessage, UserError, format, partial_from_reply
 
@@ -21,8 +20,7 @@ unpin_requests: Dict[int, ReactionMonitor[RawReactionActionEvent]] = {}
 
 @cleanup
 @command("pin")
-@priv("pin")
-@location("pin")
+@privileged
 async def pin_command(ctx: Context, message: Optional[ReplyConverter]) -> None:
     """Pin a message."""
     to_pin = partial_from_reply(message, ctx)
@@ -87,8 +85,7 @@ async def pin_command(ctx: Context, message: Optional[ReplyConverter]) -> None:
 
 @cleanup
 @command("unpin")
-@priv("pin")
-@location("pin")
+@privileged
 async def unpin_command(ctx: Context, message: Optional[ReplyConverter]) -> None:
     """Unpin a message."""
     to_unpin = partial_from_reply(message, ctx)

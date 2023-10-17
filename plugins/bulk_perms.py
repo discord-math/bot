@@ -8,8 +8,8 @@ from discord import (AllowedMentions, CategoryChannel, File, ForumChannel, Membe
 import discord.abc
 import discord.flags
 
+from bot.acl import privileged
 from bot.commands import Context, command
-from bot.privileges import priv
 from bot.reactions import get_reaction
 from util.discord import InvocationError, PlainItem, UserError, chunk_messages, format
 
@@ -37,7 +37,7 @@ def disambiguated_name(channel: discord.abc.GuildChannel) -> str:
     chans.sort(key=lambda chan: chan.id)
     return "{} ({})".format(channel.name, 1 + chans.index(channel))
 
-@priv("minimod")
+@privileged
 @command("exportperms")
 async def exportperms(ctx: Context) -> None:
     """Export all role and channel permission settings into CSV."""
@@ -116,7 +116,7 @@ def edit_channel_overwrites(channel: GuildChannel,
 def sync_channel(channel: SubChannel) -> Callable[[], Awaitable[object]]:
     return lambda: channel.edit(sync_permissions=True)
 
-@priv("admin")
+@privileged
 @command("importperms")
 async def importperms(ctx: Context) -> None:
     """Import all role and channel permission settings from an attached CSV file."""

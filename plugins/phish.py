@@ -6,8 +6,8 @@ from typing import Awaitable, Iterable, List, Optional, Protocol, Set, Union, ca
 
 import aiohttp
 
+from bot.acl import privileged
 from bot.commands import Context, group
-from bot.privileges import priv
 from bot.reactions import get_input
 from bot.tasks import task
 import plugins
@@ -115,7 +115,7 @@ async def resolve_link(link: str) -> Optional[str]:
     return None
 
 @group("phish")
-@priv("mod")
+@privileged
 async def phish_command(ctx: Context) -> None:
     """Manage the phishing domain list."""
     pass
@@ -127,6 +127,7 @@ def link_to_domain(link: str) -> str:
         return link.strip()
 
 @phish_command.command("check")
+@privileged
 async def phish_check(ctx: Context, *, link: Union[CodeBlock, Inline, Quoted]) -> None:
     """Check a link against the domain list."""
     domain = link_to_domain(link.text)
@@ -146,6 +147,7 @@ async def phish_check(ctx: Context, *, link: Union[CodeBlock, Inline, Quoted]) -
     await ctx.send("\n".join(output))
 
 @phish_command.command("add")
+@privileged
 async def phish_add(ctx: Context, *, link: Union[CodeBlock, Inline, Quoted]) -> None:
     """Locally mark a domain as malicious."""
     domain = link_to_domain(link.text)
@@ -182,6 +184,7 @@ async def phish_add(ctx: Context, *, link: Union[CodeBlock, Inline, Quoted]) -> 
             await ctx.send(format("{!i}", result))
 
 @phish_command.command("remove")
+@privileged
 async def phish_remove(ctx: Context, *, link: Union[CodeBlock, Inline, Quoted]) -> None:
     """Locally mark a domain as safe."""
     domain = link_to_domain(link.text)

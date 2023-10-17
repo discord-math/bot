@@ -10,16 +10,17 @@ from discord import (AllowedMentions, ButtonStyle, CategoryChannel, Embed, Forum
     InteractionType, Member, Message, Object, PartialMessage, RawMessageDeleteEvent, RawReactionActionEvent,
     SelectOption, TextChannel, TextStyle, Thread, User)
 from discord.abc import GuildChannel
+
 if TYPE_CHECKING:
     import discord.types.interactions
 from discord.ui import Button, Modal, Select, TextInput, View
 
+from bot.acl import EvalResult, evaluate_ctx, evaluate_interaction, privileged, register_action
 from bot.client import client
 from bot.cogs import Cog, cog, command
 import bot.commands
 from bot.commands import Context
 import bot.message_tracker
-from bot.privileges import PrivCheck, has_privilege, priv
 from bot.tasks import task
 import plugins
 import util.db.kv
@@ -104,6 +105,8 @@ class ClopenConf(Awaitable[None], Protocol):
 
 conf: ClopenConf
 logger = logging.getLogger(__name__)
+
+manage_clopen = register_action("manage_clopen")
 
 channel_locks: Dict[int, asyncio.Lock] = defaultdict(asyncio.Lock)
 
@@ -537,7 +540,7 @@ async def manage_title(interaction: Interaction, thread_id: int) -> None:
     if not interaction.message: return
 
     if thread.owner_id != interaction.user.id:
-        if not has_privilege("helper", interaction.user):
+        if manage_clopen.evaluate(*evaluate_interaction(interaction)) != EvalResult.TRUE:
             await interaction.response.send_message("You cannot edit the title on this post", ephemeral=True,
                 delete_after=60)
             return
@@ -554,7 +557,7 @@ async def manage_tags(interaction: Interaction, thread_id: int, values: List[str
     if not interaction.message: return
 
     if thread.owner_id != interaction.user.id:
-        if not has_privilege("helper", interaction.user):
+        if manage_clopen.evaluate(*evaluate_interaction(interaction)) != EvalResult.TRUE:
             await interaction.response.send_message("You cannot edit tags on this post", ephemeral=True,
                 delete_after=60)
             return
@@ -625,7 +628,11 @@ class ClopenCog(Cog):
         if payload.channel_id in conf.channels and payload.message_id == conf[payload.channel_id, "op_id"]:
             async with channel_locks[payload.channel_id]:
                 if conf[payload.channel_id, "state"] in ["used", "pending"]:
-                    await close(payload.channel_id, "Closed due to the original message being deleted", reopen=False)
+                    await close(payload.channel_id,
+                        "Channel closed due to the original message being deleted. \n"
+                        "If you did not intend to do this, please **open a new help channel**, \n"
+                        "as this action is irreversible, and this channel may abruptly lock.",
+                        reopen=False)
                 else:
                     conf[payload.channel_id, "owner"] = None
 
@@ -661,39 +668,45 @@ class ClopenCog(Cog):
             if action == "title":
                 await manage_title(interaction, thread_id)
 
+    @privileged
     @command("close")
     async def close_command(self, ctx: Context) -> None:
         """For use in help channels and help forum posts. Close a channel and/or mark the post as solved."""
         if ctx.channel.id in conf.channels:
-            if ctx.author.id != conf[ctx.channel.id, "owner"] and not PrivCheck("helper")(ctx):
-                return
+            if ctx.author.id != conf[ctx.channel.id, "owner"]:
+                if manage_clopen.evaluate(*evaluate_ctx(ctx)) != EvalResult.TRUE:
+                    return
             async with channel_locks[ctx.channel.id]:
                 if conf[ctx.channel.id, "state"] in ["used", "pending"]:
                     await close(ctx.channel.id, format("Closed by {!m}", ctx.author))
         elif isinstance(ctx.channel, Thread) and ctx.channel.parent_id == conf.forum:
-            if ctx.author.id != ctx.channel.owner_id and not PrivCheck("helper")(ctx):
-                return
+            if ctx.author.id != ctx.channel.owner_id:
+                if manage_clopen.evaluate(*evaluate_ctx(ctx)) != EvalResult.TRUE:
+                    return
             await solved(ctx.channel, format("by {!m}", ctx.author))
             asyncio.create_task(wait_close_post(ctx.channel, format("Closed by {!m}", ctx.author)))
 
+    @privileged
     @command("reopen")
     async def reopen_command(self, ctx: Context) -> None:
         """For use in help channels and help forum posts. Reopen a recently closed channel and/or mark the post as
         unsolved."""
         if ctx.channel.id in conf.channels:
-            if ctx.author.id != conf[ctx.channel.id, "owner"] and not PrivCheck("helper")(ctx):
-                return
+            if ctx.author.id != conf[ctx.channel.id, "owner"]:
+                if manage_clopen.evaluate(*evaluate_ctx(ctx)) != EvalResult.TRUE:
+                    return
             async with channel_locks[ctx.channel.id]:
                 if conf[ctx.channel.id, "state"] in ["closed", "available"]:
                     if conf[ctx.channel.id, "owner"] is not None:
                         await reopen(ctx.channel.id)
                         await ctx.send("\u2705")
         elif isinstance(ctx.channel, Thread) and ctx.channel.parent_id == conf.forum:
-            if ctx.author.id != ctx.channel.owner_id and not PrivCheck("helper")(ctx):
-                return
+            if ctx.author.id != ctx.channel.owner_id:
+                if manage_clopen.evaluate(*evaluate_ctx(ctx)) != EvalResult.TRUE:
+                    return
             await unsolved(ctx.channel, format("by {!m}", ctx.author))
 
-    @priv("minimod")
+    @privileged
     @command("clopen_sync")
     async def clopen_sync_command(self, ctx: Context) -> None:
         """Try and synchronize the state of clopen channels with Discord in case of errors or outages."""
@@ -705,18 +718,22 @@ class ClopenCog(Cog):
         else:
             await ctx.send("\u2705", allowed_mentions=AllowedMentions.none())
 
+    @privileged
     @command("solved")
     async def solved_command(self, ctx: Context) -> None:
         """For use in help forum posts. Mark the post as solved."""
         if isinstance(ctx.channel, Thread) and ctx.channel.parent_id == conf.forum:
-            if ctx.author.id != ctx.channel.owner_id and not PrivCheck("helper")(ctx):
-                return
+            if ctx.author.id != ctx.channel.owner_id:
+                if manage_clopen.evaluate(*evaluate_ctx(ctx)) != EvalResult.TRUE:
+                    return
             await solved(ctx.channel, format("by {!m}", ctx.author))
 
+    @privileged
     @command("unsolved")
     async def unsolved_command(self, ctx: Context) -> None:
         """For use in help forum posts. Mark the post as unsolved."""
         if isinstance(ctx.channel, Thread) and ctx.channel.parent_id == conf.forum:
-            if ctx.author.id != ctx.channel.owner_id and not PrivCheck("helper")(ctx):
-                return
+            if ctx.author.id != ctx.channel.owner_id:
+                if manage_clopen.evaluate(*evaluate_ctx(ctx)) != EvalResult.TRUE:
+                    return
             await unsolved(ctx.channel, format("by {!m}", ctx.author))
