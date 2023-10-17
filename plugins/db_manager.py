@@ -213,7 +213,7 @@ async def acl_commands(ctx: Context) -> None:
                 acls[acl].add(name)
                 seen.add(name)
     output = "\n".join(
-        format("{} require the {!i} ACL",
+        format("- {} require the {!i} ACL",
             ", ".join(format("{!i}", prefix + command) for command in sorted(commands)), acl)
         for acl, commands in acls.items())
 
@@ -222,7 +222,7 @@ async def acl_commands(ctx: Context) -> None:
         if any(isinstance(check, ACLCheck) for check in cmd.checks):
             used.add(cmd.qualified_name)
     if len(used - seen):
-        output += "\nInaccessible: " + ", ".join(format("{!i}", prefix + command) for command in used - seen)
+        output += "\n- Inaccessible: " + ", ".join(format("{!i}", prefix + command) for command in used - seen)
 
     await ctx.send(output or "No commands found")
 
@@ -269,7 +269,7 @@ async def acl_actions(ctx: Context) -> None:
                 acls[acl].add(name)
                 seen.add(name)
     output = "\n".join(
-        format("{} require the {!i} ACL", ", ".join(format("{!i}", action) for action in actions), acl)
+        format("- {} require the {!i} ACL", ", ".join(format("{!i}", action) for action in actions), acl)
             for acl, actions in acls.items())
 
     used = {action for action, uses in live_actions.items() if uses}
@@ -319,7 +319,7 @@ async def acl_metas(ctx: Context) -> None:
             if (acl := bot.acl.conf["meta", name]) is not None:
                 acls[acl].add(name)
     output = "\n".join(
-        format("{} require the {!i} ACL to be edited", ", ".join(format("{!i}", acl) for acl in acls), meta)
+        format("- {} require the {!i} ACL to be edited", ", ".join(format("{!i}", acl) for acl in acls), meta)
             for meta, acls in acls.items())
     await ctx.send(output or "No meta-ACLs assigned")
 

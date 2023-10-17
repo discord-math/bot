@@ -1736,7 +1736,7 @@ class Tickets(Cog):
                         conf.guild, conf.ticket_list, history.list_msgid))
                 if history.auditid is not None:
                     row.append("from audit {}".format(history.auditid))
-                items.append(PlainItem(", ".join(row) + "\n"))
+                items.append(PlainItem("- " + ", ".join(row) + "\n"))
             return await pager(ctx, [Page(content=content) for content, _ in chunk_messages(items)])
 
     @privileged

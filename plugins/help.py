@@ -30,7 +30,7 @@ class HelpCommand(discord.ext.commands.HelpCommand):
                     commands[cmd.module].add(cmd)
         prefix = self.context.prefix or ""
 
-        listing = "\n".join("{}: {}".format(module.rsplit(".", 1)[-1],
+        listing = "\n".join("- {}: {}".format(module.rsplit(".", 1)[-1],
                 ", ".join(format("{!i}", prefix + cmd.name) for cmd in sorted(cmds, key=lambda c: c.name)))
             for module, cmds in sorted(commands.items(), key=lambda mc: mc[0].rsplit(".", 1)[-1]))
 
@@ -83,7 +83,7 @@ class HelpCommand(discord.ext.commands.HelpCommand):
                 if not parent.invoke_without_command:
                     args.insert(0, parent.signature)
                 args.insert(0, parent.name)
-            subcommands.append(format("{!i}", prefix + " ".join(s for s in args if s)))
+            subcommands.append(format("- {!i}", prefix + " ".join(s for s in args if s)))
 
         privnote = ""
         for check in group.checks:

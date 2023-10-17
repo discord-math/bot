@@ -35,6 +35,16 @@ Commands:
     - `config <namespace> <key> <value>` -- set a value for the specified key.
     - `config --delete <namespace> <key>` -- delete the specified key.
 - ``sql ```query``` `` -- execute arbitrary SQL on the database. The queries must be wrapped in code blocks or inlines. Queries that result in changes always prompt for confirmation.
+- `acl` -- edit Access Control Lists: permission settings for commands and other miscellaneous actions. An ACL is a formula involving users, roles, channels, categories, and boolean connectives. A command or an action can be mapped to an ACL, which will restrict who can use the command/action and where.
+    - `acl list` -- list ACL formulas.
+    - `acl show <acl>` -- display the formula for the given ACL in YAML format.
+    - ``acl set <acl> ```formula``` `` -- set the formula for the given ACL. The formula must be a code-block containing YAML.
+    - `acl commands` -- show all commands that are assigned to ACLs.
+    - `acl command <command> [acl]` -- assign the given command (fully qualified name) to the given ACL, restricting its usage to the users/channels specified in that ACL. If the ACL is omitted the command can never be used.
+    - `acl actions` -- show all actions that are assigned to ACLs. Actions are used by various plugins an correspond to permission checks outside of commands. `acl_override` is a permission check which, if passed, allows sidestepping permission checks on commands and other actions.
+    - `acl action <action name> [acl]` -- assign the given action to the given ACL. See documentation for other plugins regarding action names.
+    - `acl metas` -- show meta-ACLs, which control when a given ACL can be *edited*. If `X` is a meta-ACL for `Y`, then satisfying `X` is required to edit the formula for `Y`, to re-assign commands and actions that are currently assigned to `Y`, and to change what `Y`'s meta-ACL is. Note that to edit ACLs you still (additionally) have to have permissions for the `acl` command/subcommands.
+    - `acl meta <acl> [meta-acl]` -- make `meta-acl` the meta-ACL for `acl`.
 
 ### `discord_log`
 
@@ -50,32 +60,6 @@ Eval.
 Commands:
 - ``eval ```code``` `` -- execute arbitrary Python code in the bot. The code must be wrapped in code blocks or inlines. The scope includes all imported modules, as well as `ctx` and `client`. Output is redirected to Discord. Top-level `await` can be used.
 - ``exec ```code``` `` -- synonym for the above.
-
-### `bot.privileges`
-
-Manage privilege sets for commands. Some commands are associated with specific privilege sets, and a privilege set can include a set of roles and a set of users.
-
-Commands:
-- `priv new <name>` -- create a new privilege set.
-- `priv delete <name>` -- delete a privilege set.
-- `priv show <name>` -- show the roles and users in a privilege set.
-- `priv add <name> user <user>` -- add a user to a privilege set.
-- `priv add <name> role <role>` -- add a role to a privilege set.
-- `priv remove <name> user <user>` -- remove a user from a privilege set.
-- `priv remove <name> role <role>` -- remove a role from a privilege set.
-
-### `bot.locations`
-
-Manage locations for commands. Some commands are restricted to specific locations, and a location can include a set of channels and a set of categories.
-
-Commands:
-- `location new <name>` -- create a new location.
-- `location delete <name>` -- delete a location.
-- `location show <name>` -- show the channels and categories in a privilege set.
-- `location add <name> channel <user>` -- add a channel to a location.
-- `location add <name> category <role>` -- add a category to a location.
-- `location remove <name> channel <user>` -- remove a channel from a location.
-- `location remove <name> category <role>` -- remove a category from a location.
 
 ### `version`
 
@@ -113,6 +97,8 @@ Manage infractions and administrative actions on a server. Administrative action
 
 Upon doing an action, the responsible moderator will DM'ed with a prompt to enter a duration and a comment for their action. The response should be a duration (if omitted -- permanent) followed by a comment. Durations are specified by a numbed followed by: `s`/`sec`/`second`, `m`/`min`,`minute`, `h`/`hr`/`hour`, `d`/`day`, `w`/`wk`/`week`, `M`/`month`, `y`/`yr`/`year`; or `p`/`perm`/`permanent`. If multiple actions are taken, they are put into a queue and prompted one at a time.
 
+If the responsible moderator doesn't match the `auto_approve_tickets` action, the ticket will be marked as "unapproved".
+
 Commands:
 - `note <target> [comment]` -- create a "note" ticket, not associated with any action, merely bearing a comment. If a duration is set, after it expires the ticket is hidden.
 - `ticket top` -- re-deliver the prompt for comment for the first ticket in your queue.
@@ -125,6 +111,7 @@ Commands:
 - `ticket hide <ticket>` -- hide a ticket from the list of tickets (e.g. if it was a mistake).
 - `ticket show <user|ticket>` -- show all tickets affecting the given user, or show a specific ticket.
 - `ticket showhidden <user|ticket>` -- show all hidden tickets affecting the given user, or show a specific ticket.
+- `ticket approve <ticket>` -- remove the "unapproved" flag from the ticket.
 - `tickets ...` -- synonym for the above
 
 Config:
@@ -195,12 +182,14 @@ Manage an Open/Closed help channels system. Channels can be "available", "occupi
 
 This plugin currently also manages a help forum. Posts can be marked solved or unsolved, and a broader set of users are allowed to manage the post via a UI.
 
+The OP can always manage their own channel/post. Additionally it can be managed by those who match the `manage_clopen` action.
+
 Commands:
 - `close` -- an "occupied" or "pending" channel can be closed at any time by either its owner or certain roles. If used in the help forum, assume the user meant `solved`.
 - `reopen` -- if the channel is "closed" or "available", it can be reopened by the previous owner or certain roles. If used in the help form, assume the user meant `unsolved`.
 - `clopen_sync` -- synchronize the state of the channels.
-- `solved` -- mark a forum post as solved (can be done by the owner of the thread or certain roles).
-- `unsolved` -- mark a forum post as unsolved (can be done by the owner of the thread or certai roles).
+- `solved` -- mark a forum post as solved.
+- `unsolved` -- mark a forum post as unsolved.
 
 Config:
 - ``config plugins.clopen channels `[<channel id>, ...]` `` -- the list of channels in rotation.
@@ -223,7 +212,9 @@ Config:
 
 Manage a collection of short recall-able posts. A factoid is a single message containing either some text or a rich embed. Factoids can have multiple names, and typing `<prefix><name>` followed by anything -- will output the factoid with the specified name. Names can contain spaces, and in case of conflicts the longest matching name will be used.
 
-Privileged users can add rich embed factoids, allow mentions inside factoids, restrict factoids to privs and locations.
+When using a factoid users will be matched against the `use_tags` action.
+
+Users matching the `manage_tag_flags` action can add rich embed factoids, allow mentions inside factoids, restrict factoids to an ACL.
 
 Commands:
 - `tag add <name>` -- add a factoid and assign a name to it. You will be prompted to input the factoid contents in a separate message.
@@ -235,8 +226,7 @@ Commands:
 - `tag top` -- show factoid usage statistics.
 - ``tag flags <name> `<json>` `` -- set flags on a factoid. Factoids with flags can only be edited by admins. The flags are a JSON dictionary with the following keys:
     - `"mentions"` -- if true, an invocation of the factoid will ping the roles and users in its contents.
-    - `"priv"` -- a string referring to a privilege set (configured with `priv`) that is required to use the factoid.
-    - `"location"` -- a string referring to a location (configured with `location`) where the factoid can be used.
+    - `"acl"` -- a string referring to an ACL (configured with `acl`) that is required to use the factoid.
 - `tag flags <name>` -- show flags on the given factoid.
 
 Config:
@@ -367,10 +357,10 @@ scope):
 ```sh
 python -m util.db.kv bot.commands prefix '"."'
 python -m util.db.kv bot.autoload plugins.bot_manager 'true'
-# Create the shell and admin roles.
-# Substitute your own discord user id.
-python -m util.db.kv bot.privileges shell,users '[207092805644845057]'
-python -m util.db.kv bot.privileges admin,users '[207092805644845057]'
+# Create an admin role and give it ultimate permissions
+python -m util.db.kv bot.acl action,acl_override '"admin"'
+# Add yourself to the admin role, substitute your own discord user id
+python -m util.db.kv bot.acl acl,admin '{"user": 207092805644845057}'
 ```
 Now you can run the bot by executing `main.py`. You can continue the configuration over Discord (you may find it useful to load some of the administration modules). For example:
 ```
