@@ -1,13 +1,14 @@
 from collections import defaultdict
 import json
-from typing import Dict, Iterator, List, Optional, Sequence, Set, Union, cast
+from typing import Dict, Iterator, List, Literal, Optional, Sequence, Set, Tuple, Union, cast
 
 import asyncpg
+from discord import AllowedMentions
 from discord.ext.commands import Greedy
 import yaml
 
 import bot.acl
-from bot.acl import (ACL, ACLCheck, EvalResult, MessageableChannel, evaluate_acl, evaluate_acl_meta, live_actions,
+from bot.acl import (ACL, ACLCheck, ACLData, EvalResult, MessageableChannel, evaluate_acl, evaluate_acl_meta, live_actions,
     privileged, register_action)
 from bot.client import client
 import bot.commands
@@ -174,6 +175,50 @@ async def acl_show(ctx: Context, acl: str) -> None:
 
     await ctx.send(format("{!b:yaml}", yaml.dump(data)))
 
+@acl_command.command("find")
+@privileged
+async def acl_find(ctx: Context, type: Literal["user", "role", "channel", "category"], id: int) -> None:
+    """ Find all ACLs that directly reference the given user, role, channel, or category ID"""
+    if ctx.guild is None:
+        raise UserError("Can only be used in a guild")
+
+    all_acls: Set[str] = {name for ty, name in bot.acl.conf if ty == "acl"}
+    matched_acls: Set[str] = {acl for acl in all_acls 
+                              if (datum := bot.acl.conf["acl",acl]) is not None 
+                                and ACL.parse(datum).refers_to(type, id)}
+    indirect_acls: Dict[str,List[int]] = {}
+    user = ctx.guild.get_member(id)
+    output = ""
+
+    if user is not None:
+        for acl in all_acls:
+            for role in user.roles:
+                if (datum := bot.acl.conf[("acl", acl)]) is not None and ACL.parse(datum).refers_to("role", role.id):
+                    indirect_acls.setdefault(acl, []).append(role.id)
+
+    if type == "user":
+        format_type = " {!m}"
+    elif type == "role":
+        format_type = " {!M}"
+    elif type == "channel":
+        format_type = " {!c}"
+    elif type == "category":
+        format_type = " {!i}"
+
+    if len(matched_acls):
+        output += format("ACLs directly referencing {}" + format_type + ": {}\n", 
+                         type, id, ", ".join(format("{!i}", acl) for acl in matched_acls))
+
+    if len(indirect_acls):
+        output += format("ACLs indirectly referencing {!m}:", id)
+        for acl, roles in indirect_acls.items():
+            output += format("\n- {!i} via {}", acl, ", ".join(format("{!M}", role) for role in roles))
+
+    if output == "":
+        output = format("No ACLs referencing {}" + format_type, type, id)
+
+    await ctx.send(output, allowed_mentions=AllowedMentions.none())
+    
 acl_override = register_action("acl_override")
 
 @acl_command.command("set")

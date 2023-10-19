@@ -38,6 +38,7 @@ Commands:
 - `acl` -- edit Access Control Lists: permission settings for commands and other miscellaneous actions. An ACL is a formula involving users, roles, channels, categories, and boolean connectives. A command or an action can be mapped to an ACL, which will restrict who can use the command/action and where.
     - `acl list` -- list ACL formulas.
     - `acl show <acl>` -- display the formula for the given ACL in YAML format.
+    - `acl find <"user"|"role"|"channel"|"category"> <id>` -- list the ACLs whose formula contains the given user/role/channel/category id.
     - ``acl set <acl> ```formula``` `` -- set the formula for the given ACL. The formula must be a code-block containing YAML.
     - `acl commands` -- show all commands that are assigned to ACLs.
     - `acl command <command> [acl]` -- assign the given command (fully qualified name) to the given ACL, restricting its usage to the users/channels specified in that ACL. If the ACL is omitted the command can never be used.

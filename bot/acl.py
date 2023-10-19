@@ -107,6 +107,10 @@ class ACL(ABC):
         ) -> EvalResult:
         raise NotImplemented
 
+    @abstractmethod
+    def refers_to(self, type: str, id: int) -> bool:
+        raise NotImplemented
+
     @staticmethod
     def parse(data: ACLData) -> ACL:
         if "role" in data:
@@ -144,6 +148,9 @@ class RoleACL(ACL):
         else:
             return EvalResult.UNKNOWN
 
+    def refers_to(self, type: str, id: int) -> bool:
+        return type == "role" and id == self.role
+
     def serialize(self) -> ACLData:
         return {"role": self.role}
 
@@ -159,6 +166,9 @@ class UserACL(ACL):
             return EvalResult.TRUE if user.id == self.user else EvalResult.FALSE
         else:
             return EvalResult.UNKNOWN
+
+    def refers_to(self, type: str, id: int) -> bool:
+        return type == "user" and id == self.user
 
     def serialize(self) -> ACLData:
         return {"user": self.user}
@@ -176,6 +186,9 @@ class ChannelACL(ACL):
             return EvalResult.TRUE if channel.id == self.channel else EvalResult.FALSE
         else:
             return EvalResult.UNKNOWN
+
+    def refers_to(self, type: str, id: int) -> bool:
+        return type == "channel" and id == self.channel
 
     def serialize(self) -> ACLData:
         return {"channel": self.channel}
@@ -196,6 +209,9 @@ class CategoryACL(ACL):
         else:
             return EvalResult.UNKNOWN
 
+    def refers_to(self, type:str, id: int) -> bool:
+        return type == "category" and id == self.category
+
     def serialize(self) -> ACLData:
         return {"category": self.category}
 
@@ -215,6 +231,9 @@ class NotACL(ACL):
         else:
             return EvalResult.UNKNOWN
 
+    def refers_to(self, type: str, id: int) -> bool:
+        return self.acl.refers_to(type, id)
+
     def serialize(self) -> ACLData:
         return {"not": self.acl.serialize()}
 
@@ -227,6 +246,9 @@ class AndACL(ACL):
     def evaluate(self, user: Optional[Union[Member, User]], channel: Optional[MessageableChannel], nested: Set[str]
         ) -> EvalResult:
         return min((acl.evaluate(user, channel, nested) for acl in self.acls), default=EvalResult.TRUE)
+
+    def refers_to(self, type: str, id: int) -> bool:
+        return any(acl.refers_to(type, id) for acl in self.acls)
 
     def serialize(self) -> ACLData:
         return {"and": [acl.serialize() for acl in self.acls]}
@@ -241,6 +263,9 @@ class OrACL(ACL):
         ) -> EvalResult:
         return max((acl.evaluate(user, channel, nested) for acl in self.acls), default=EvalResult.FALSE)
 
+    def refers_to(self, type: str, id: int) -> bool:
+        return any(acl.refers_to(type, id) for acl in self.acls)
+
     def serialize(self) -> ACLData:
         return {"or": [acl.serialize() for acl in self.acls]}
 
@@ -253,6 +278,9 @@ class NestedACL(ACL):
     def evaluate(self, user: Optional[Union[Member, User]], channel: Optional[MessageableChannel], nested: Set[str]
         ) -> EvalResult:
         return evaluate_acl(self.acl, user, channel, nested)
+
+    def refers_to(self, type: str, id: int) -> bool:
+        return False
 
     def serialize(self) -> ACLData:
         return {"acl": self.acl}
