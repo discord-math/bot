@@ -1,6 +1,6 @@
 from collections import defaultdict
 import json
-from typing import Dict, Iterator, List, Literal, Optional, Sequence, Set, Tuple, Union, cast
+from typing import Dict, Iterator, List, Literal, Optional, Sequence, Set, Union, cast
 
 import asyncpg
 from discord import AllowedMentions
@@ -8,7 +8,7 @@ from discord.ext.commands import Greedy
 import yaml
 
 import bot.acl
-from bot.acl import (ACL, ACLCheck, ACLData, EvalResult, MessageableChannel, evaluate_acl, evaluate_acl_meta, live_actions,
+from bot.acl import (ACL, ACLCheck, EvalResult, MessageableChannel, evaluate_acl, evaluate_acl_meta, live_actions,
     privileged, register_action)
 from bot.client import client
 import bot.commands
