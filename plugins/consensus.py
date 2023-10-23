@@ -16,7 +16,7 @@ import sqlalchemy.orm
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.schema import CreateSchema
 
-from bot.acl import privileged
+from bot.acl import EvalResult, privileged, register_action
 from bot.client import client
 from bot.cogs import Cog, cog, command
 from bot.commands import Context, cleanup
@@ -83,6 +83,7 @@ class VoteType(enum.Enum):
     UPVOTE = "Upvote"
     NEUTRAL = "Neutral"
     DOWNVOTE = "Downvote"
+    VETO = "Veto"
 
 @registry.mapped
 class Vote:
@@ -134,6 +135,8 @@ async def timeout_task() -> None:
         delay = (min_timeout - datetime.utcnow()).total_seconds()
         timeout_task.run_coalesced(delay)
         logger.debug("Waiting for upcoming timeout in {} seconds".format(delay))
+
+raise_vetos = register_action("raise_vetos")
 
 @plugins.init
 async def init() -> None:
@@ -195,6 +198,8 @@ def render_poll(votes: Sequence[Vote], concerns: Sequence[Concern]) -> str:
                 emoji = "\u2705"
             elif item.vote == VoteType.NEUTRAL:
                 emoji = "\U0001F518"
+            elif item.vote == VoteType.VETO:
+                emoji = "\u26D4"
             else:
                 emoji = "\u274C"
             row = format("{!m}: {}", item.voter_id, emoji)
@@ -301,13 +306,15 @@ class VoteModal(Modal):
         #    SelectOption(label="Downvote", emoji="\u274C", default=vote==VoteType.DOWNVOTE),
         #    SelectOption(label="None (retract vote)")])
         self.vote = TextInput(required=False, max_length=1,
-            label="[Y]es\u2705 / [N]o\u274C / [A]bstain \U0001F518 / [R]etract \u21A9")
+            label="[Y]es / [N]o / [A]bstain / [R]etract / [V]eto")
         if vote == VoteType.UPVOTE:
             self.vote.default = "Y"
         elif vote == VoteType.NEUTRAL:
             self.vote.default = "A"
         elif vote == VoteType.DOWNVOTE:
             self.vote.default = "N"
+        elif vote == VoteType.VETO:
+            self.vote.default = "V"
         self.add_item(self.vote)
 
         self.comment = TextInput(style=TextStyle.paragraph, required=False, max_length=300,
@@ -330,6 +337,12 @@ class VoteModal(Modal):
             vote = VoteType.NEUTRAL
         elif vote_char == "N":
             vote = VoteType.DOWNVOTE
+        elif vote_char == "V":
+            if (raise_vetos.evaluate(user=interaction.user, channel=interaction.channel) == EvalResult.TRUE):
+                vote = VoteType.VETO
+            else:
+                await interaction.response.send_message("You are not authorised to veto on this poll.", ephemeral=True)
+                return
         else:
             vote = None
         await cast_vote(interaction, self.poll_id, vote, comment=str(self.comment)[:300],
