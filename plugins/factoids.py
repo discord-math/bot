@@ -112,7 +112,7 @@ class Factoids(Cog):
 
             mentions = AllowedMentions.none()
             if (flags := alias.factoid.flags) is not None:
-                if "acl" in flags and not evaluate_acl(flags["acl"], msg.author, msg.channel):
+                if "acl" in flags and evaluate_acl(flags["acl"], msg.author, msg.channel) != EvalResult.TRUE:
                     return
                 if "mentions" in flags and flags["mentions"]:
                     mentions = AllowedMentions(roles=True, users=True)
