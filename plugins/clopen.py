@@ -66,7 +66,7 @@ def unsolved_embed(reason: str) -> Embed:
 def limit_embed(user_id: int = 0) -> Embed:
     extra_str = ""
     if user_id:
-        extra_str = "You occupy ".join(client.get_channel(id) for id in conf.channels if conf[id, "owner"] == user_id and conf[id, "state"] in ("used", "pending",))
+        extra_str = " You occupy ".join(client.get_channel(id) for id in conf.channels if conf[id, "owner"] == user_id and conf[id, "state"] in ("used", "pending",))
     return Embed(color=0xB37C42, description="Please don't occupy multiple help channels." + extra_str)
 
 def prompt_message(mention: int) -> str:
