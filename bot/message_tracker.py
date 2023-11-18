@@ -31,6 +31,7 @@ from bot.cogs import Cog, cog
 from bot.tasks import task
 import plugins
 import util.db
+from util.discord import retry
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -822,7 +823,7 @@ async def process_subscription(subscriber: str, event_dict: Dict[str, Callback],
             logger.debug("Found archived threads in {}: {}".format(channel_id,
                 ", ".join(str(thread.id) for thread in archived_threads[channel_id])))
 
-        await asyncio.gather(*(find_archived_threads(channel_id) for channel_id in last_msgs))
+        await asyncio.gather(*(retry(lambda: find_archived_threads(channel_id)) for channel_id in last_msgs))
 
         for state in states:
             if state.channel_id in last_msgs and state.last_message_id < last_msgs[state.channel_id]:
