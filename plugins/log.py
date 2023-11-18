@@ -129,7 +129,7 @@ async def register_messages(msgs: Iterable[Message]) -> None:
         try:
             for msg in msgs:
                 if not msg.author.bot:
-                    session.add(SavedMessage(id=msg.id, channel_id=msg.channel.id, author_id=msg.author.id,
+                    await session.merge(SavedMessage(id=msg.id, channel_id=msg.channel.id, author_id=msg.author.id,
                         username=msg.author.name + "#" + msg.author.discriminator,
                         nick=msg.author.nick if isinstance(msg.author, Member) else None,
                         content=msg.content.encode("utf8")))
@@ -145,7 +145,7 @@ async def register_messages(msgs: Iterable[Message]) -> None:
                                 os.unlink(path_for(attm))
                             except FileNotFoundError:
                                 pass
-                        session.add(SavedFile(id=attm.id, message_id=msg.id, filename=attm.filename, url=attm.url,
+                        await session.merge(SavedFile(id=attm.id, message_id=msg.id, filename=attm.filename, url=attm.url,
                             local_filename=str(path_for(attm)) if exc is None else None))
             await session.commit()
             filepaths = set()
