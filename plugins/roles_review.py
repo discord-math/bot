@@ -16,7 +16,7 @@ import sqlalchemy.orm
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.schema import CreateSchema
 
-from bot.acl import privileged
+from bot.acl import EvalResult, evaluate_interaction, privileged, register_action
 from bot.cogs import Cog, cog, command
 from bot.commands import Context, cleanup
 import plugins
@@ -50,6 +50,9 @@ engine = util.db.create_async_engine()
 plugins.finalizer(engine.dispose)
 
 sessionmaker = async_sessionmaker(engine, future=True, expire_on_commit=False)
+
+action_can_vote = register_action("review_can_vote")
+action_can_veto = register_action("review_can_veto")
 
 @registry.mapped
 class Application:
@@ -194,14 +197,8 @@ async def cast_vote(interaction: Interaction, msg_id: int, dir: Optional[bool], 
             await interaction.response.send_message("This application is already resolved.", ephemeral=True)
             return
 
-        can_vote = True
-        can_veto = False
-        if "review_role" in review:
-            can_veto = can_vote = isinstance(interaction.user, Member) and any(role.id == review["review_role"]
-                for role in interaction.user.roles)
-        if "veto_role" in review:
-            can_veto = isinstance(interaction.user, Member) and any(role.id == review["veto_role"]
-                for role in interaction.user.roles)
+        can_vote = action_can_vote.evaluate(*evaluate_interaction(interaction)) == EvalResult.TRUE;
+        can_veto = action_can_veto.evaluate(*evaluate_interaction(interaction)) == EvalResult.TRUE;
 
         if veto is None:
             if not (can_vote or can_veto):
