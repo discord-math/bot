@@ -5,4 +5,4 @@ datrie
 PyYAML
 sqlalchemy
 typing_extensions
-yaml
+pyyaml
