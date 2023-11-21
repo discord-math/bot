@@ -316,7 +316,7 @@ Config:
 
 ### `roles_review`
 
-A review system for role requests. When a role is requested via `roles_dialog`, the user is prompted to answer some questions, and the answers are posted in a review channel, where members of the channel can vote to approve or reject the application. A chosen role can veto-approve or veto-reject an application.
+A review system for role requests. When a role is requested via `roles_dialog`, the user is prompted to answer some questions, and the answers are posted in a review channel, where members of the channel matching the `review_can_vote` action can vote to approve or reject the application. Members matching the `review_can_veto` action can veto-approve or veto-reject an application.
 
 Commands:
 - `review_reset <user> <role>` -- when a user's application is denied, they are not allowed to submit another until this command is invoked on them.
@@ -326,8 +326,6 @@ Config:
 - ``config plugins.roles_review <role> `{...}` `` -- attempting to self-assign the role will instead make the user go through the application process. The keys in the object are as followws:
     - `"prompt": ["<question>[\n<placeholder>]", ...]` -- list of questions to ask an applicant.
     - `"review_channel": <channel id>` -- channel where the applications will be posted and voted on.
-    - `"review_role": <role id>` -- (optional) the role that is allowed to vote on applications.
-    - `"veto_role": <role id>` -- (optional) the role that is allowed to veto applications.
     - `"upvote_limit": <number>` -- how many upvotes are needed to accept an application.
     - `"downvote_limit": <number>` -- how many downvotes are needed to accept an application.
     - `"pending_role": <role id>` -- (optional) role given to the applying user while the application is pending.
