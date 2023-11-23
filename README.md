@@ -320,7 +320,7 @@ A review system for role requests. When a role is requested via `roles_dialog`, 
 
 Commands:
 - `review_reset <user> <role>` -- when a user's application is denied, they are not allowed to submit another until this command is invoked on them.
-- `review_queue` -- show a list of links to unresolved applications.
+- `review_queue <any|mine>` -- show a list of links to unresolved applications. Optional parameter `whose` determines whether to list *all* unresolved applications (`any`) or only unresolved applications that the calling user has not voted on (`mine`). Defaults to `whose = "mine"`.
 
 Config:
 - ``config plugins.roles_review <role> `{...}` `` -- attempting to self-assign the role will instead make the user go through the application process. The keys in the object are as followws:
