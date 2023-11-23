@@ -1,6 +1,6 @@
 import enum
 import logging
-from typing import TYPE_CHECKING, Iterator, List, Optional, Protocol, Tuple, TypedDict, Union, cast
+from typing import TYPE_CHECKING, Iterator, List, Literal, Optional, Protocol, Tuple, TypedDict, Union, cast
 from typing_extensions import NotRequired
 
 import discord
@@ -377,21 +377,30 @@ class RolesReviewCog(Cog):
     @cleanup
     @command("review_queue")
     @privileged
-    async def review_queue(self, ctx: Context) -> None:
+    async def review_queue(self, ctx: Context, whose: Literal["any", "mine"] = "mine") -> None:
         """List unresolved applications."""
         async with sessionmaker() as session:
-            stmt = select(Application).where(Application.decision == None).order_by(Application.listing_id)
+            if whose == "any":
+                stmt = select(Application).where(Application.decision == None).order_by(Application.listing_id)
+            else:
+                stmt = select(Application).join(Vote, isouter=True) \
+                    .where(Application.decision == None) \
+                    .where((Vote.voter_id != ctx.author.id) | (Vote.voter_id == None)) \
+                    .distinct().order_by(Application.listing_id)
+
             apps = (await session.execute(stmt)).scalars()
 
             def generate_links() -> Iterator[PlainItem]:
                 yield PlainItem("Applications:\n")
                 for app in apps:
-                    if (review := conf[app.role_id]) is None:
+                    if app.voting_id is None:
+                        break
+                    if conf[app.role_id] is None:
                         yield PlainItem("{} (?)".format(app.listing_id))
                         continue
-                    chan = ctx.bot.get_partial_messageable(review["review_channel"],
+                    chan = ctx.bot.get_partial_messageable(app.listing_id,
                         guild_id=ctx.guild.id if ctx.guild else None)
-                    msg = chan.get_partial_message(app.listing_id)
+                    msg = chan.get_partial_message(app.voting_id)
                     yield PlainItem("{}\n".format(msg.jump_url))
 
             for content, _ in chunk_messages(generate_links()):
@@ -498,6 +507,8 @@ async def apply(member: Member, role: Role, inputs: List[Tuple[str, str]]) -> Op
 
         async def post_application() -> None:
             listing = None
+            user_id_heading = None
+            user_id = None
             thread = None
             voting = None
             try:
@@ -505,6 +516,8 @@ async def apply(member: Member, role: Role, inputs: List[Tuple[str, str]]) -> Op
                         role, "\n\n".join("**{}**: {}".format(question, answer) for question, answer in inputs)),
                     allowed_mentions=AllowedMentions.none())
                 thread = await listing.create_thread(name=member.display_name)
+                user_id_heading = await thread.send("User ID:")
+                user_id = await thread.send("{}".format(member.id))
                 voting = await thread.send("Votes:", view=ApproveRoleView(listing.id),
                     allowed_mentions=AllowedMentions.none())
                 app = Application(listing_id=listing.id, voting_id=voting.id, user_id=member.id, role_id=role.id)
@@ -515,6 +528,10 @@ async def apply(member: Member, role: Role, inputs: List[Tuple[str, str]]) -> Op
                     await retry(voting.delete)
                 if thread is not None:
                     await retry(thread.delete)
+                if user_id is not None:
+                    await retry(user_id.delete)
+                if user_id_heading is not None:
+                    await retry(user_id_heading.delete)
                 if listing is not None:
                     await retry(listing.delete)
                 raise
