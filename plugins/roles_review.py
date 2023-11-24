@@ -383,10 +383,7 @@ class RolesReviewCog(Cog):
             if whose == "any":
                 stmt = select(Application).where(Application.decision == None).order_by(Application.listing_id)
             else:
-                stmt = select(Application).join(Vote, isouter=True) \
-                    .where(Application.decision == None) \
-                    .where((Vote.voter_id != ctx.author.id) | (Vote.voter_id == None)) \
-                    .distinct().order_by(Application.listing_id)
+                stmt = select(Application).outerjoin(Vote, Vote.application_id.and_(Vote.voter_id == ctx.author.id))
 
             apps = (await session.execute(stmt)).scalars()
 
@@ -507,8 +504,6 @@ async def apply(member: Member, role: Role, inputs: List[Tuple[str, str]]) -> Op
 
         async def post_application() -> None:
             listing = None
-            user_id_heading = None
-            user_id = None
             thread = None
             voting = None
             try:
@@ -516,8 +511,6 @@ async def apply(member: Member, role: Role, inputs: List[Tuple[str, str]]) -> Op
                         role, "\n\n".join("**{}**: {}".format(question, answer) for question, answer in inputs)),
                     allowed_mentions=AllowedMentions.none())
                 thread = await listing.create_thread(name=member.display_name)
-                user_id_heading = await thread.send("User ID:")
-                user_id = await thread.send("{}".format(member.id))
                 voting = await thread.send("Votes:", view=ApproveRoleView(listing.id),
                     allowed_mentions=AllowedMentions.none())
                 app = Application(listing_id=listing.id, voting_id=voting.id, user_id=member.id, role_id=role.id)
@@ -528,10 +521,6 @@ async def apply(member: Member, role: Role, inputs: List[Tuple[str, str]]) -> Op
                     await retry(voting.delete)
                 if thread is not None:
                     await retry(thread.delete)
-                if user_id is not None:
-                    await retry(user_id.delete)
-                if user_id_heading is not None:
-                    await retry(user_id_heading.delete)
                 if listing is not None:
                     await retry(listing.delete)
                 raise
