@@ -383,7 +383,9 @@ class RolesReviewCog(Cog):
             if whose == "any":
                 stmt = select(Application).where(Application.decision == None).order_by(Application.listing_id)
             else:
-                stmt = (select(Application).outerjoin(Vote, Vote.application_id.and_(Vote.voter_id == ctx.author.id))
+                stmt = (select(Application)
+                        .outerjoin(Vote, (Application.id == Vote.application_id) & (Vote.voter_id == ctx.author.id))
+                        .where(Vote.application_id == None)
                         .order_by(Application.listing_id))
 
             apps = (await session.execute(stmt)).scalars()
@@ -392,7 +394,7 @@ class RolesReviewCog(Cog):
                 yield PlainItem("Applications:\n")
                 for app in apps:
                     if app.voting_id is None:
-                        break
+                        continue
                     if conf[app.role_id] is None:
                         yield PlainItem("{} (?)".format(app.listing_id))
                         continue
