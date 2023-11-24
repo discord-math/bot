@@ -197,8 +197,8 @@ async def cast_vote(interaction: Interaction, msg_id: int, dir: Optional[bool], 
             await interaction.response.send_message("This application is already resolved.", ephemeral=True)
             return
 
-        can_vote = action_can_vote.evaluate(*evaluate_interaction(interaction)) == EvalResult.TRUE;
-        can_veto = action_can_veto.evaluate(*evaluate_interaction(interaction)) == EvalResult.TRUE;
+        can_vote = action_can_vote.evaluate(*evaluate_interaction(interaction)) == EvalResult.TRUE
+        can_veto = action_can_veto.evaluate(*evaluate_interaction(interaction)) == EvalResult.TRUE
 
         if veto is None:
             if not (can_vote or can_veto):
