@@ -235,7 +235,7 @@ class Factoids(Cog):
         async with sessionmaker() as session:
             if (alias := await session.get(Alias, name)) is None:
                 raise UserError(format("The factoid {!i} does not exist", conf.prefix + name))
-            stmt = select(True).where(Alias.id == alias.id, Alias.name != alias.name).limit(1)
+            stmt = select(1).where(Alias.id == alias.id, Alias.name != alias.name).limit(1)
             if not (await session.execute(stmt)).scalar():
                 raise UserError("Cannot remove the last alias")
 

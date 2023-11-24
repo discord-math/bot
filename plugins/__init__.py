@@ -112,8 +112,7 @@ class PluginManager:
     def register(self) -> None:
         for i in range(len(sys.meta_path)):
             if sys.meta_path[i] == PathFinder:
-                # typeshed for sys.meta_path is incorrect
-                sys.meta_path.insert(i, PluginFinder(self)) # type: ignore
+                sys.meta_path.insert(i, PluginFinder(self))
 
     @staticmethod
     def find_spec(name: str, path: List[str]) -> Optional[ModuleSpec]:
