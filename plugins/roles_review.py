@@ -383,7 +383,8 @@ class RolesReviewCog(Cog):
             if whose == "any":
                 stmt = select(Application).where(Application.decision == None).order_by(Application.listing_id)
             else:
-                stmt = select(Application).outerjoin(Vote, Vote.application_id.and_(Vote.voter_id == ctx.author.id))
+                stmt = (select(Application).outerjoin(Vote, Vote.application_id.and_(Vote.voter_id == ctx.author.id))
+                        .order_by(Application.listing_id))
 
             apps = (await session.execute(stmt)).scalars()
 
