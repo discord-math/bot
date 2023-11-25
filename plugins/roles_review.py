@@ -386,6 +386,7 @@ class RolesReviewCog(Cog):
                 stmt = (select(Application)
                         .outerjoin(Vote, (Application.id == Vote.application_id) & (Vote.voter_id == ctx.author.id))
                         .where(Vote.application_id == None)
+                        .where(Application.decision == None)
                         .order_by(Application.listing_id))
 
             apps = (await session.execute(stmt)).scalars()
