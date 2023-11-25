@@ -703,7 +703,7 @@ async def process_message(msg: Message) -> None:
         for sub, result in zip(subscriber_order, results):
             if isinstance(result, Exception):
                 logger.error("Exception when calling callback for {!r}, will redeliver".format(sub), exc_info=result)
-                stmt = select(True).where(ChannelState.channel_id == channel_id, ChannelState.subscriber == sub)
+                stmt = select(1).where(ChannelState.channel_id == channel_id, ChannelState.subscriber == sub)
                 if (await session.execute(stmt)).scalar():
                     if isinstance(msg.channel, Thread):
                         session.add(ThreadRequest(thread_id=msg.channel.id, channel_id=channel_id, subscriber=sub,
