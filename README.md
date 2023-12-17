@@ -116,7 +116,7 @@ Commands:
 
 Config:
 - ``config plugins.tickets guild <guild id>`` -- guild for which tickets are being managed.
-- ``config plugins.tickets tracked_roles `[<channel id>, ...]` `` -- list of roles assigning which counts as administrative action (e.g. a muted role).
+- ``config plugins.tickets tracked_roles `[<role id>, ...]` `` -- list of roles assigning which counts as administrative action (e.g. a muted role).
 - ``config plugins.tickets ticket_list <channel id>`` -- channel where the log of tickets should be displayed.
 - ``config plugins.tickets prompt_interval <interval>`` -- if a moderator doesn't reply to a prompt for a comment, after how long (in seconds) should they be reminded?
 - ``config plugins.tickets audit_log_precision <float>`` -- in large guilds the audit log may lag behind, causing the bot to only realize much later that an action has had been taken. This is a delay (in seconds) to compensate.
@@ -368,7 +368,7 @@ Now you can run the bot by executing `main.py`. You can continue the configurati
 .load eval
 .autoload add db_manager
 .autoload add discord_log
-.audoload add eval
+.autoload add eval
 ```
 The `python -m util.db.kv` shell command is analogous to the `.config` Discord command.
 
