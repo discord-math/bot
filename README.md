@@ -197,6 +197,7 @@ Config:
 - ``config plugins.clopen used_category <category id>`` -- where "occupied" channels are placed.
 - ``config plugins.clopen hidden_category <category id>`` -- where "hidden" channels are placed.
 - ``config plugins.clopen owner_timeout <timeout>`` -- how long (in seconds, initially) since the last message by the owner before the owner is prompted about closure, and how long until the channel is automatically closed if there was no response.
+- ``config plugins.clopen ping_timeout <timeout>`` -- how long (in seconds) until a helpee can use the ping helpers button.
 - ``config plugins.clopen timeout <timeout>`` -- how long (in seconds) since the last message by anyone else before the owner is prompted about closure.
 - ``config plugins.clopen min_avail <number>`` -- how many channels minimum should be "available". If not enough channels are available, channels may be unhidden, or new channels may be created.
 - ``config plugins.clopen max_avail <number>`` -- how many channels maximum should be "available". If too many channels are available, some may be hidden.
