@@ -4,6 +4,7 @@ import logging
 from time import time
 from typing import (TYPE_CHECKING, Awaitable, Dict, Iterable, List, Literal, Optional, Protocol, Tuple, Union, cast,
     overload)
+
 import discord
 from discord import (AllowedMentions, ButtonStyle, CategoryChannel, Embed, ForumChannel, ForumTag, Interaction,
     InteractionType, Member, Message, Object, PartialMessage, RawMessageDeleteEvent, RawReactionActionEvent,
@@ -76,7 +77,7 @@ class ClopenConf(Awaitable[None], Protocol):
     used_category: int
     hidden_category: int
     owner_timeout: int
-    ping_timeout: int # ENZI CHANGE
+    ping_timeout: int
     timeout: int
     min_avail: int
     max_avail: int
@@ -272,7 +273,7 @@ async def close(id: int, reason: str, *, reopen: bool = True) -> None:
     assert isinstance(channel := client.get_channel(id), TextChannel)
     assert conf[id, "state"] in ["used", "pending"]
     conf[id, "state"] = "closed"
-    conf[id, "pinged"] = False # ENZI CHANGE
+    conf[id, "pinged"] = False
     now = time()
     conf[id, "expiry"] = max(now + 60, last_rename.get(id, now) + 600) # channel rename ratelimit
     old_op_id = conf[id, "op_id"]
@@ -292,12 +293,8 @@ async def close(id: int, reason: str, *, reopen: bool = True) -> None:
             assert client.user is not None
             await PartialMessage(channel=channel, id=prompt_id).edit(view=None)
 
-            # kill countdown process on channel close
-            logger.error(f"Channel coose")
-
             last_prompt = conf[id, "last_prompt"]
             if last_prompt in ping_tasks:
-                logger.error(f"Killing ping task for {conf[id, 'last_prompt']} on channel close")
                 ping_tasks[last_prompt].cancel()
                 del ping_tasks[last_prompt]
 
@@ -390,16 +387,9 @@ async def make_pending(id: int) -> None:
         extension = 1
     conf[id, "expiry"] = time() + conf.owner_timeout * extension
 
-    # Intercept this
     if [conf[id, "ping_id"]] is not None:
         await PartialMessage(channel=channel, id=conf[channel.id, "prompt_id"]).edit(view=None)
     prompt = await channel.send(prompt_message(owner), view=PromptView(channel, owner))
-
-
-    # prompt = await channel.send(prompt_message(owner))
-    # await prompt.add_reaction("\u2705")
-    # await prompt.add_reaction("\u274C")
-
     conf[id, "prompt_id"] = prompt.id
     conf[id, "state"] = "pending"
     await conf
