@@ -590,11 +590,13 @@ class PromptView(View):
 
         if conf[self.channel.id, "pinged"]:
             await extend(self.channel.id)
-            await self.channel.send("Please be patient while helpers attend to your channel", ephemeral=True)
+            await interaction.response.send_message("Please be patient while helpers attend to your channel.",
+                    ephemeral=True)
             await interaction.response.defer()
         else:
             self.clear_items()
-            ping_button = self.create_button("Ping Helpers", ButtonStyle.danger, lambda interaction: self.ping_callback(interaction, True))
+            ping_button = self.create_button("Ping Helpers", ButtonStyle.danger,
+                        lambda interaction: self.ping_callback(interaction, True))
             self.add_item(ping_button)
             await extend(self.channel.id)
             await interaction.message.edit(view=self)
@@ -624,7 +626,8 @@ class PromptView(View):
         conf[self.channel.id, "pinged"] = False
         self.ping_button.disabled = False
         self.clear_items()
-        button = self.create_button("Ping Helpers", ButtonStyle.danger, lambda interaction: self.ping_callback(interaction, True))
+        button = self.create_button("Ping Helpers", ButtonStyle.danger,
+                lambda interaction: self.ping_callback(interaction, True))
         self.add_item(button)
 
         second_prompt = await interaction.channel.send("You can ping again now", view=self)
