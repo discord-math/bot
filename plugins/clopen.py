@@ -29,7 +29,7 @@ from util.frozen_list import FrozenList
 
 
 ping_tasks = {}
-helpers = 1184614977856872468 # considering moving to conf
+helpers = 286206848099549185 # considering moving to conf
 def available_embed() -> Embed:
     checkmark_url = "https://cdn.discordapp.com/emojis/901284681633370153.png?size=256"
     help_chan = 488120190538743810
@@ -586,11 +586,6 @@ class PromptView(View):
     async def no_callback(self, interaction: Interaction) -> None:
         if conf[self.channel.id, "state"] != "pending":
             await interaction.response.defer()
-            return
-
-        if interaction.user.id != self.owner:
-            await interaction.response.send_message("This isn't yours", ephemeral=True,
-                delete_after=60)
             return
 
         if conf[self.channel.id, "pinged"]:

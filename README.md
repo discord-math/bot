@@ -324,11 +324,11 @@ Commands:
 - `review_queue [any|mine]` -- show a list of links to unresolved applications. The argument `any` will list all unresolved applications, whereas `mine` will list only applications that the user hasn't yet voted on. Without an argument, defaults to `mine`.
 
 Config:
-- ``config plugins.roles_review <role> `{...}` `` -- attempting to self-assign the role will instead make the user go through the application process. The keys in the object are as followws:
+- ``config plugins.roles_review <role> `{...}` `` -- attempting to self-assign the role will instead make the user go through the application process. The keys in the object are as follows:
     - `"prompt": ["<question>[\n<placeholder>]", ...]` -- list of questions to ask an applicant.
     - `"review_channel": <channel id>` -- channel where the applications will be posted and voted on.
     - `"upvote_limit": <number>` -- how many upvotes are needed to accept an application.
-    - `"downvote_limit": <number>` -- how many downvotes are needed to accept an application.
+    - `"downvote_limit": <number>` -- how many downvotes are needed to reject an application.
     - `"pending_role": <role id>` -- (optional) role given to the applying user while the application is pending.
     - `"denied_role": <role id>` -- (optional) role given to the applying user if their application is denied.
 
