@@ -44,13 +44,13 @@ def json_freeze(value: Optional[object]) -> Optional[object]:
 
 class ThawingJSONEncoder(json.JSONEncoder):
     __slots__ = ()
-    def default(self, obj: object) -> object:
-        if isinstance(obj, FrozenList):
-            return obj.copy()
-        elif isinstance(obj, FrozenDict):
-            return obj.copy()
+    def default(self, o: object) -> object:
+        if isinstance(o, FrozenList):
+            return o.copy()
+        elif isinstance(o, FrozenDict):
+            return o.copy()
         else:
-            return super().default(obj)
+            return super().default(o)
 
 def json_encode(value: object) -> Optional[str]:
     return json.dumps(value, cls=ThawingJSONEncoder) if value is not None else None

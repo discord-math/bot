@@ -169,12 +169,12 @@ class Formatter(string.Formatter):
                 return "<#{}>".format(value)
         return super().convert_field(value, conversion)
 
-    def format_field(self, value: object, fmt: str) -> object:
+    def format_field(self, value: object, format_spec: str) -> object:
         if isinstance(value, CodeBlock):
-            if fmt:
-                value.language = fmt
+            if format_spec:
+                value.language = format_spec
             return str(value)
-        return super().format_field(value, fmt)
+        return super().format_field(value, format_spec)
 
 formatter: string.Formatter = Formatter()
 format = formatter.format
@@ -690,8 +690,7 @@ def chunk_messages(items: Iterable[Union[PlainItem, CodeItem]]) -> Iterator[Tupl
 
 def HTTPMeta(status: int) -> Type[type]:
     class HTTPMeta(type):
-        @staticmethod
-        def __instancecheck__(instance: object) -> bool:
+        def __instancecheck__(self, instance: object) -> bool:
             return isinstance(instance, discord.HTTPException) and instance.status == status
     return HTTPMeta
 

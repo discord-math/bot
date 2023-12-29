@@ -27,13 +27,13 @@ class FilteredQueue(asyncio.Queue[T], Generic[T]):
         self.filter = filter if filter is not None else lambda _: True
         return super().__init__(maxsize)
 
-    async def put(self, value: T) -> None:
-        if self.filter(value):
-            return await super().put(value)
+    async def put(self, item: T) -> None:
+        if self.filter(item):
+            return await super().put(item)
 
-    def put_nowait(self, value: T) -> None:
-        if self.filter(value):
-            return super().put_nowait(value)
+    def put_nowait(self, item: T) -> None:
+        if self.filter(item):
+            return super().put_nowait(item)
 
 ReactionEvent = Union[RawReactionActionEvent, RawReactionClearEvent, RawReactionClearEmojiEvent]
 

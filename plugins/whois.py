@@ -123,6 +123,7 @@ class InfixTrie:
         """Returned value might not actually be a match"""
         input = input.lower()
         with self.lock:
+            uncommon: Dict[int, str]
             try:
                 uncommon = min((d for ch in re.findall(self.uncommon_re, input)
                     if (d := self.uncommon.get(ch)) is not None), key=len)

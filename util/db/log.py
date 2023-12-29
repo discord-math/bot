@@ -97,10 +97,10 @@ class LoggingConnection(Connection):
         logger.debug("{} execute: {}".format(id(self), fmt_query_single(query, log_data, args)))
         return await super().execute(query, *args, **kwargs)
 
-    async def executemany(self, query: str, args: Sequence[Sequence[object]],
+    async def executemany(self, command: str, args: Sequence[Sequence[object]],
         log_data: Union[bool, Collection[int]] = True, **kwargs: Any) -> None:
-        logger.debug("{} executemany: {}".format(id(self), fmt_query_multi(query, log_data, args)))
-        return await super().executemany(query, args, **kwargs)
+        logger.debug("{} executemany: {}".format(id(self), fmt_query_multi(command, log_data, args)))
+        return await super().executemany(command, args, **kwargs)
 
     async def fetch(self, query: str, *args: object, # type: ignore
         log_data: Union[bool, Collection[int]] = True, **kwargs: object) -> Sequence[Record]:

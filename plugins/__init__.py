@@ -415,12 +415,12 @@ class PluginLoader(SourceFileLoader):
         self.manager = manager
         super().__init__(fullname, path) # type: ignore
 
-    def exec_module(self, mod: ModuleType) -> None:
-        plugin = Plugin.new(self.manager, mod)
-        mod.__dict__["__builtins__"] = trace_builtins
+    def exec_module(self, module: ModuleType) -> None:
+        plugin = Plugin.new(self.manager, module)
+        module.__dict__["__builtins__"] = trace_builtins
         with self.manager.push_plugin(plugin):
             plugin.transition(PluginState.IMPORTING)
-            super().exec_module(mod)
+            super().exec_module(module)
             plugin.transition(PluginState.IMPORTED)
 
 class PluginFinder(PathFinder):
@@ -429,11 +429,11 @@ class PluginFinder(PathFinder):
         self.manager = manager
         super().__init__()
 
-    def find_spec(self, name: str, path: Optional[Sequence[str]] = None, target: Optional[ModuleType] = None
-        ) -> Optional[ModuleSpec]:
-        if not self.manager.is_plugin(name):
+    def find_spec(self, fullname: str, path: Optional[Sequence[str]] = None # type: ignore
+        , target: Optional[ModuleType] = None) -> Optional[ModuleSpec]:
+        if not self.manager.is_plugin(fullname):
             return None
-        spec = super().find_spec(name, path, target)
+        spec = super().find_spec(fullname, path, target)
         if spec is None:
             return None
         if not spec.has_location:

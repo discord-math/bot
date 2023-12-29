@@ -116,7 +116,7 @@ class _CommandDecorator:
     def __call__(self, func: Callable[..., Awaitable[object]], /) -> object: ...
 
 @overload
-def command(name: Optional[str], cls: Type[CommandT], **attrs: object) -> Callable[
+def command(name: Optional[str], cls: Type[CommandT], **attrs: object) -> Callable[ # type: ignore
     [Union[Callable[Concatenate[ContextT, P], Awaitable[object]],
         Callable[Concatenate[CogT, ContextT, P], Awaitable[object]]]], CommandT]: ... # type: ignore
 @overload
