@@ -21,15 +21,15 @@ logger: logging.Logger = logging.getLogger(__name__)
 class DiscordHandler(logging.Handler):
     __slots__ = "queue", "lock"
     queue: List[str]
-    lock: Lock
+    thread_lock: Lock
 
     def __init__(self, level: int = logging.NOTSET):
         self.queue = []
-        self.lock = Lock() # just in case
+        self.thread_lock = Lock() # just in case
         return super().__init__(level)
 
     def queue_pop(self) -> Optional[str]:
-        with self.lock:
+        with self.thread_lock:
             if len(self.queue) == 0:
                 return None
             return self.queue.pop(0)
@@ -76,7 +76,7 @@ class DiscordHandler(logging.Handler):
             frame = frame.f_back
         del frame
 
-        with self.lock:
+        with self.thread_lock:
             if self.queue:
                 self.queue.append(text)
             else:

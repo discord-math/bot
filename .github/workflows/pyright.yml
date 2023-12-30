@@ -14,6 +14,6 @@ jobs:
       with:
         python-version: 3.9
     - name: pip
-      run: pip install aiohttp aiohttp-session types-requests asyncpg sqlalchemy datrie pyright
+      run: pip install aiohttp aiohttp-session types-requests types-PyYAML asyncpg sqlalchemy datrie pyright
     - name: pyright
       run: pyright
