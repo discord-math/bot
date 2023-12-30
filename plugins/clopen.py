@@ -2,7 +2,7 @@ import asyncio
 from collections import defaultdict
 import logging
 from time import time
-from typing import (TYPE_CHECKING, Awaitable, Dict, Iterable, List, Literal, Optional, Protocol, Tuple, Union, cast,
+from typing import (TYPE_CHECKING, Awaitable, Callable, Any, Dict, Iterable, List, Literal, Optional, Protocol, Tuple, Union, cast,
     overload)
 
 import discord
@@ -107,8 +107,7 @@ class ClopenConf(Awaitable[None], Protocol):
     @overload
     def __setitem__(self, k: Tuple[int, Literal["expiry"]], v: Optional[float]) -> None: ...
     @overload
-    def __setitem__(self, k: Tuple[int, Literal["pinged"]], v: bool) -> False: ...
-
+    def __setitem__(self, k: Tuple[int, Literal["pinged"]], v: bool) -> None: ...
 
 
 conf: ClopenConf
@@ -377,6 +376,7 @@ async def extend(id: int) -> None:
     await conf
     scheduler_task.run_coalesced(0)
 
+
 async def make_pending(id: int) -> None:
     logger.debug("Prompting {} for closure".format(id))
     assert isinstance(channel := client.get_channel(id), TextChannel)
@@ -385,15 +385,18 @@ async def make_pending(id: int) -> None:
     extension = conf[id, "extension"]
     if extension is None:
         extension = 1
+
     conf[id, "expiry"] = time() + conf.owner_timeout * extension
 
-    if [conf[id, "ping_id"]] is not None:
-        await PartialMessage(channel=channel, id=conf[channel.id, "prompt_id"]).edit(view=None)
+    if conf[id, "prompt_id"] is not None:
+        await PartialMessage(channel=channel, id=conf[id, "prompt_id"] or 0).edit(view=None)
+
     prompt = await channel.send(prompt_message(owner), view=PromptView(channel, owner))
     conf[id, "prompt_id"] = prompt.id
     conf[id, "state"] = "pending"
     await conf
     scheduler_task.run_coalesced(0)
+
 
 async def reopen(id: int) -> None:
     logger.debug("Reopening {}".format(id))
@@ -546,8 +549,8 @@ class PostTitleModal(Modal):
             return
         await interaction.response.send_message("\u2705", ephemeral=True, delete_after=60)
 
-def owner_only(func):
-    async def wrapper(self, interaction: Interaction, *args, **kwargs):
+def owner_only(func: Callable[..., Awaitable[None]]):
+    async def wrapper(self: "PromptView", interaction: Interaction, *args: Any, **kwargs: Any) -> None:
         if interaction.user.id != self.owner:
             await interaction.response.send_message("This isn't yours.", ephemeral=True,
                 delete_after=60)
@@ -556,7 +559,7 @@ def owner_only(func):
     return wrapper
 
 class PromptView(View):
-    def __init__(self, channel: TextChannel, owner: User) -> None:
+    def __init__(self, channel: TextChannel, owner: int) -> None:
         super().__init__(timeout=None)
         self.channel = channel
         self.owner = owner
@@ -569,7 +572,7 @@ class PromptView(View):
         if not conf[self.channel.id, "pinged"]:
             self.add_item(self.ping_button)
 
-    def create_button(self, label, style, callback):
+    def create_button(self, label: str, style: ButtonStyle, callback: Callable[..., Any]) -> Any:
         button = Button(label=label, style=style)
         button.callback = callback
         return button
@@ -595,15 +598,19 @@ class PromptView(View):
             await interaction.response.defer()
         else:
             self.clear_items()
-            ping_button = self.create_button("Ping Helpers", ButtonStyle.danger,
-                        lambda interaction: self.ping_callback(interaction, True))
+            ping_button = self.create_button("Ping Helpers", ButtonStyle.danger, self.ping_button_callback)
             self.add_item(ping_button)
             await extend(self.channel.id)
-            await interaction.message.edit(view=self)
+            if interaction.message is not None:
+                await interaction.message.edit(view=self)
             await interaction.response.defer()
 
     @owner_only
-    async def ping_callback(self, interaction, clicked=False) -> None:
+    async def ping_button_callback(self, interaction: Interaction) -> None:
+        await self.ping_callback(interaction, True)
+
+    @owner_only
+    async def ping_callback(self, interaction: Any, clicked: bool = False) -> None:
         if conf[self.channel.id, "state"] == "closed":
             await interaction.response.defer()
             return
@@ -618,21 +625,24 @@ class PromptView(View):
         allowed_mentions = discord.AllowedMentions(roles = True)
         conf[self.channel.id, "last_prompt"] = interaction.message.id # slightly different from prompt_id
         ping_tasks[interaction.message.id] = asyncio.create_task(self.timeout_ping(ping_time, interaction))
-        await interaction.message.edit(content=f"You can ping again <t:{two_hours_later}:R>", view=None)
+        if interaction.message is not None:
+            await interaction.message.edit(content=f"You can ping again <t:{two_hours_later}:R>", view=None)
         await interaction.channel.send(f"<@&{helpers}>", allowed_mentions=allowed_mentions)
 
-    async def timeout_ping(self, delay: int, interaction):
+    async def timeout_ping(self, delay: int, interaction: Any) -> None:
         await asyncio.sleep(delay)
         conf[self.channel.id, "pinged"] = False
         self.ping_button.disabled = False
         self.clear_items()
-        button = self.create_button("Ping Helpers", ButtonStyle.danger,
-                lambda interaction: self.ping_callback(interaction, True))
+
+        button = self.create_button("Ping Helpers", ButtonStyle.danger, self.ping_button_callback)
         self.add_item(button)
 
         second_prompt = await interaction.channel.send("You can ping again now", view=self)
         conf[self.channel.id, "prompt_id"] = second_prompt.id
-        await interaction.message.delete()
+        if interaction.message is not None:
+            await interaction.message.delete()
+
 
 async def manage_title(interaction: Interaction, thread_id: int) -> None:
     try:
