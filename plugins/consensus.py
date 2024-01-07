@@ -1,7 +1,8 @@
 from datetime import datetime, timedelta
 import enum
 import logging
-from typing import TYPE_CHECKING, Dict, Iterable, Iterator, List, Optional, Sequence, Union, cast
+import re
+from typing import TYPE_CHECKING, Dict, Iterable, Iterator, List, Literal, Optional, Pattern, Sequence, Union, cast
 
 import discord
 from discord import AllowedMentions, ButtonStyle, Interaction, InteractionType, PartialMessage, TextStyle, Thread
@@ -10,7 +11,7 @@ if TYPE_CHECKING:
     import discord.types.interactions
 from discord.ui import Button, Modal, TextInput, View
 import sqlalchemy
-from sqlalchemy import BOOLEAN, TEXT, TIMESTAMP, BigInteger, ForeignKey, Integer, nulls_first, select
+from sqlalchemy import ARRAY, BOOLEAN, TEXT, TIMESTAMP, BigInteger, ForeignKey, Integer, nulls_first, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 import sqlalchemy.orm
 from sqlalchemy.orm import Mapped, mapped_column
@@ -36,6 +37,12 @@ plugins.finalizer(engine.dispose)
 
 sessionmaker = async_sessionmaker(engine, future=True, expire_on_commit=False)
 
+class PollType(enum.Enum):
+    COUNTED = "Counted"
+    CHOICE = "Choice"
+    WITH_COMMENTS = "WithComments"
+    WITH_CONCERNS = "WithConcerns"
+
 @registry.mapped
 class Poll:
     __tablename__ = "polls"
@@ -47,14 +54,17 @@ class Poll:
     channel_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     thread_id: Mapped[Optional[int]] = mapped_column(BigInteger)
     author_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    comment: Mapped[int] = mapped_column(TEXT, nullable=False)
+    comment: Mapped[str] = mapped_column(TEXT, nullable=False)
     duration: Mapped[int] = mapped_column(BigInteger, nullable=False)
     timeout: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False)
     timeout_notified: Mapped[bool] = mapped_column(BOOLEAN, nullable=False)
+    poll: Mapped[PollType] = mapped_column(sqlalchemy.Enum(PollType, schema="consensus"), nullable=False)
+    options: Mapped[List[str]] = mapped_column(ARRAY(TEXT), nullable=False)
 
     if TYPE_CHECKING:
         def __init__(self, *, message_id: int, votes_id: int, guild_id: int, channel_id: int, thread_id: Optional[int],
-            author_id: int, comment: str, duration: int, timeout: datetime, timeout_notified: bool) -> None:
+            author_id: int, comment: str, duration: int, timeout: datetime, timeout_notified: bool, poll: PollType,
+            options: List[str]) -> None:
             ...
 
     async def get_votes_message(self) -> Optional[PartialMessage]:
@@ -79,11 +89,6 @@ class Concern:
     if TYPE_CHECKING:
         def __init__(self, *, poll_id: int, author_id: int, comment: str) -> None: ...
 
-class VoteType(enum.Enum):
-    UPVOTE = "Upvote"
-    NEUTRAL = "Neutral"
-    DOWNVOTE = "Downvote"
-
 @registry.mapped
 class Vote:
     __tablename__ = "votes"
@@ -92,12 +97,12 @@ class Vote:
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     poll_id: Mapped[int] = mapped_column(BigInteger, ForeignKey(Poll.message_id, ondelete="CASCADE"), nullable=False)
     voter_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    vote: Mapped[VoteType] = mapped_column(sqlalchemy.Enum(VoteType, schema="consensus"), nullable=False)
+    choice_index: Mapped[int] = mapped_column(BigInteger, nullable=False)
     after_concern: Mapped[Optional[int]] = mapped_column(BigInteger)
     comment: Mapped[str] = mapped_column(TEXT, nullable=False)
 
     if TYPE_CHECKING:
-        def __init__(self, *, poll_id: int, voter_id: int, vote: VoteType, after_concern: Optional[int], comment: str
+        def __init__(self, *, poll_id: int, voter_id: int, choice_index: int, after_concern: Optional[int], comment: str
             ) -> None: ...
 
 @task(name="Poll timeout task", every=86400)
@@ -143,17 +148,33 @@ async def init() -> None:
         registry.metadata.create_all))
     timeout_task.run_coalesced(0)
 
+emoji_re: Pattern[str] = re.compile(r"<a?:[A-Za-z0-9\_]+:[0-9]{13,20}>")
+
 class PollView(View):
-    def __init__(self, poll_id: int) -> None:
+    def __init__(self, poll: Poll) -> None:
         super().__init__(timeout=None)
-        self.add_item(Button(style=ButtonStyle.primary, label="Vote",
-            custom_id="{}:{}:Vote".format(__name__, poll_id)))
-        self.add_item(Button(style=ButtonStyle.primary, label="Raise concern",
-            custom_id="{}:{}:RaiseConcern".format(__name__, poll_id)))
-        self.add_item(Button(style=ButtonStyle.primary, label="Retract concern",
-            custom_id="{}:{}:RetractConcern".format(__name__, poll_id)))
+
+        self.add_item(Button(style=ButtonStyle.primary, label="Retract vote",
+            custom_id="{}:{}:RetractVote".format(__name__, poll.message_id)))
+        if poll.poll == PollType.WITH_CONCERNS:
+            self.add_item(Button(style=ButtonStyle.primary, label="Raise concern",
+                custom_id="{}:{}:RaiseConcern".format(__name__, poll.message_id)))
+            self.add_item(Button(style=ButtonStyle.primary, label="Retract concern",
+                custom_id="{}:{}:RetractConcern".format(__name__, poll.message_id)))
         self.add_item(Button(style=ButtonStyle.danger, label="Close",
-            custom_id="{}:{}:Close".format(__name__, poll_id)))
+            custom_id="{}:{}:Close".format(__name__, poll.message_id)))
+
+        for i, name in enumerate(poll.options):
+            if poll.poll in (PollType.WITH_COMMENTS, PollType.WITH_CONCERNS):
+                custom_id = "{}:{}:VoteComment:{}".format(__name__, poll.message_id, i)
+            else:
+                custom_id = "{}:{}:Vote:{}".format(__name__, poll.message_id, i)
+            row = 1 + i // 5
+            if emoji_re.match(name):
+                self.add_item(Button(style=ButtonStyle.success, emoji=discord.PartialEmoji.from_str(name),
+                    custom_id=custom_id, row=row))
+            else:
+                self.add_item(Button(style=ButtonStyle.success, label=name, custom_id=custom_id, row=row))
 
 def merge_vote_concern(votes: Iterable[Vote], concerns: Iterable[Concern]) -> Iterator[Union[Vote, Concern]]:
     it_votes = iter(votes)
@@ -187,37 +208,52 @@ def merge_vote_concern(votes: Iterable[Vote], concerns: Iterable[Concern]) -> It
                 yield from it_votes
                 return
 
-def render_poll(votes: Sequence[Vote], concerns: Sequence[Concern]) -> str:
-    rows = ["Votes and concerns:"]
-    for item in merge_vote_concern(votes, concerns):
+def render_poll_individual(options: List[str], votes: Sequence[Vote], concerns: Optional[Sequence[Concern]]) -> str:
+    rows = ["Votes and concerns:" if concerns is not None else "Votes:"]
+    for item in merge_vote_concern(votes, concerns if concerns is not None else ()):
         if isinstance(item, Vote):
-            if item.vote == VoteType.UPVOTE:
-                emoji = "\u2705"
-            elif item.vote == VoteType.NEUTRAL:
-                emoji = "\U0001F518"
-            else:
-                emoji = "\u274C"
-            row = format("{!m}: {}", item.voter_id, emoji)
+            row = format("{} {!m}", options[item.choice_index], item.voter_id)
             if item.comment:
-                row += " " + item.comment
+                row += ": " + item.comment
         else:
             row = format("\u26A0 {!m}: {}", item.author_id, item.comment)
         rows.append(row)
     return "\n".join(rows)
 
-async def edit_poll(poll_id: Optional[int], msg: PartialMessage, votes: Sequence[Vote],
-    concerns: Sequence[Concern]) -> None:
-    await retry(lambda: msg.edit(content=render_poll(votes, concerns)[:2000],
-        view=PollView(poll_id) if poll_id is not None else None, allowed_mentions=user_mentions))
+def render_poll_summary(options: List[str], votes: Sequence[Vote], concerns: Optional[Sequence[Concern]]) -> str:
+    rows = ["Votes and concerns:" if concerns is not None else "Votes:"]
+    totals = [0] * len(options)
+    for item in merge_vote_concern(votes, concerns if concerns is not None else ()):
+        if isinstance(item, Vote):
+            totals[item.choice_index] += 1
+        else:
+            if any(totals):
+                rows.append(", ".join("{}: {}".format(option, total) for total, option in zip(totals, options)))
+            rows.append(format("\u26A0 {!m}: {}", item.author_id, item.comment))
+    if any(totals):
+        rows.append(", ".join("{}: {}".format(option, total) for total, option in zip(totals, options)))
+    return "\n".join(rows)
 
-async def sync_poll(session: AsyncSession, poll_id: int, msg: PartialMessage):
+def render_poll(poll: Poll, votes: Sequence[Vote], concerns: Sequence[Concern]) -> str:
+    content = ""
+    if poll.poll != PollType.COUNTED:
+        content = render_poll_individual(poll.options, votes, concerns if poll.poll == PollType.WITH_CONCERNS else None)
+    if poll.poll == PollType.COUNTED or len(content) >= 2000:
+        content = render_poll_summary(poll.options, votes, concerns if poll.poll == PollType.WITH_CONCERNS else None)
+    return content[:2000]
+
+async def sync_poll(session: AsyncSession, poll_id: int, msg: PartialMessage) -> None:
+    poll = await session.get_one(Poll, poll_id)
+    assert poll
     stmt = select(Vote).where(Vote.poll_id == poll_id).order_by(nulls_first(Vote.after_concern), Vote.id)
     votes = (await session.execute(stmt)).scalars().all()
     stmt = select(Concern).where(Concern.poll_id == poll_id).order_by(Concern.id)
     concerns = (await session.execute(stmt)).scalars().all()
-    await edit_poll(poll_id, msg, votes, concerns)
+    content = render_poll(poll, votes, concerns)
+    view = PollView(poll)
+    await retry(lambda: msg.edit(content=content, view=view, allowed_mentions=user_mentions))
 
-async def cast_vote(interaction: Interaction, poll_id: int, vote_type: Optional[VoteType], comment: str,
+async def cast_vote(interaction: Interaction, poll_id: int, choice_index: int, comment: str,
     after_concern: Optional[int]) -> None:
     async with sessionmaker() as session:
         if (poll := await session.get(Poll, poll_id)) is None:
@@ -230,21 +266,33 @@ async def cast_vote(interaction: Interaction, poll_id: int, vote_type: Optional[
         vote = (await session.execute(stmt)).scalar()
         if vote is not None:
             await session.delete(vote)
-        if vote_type is not None:
-            session.add(Vote(poll_id=poll_id, voter_id=interaction.user.id, vote=vote_type, after_concern=after_concern,
-                comment=comment))
+        session.add(Vote(poll_id=poll_id, voter_id=interaction.user.id, choice_index=choice_index,
+            after_concern=after_concern, comment=comment))
         await session.commit()
         await sync_poll(session, poll_id, msg)
         if vote is None:
-            if vote_type is None:
-                text = "Nothing changed."
-            else:
-                text = "Vote added."
+            text = "Vote added."
         else:
-            if vote_type is None:
-                text = "Vote retracted."
-            else:
-                text = "Vote updated."
+            text = "Vote updated."
+        await interaction.response.send_message(text, ephemeral=True, delete_after=60)
+
+async def retract_vote(interaction: Interaction, poll_id: int) -> None:
+    async with sessionmaker() as session:
+        if (poll := await session.get(Poll, poll_id)) is None:
+            await interaction.response.send_message("Poll does not exist.", ephemeral=True)
+            return
+        if (msg := await poll.get_votes_message()) is None:
+            await interaction.response.send_message("Poll does not exist.", ephemeral=True)
+            return
+        stmt = select(Vote).where(Vote.poll_id == poll_id, Vote.voter_id == interaction.user.id).limit(1)
+        vote = (await session.execute(stmt)).scalar()
+        if vote is None:
+            text = "Nothing changed."
+        else:
+            await session.delete(vote)
+            await session.commit()
+            await sync_poll(session, poll_id, msg)
+            text = "Vote retracted."
         await interaction.response.send_message(text, ephemeral=True, delete_after=60)
 
 async def raise_concern(interaction: Interaction, poll_id: int, comment: str) -> None:
@@ -285,54 +333,22 @@ async def retract_concern(interaction: Interaction, poll_id: int, id: int) -> No
         await interaction.response.send_message("Concern retracted.", ephemeral=True, delete_after=60)
 
 class VoteModal(Modal):
-    def __init__(self, poll_id: int, concerns: List[str], vote: Optional[VoteType], comment: str,
+    def __init__(self, poll_id: int, choice_index: int, concerns: List[str], comment: str,
         after_concern: Optional[int]) -> None:
         self.poll_id = poll_id
         self.after_concern = after_concern
+        self.choice_index = choice_index
         super().__init__(title="Vote", timeout=600)
         if concerns:
             self.add_item(TextInput(style=TextStyle.paragraph, required=False,
                 label="Concerns raised since your last vote", default="\n\n".join(concerns)[:4000]))
-
-        # Selects not allowed in modals for now
-        #self.vote = Select(placeholder="Vote", min_values=1, max_values=1, options=[
-        #    SelectOption(label="Upvote", emoji="\u2705", default=vote==VoteType.UPVOTE),
-        #    SelectOption(label="Neutral", emoji="\U0001F518", default=vote==VoteType.NEUTRAL),
-        #    SelectOption(label="Downvote", emoji="\u274C", default=vote==VoteType.DOWNVOTE),
-        #    SelectOption(label="None (retract vote)")])
-        self.vote = TextInput(required=False, max_length=1,
-            label="[Y]es\u2705 / [N]o\u274C / [A]bstain \U0001F518 / [R]etract \u21A9")
-        if vote == VoteType.UPVOTE:
-            self.vote.default = "Y"
-        elif vote == VoteType.NEUTRAL:
-            self.vote.default = "A"
-        elif vote == VoteType.DOWNVOTE:
-            self.vote.default = "N"
-        self.add_item(self.vote)
 
         self.comment = TextInput(style=TextStyle.paragraph, required=False, max_length=300,
             label="Comment (optional)", default=comment)
         self.add_item(self.comment)
 
     async def on_submit(self, interaction: Interaction) -> None:
-        #if self.vote.values == ["Upvote"]:
-        #    vote = VoteType.UPVOTE
-        #elif self.vote.values == ["Neutral"]:
-        #    vote = VoteType.NEUTRAL
-        #elif self.vote.values == ["Downvote"]:
-        #    vote = VoteType.DOWNVOTE
-        #else:
-        #    vote = None
-        vote_char = str(self.vote)[:1].upper()
-        if vote_char == "Y":
-            vote = VoteType.UPVOTE
-        elif vote_char == "A":
-            vote = VoteType.NEUTRAL
-        elif vote_char == "N":
-            vote = VoteType.DOWNVOTE
-        else:
-            vote = None
-        await cast_vote(interaction, self.poll_id, vote, comment=str(self.comment)[:300],
+        await cast_vote(interaction, self.poll_id, self.choice_index, comment=str(self.comment)[:300],
             after_concern=self.after_concern)
 
 class RaiseConcernModal(Modal):
@@ -373,13 +389,13 @@ class RetractConcernModal(Modal):
             return
         await retract_concern(interaction, self.poll_id, key)
 
-async def prompt_vote(interaction: Interaction, poll_id: int) -> None:
+async def prompt_vote_comment(interaction: Interaction, poll_id: int, choice_index: int) -> None:
     async with sessionmaker() as session:
         stmt = select(Vote).where(Vote.poll_id == poll_id, Vote.voter_id == interaction.user.id).limit(1)
         vote = (await session.execute(stmt)).scalar()
         stmt = select(Concern).where(Concern.poll_id == poll_id)
         concerns = (await session.execute(stmt)).scalars().all()
-        await interaction.response.send_modal(VoteModal(poll_id, vote=None if vote is None else vote.vote,
+        await interaction.response.send_modal(VoteModal(poll_id, choice_index,
             concerns=[concern.comment for concern in concerns
                 if vote is not None and (vote.after_concern is None or concern.id > vote.after_concern)],
             comment="" if vote is None else vote.comment, after_concern=concerns[-1].id if concerns else None))
@@ -402,14 +418,10 @@ async def close_poll(interaction: Interaction, poll_id: int) -> None:
             return
         if poll.author_id != interaction.user.id:
             return
-        stmt = select(Vote).where(Vote.poll_id == poll_id).order_by(nulls_first(Vote.after_concern), Vote.id)
-        votes = (await session.execute(stmt)).scalars().all()
-        stmt = select(Concern).where(Concern.poll_id == poll_id).order_by(Concern.id)
-        concerns = (await session.execute(stmt)).scalars().all()
         await session.delete(poll)
         try:
             if (msg := await poll.get_votes_message()) is not None:
-                await edit_poll(None, msg, votes, concerns)
+                await msg.edit(view=None)
         except discord.HTTPException:
             pass
         await session.commit()
@@ -424,41 +436,85 @@ class ConsensusCog(Cog):
         data = cast("discord.types.interactions.MessageComponentInteractionData", interaction.data)
         if data["component_type"] != 2:
             return
-        if ":" not in data["custom_id"]:
+        args = data["custom_id"].split(":")
+        if len(args) < 3 or args[0] != __name__:
             return
-        mod, rest = data["custom_id"].split(":", 1)
-        if mod != __name__ or ":" not in rest:
-            return
-        poll_id, action = rest.split(":", 1)
         try:
-            poll_id = int(poll_id)
+            poll_id = int(args[1])
         except ValueError:
             return
+        action = args[2]
         if action == "Vote":
-            await prompt_vote(interaction, poll_id)
+            if len(args) == 3:
+                if interaction.message:
+                    async with sessionmaker() as session:
+                        await sync_poll(session, poll_id, interaction.message)
+            elif len(args) == 4:
+                try:
+                    choice_index = int(args[3])
+                except ValueError:
+                    return
+                async with sessionmaker() as session:
+                    stmt = select(Concern.id).where(Concern.poll_id == poll_id).order_by(Concern.id.desc()).limit(1)
+                    after_concern = (await session.execute(stmt)).scalar_one_or_none()
+                await cast_vote(interaction, poll_id, choice_index, "", after_concern)
+        elif action == "VoteComment":
+            if len(args) == 4:
+                try:
+                    choice_index = int(args[3])
+                except ValueError:
+                    return
+                await prompt_vote_comment(interaction, poll_id, choice_index)
+        elif action == "RetractVote":
+            if len(args) == 3:
+                await retract_vote(interaction, poll_id)
         elif action == "RaiseConcern":
-            await prompt_raise_concern(interaction, poll_id)
+            if len(args) == 3:
+                await prompt_raise_concern(interaction, poll_id)
         elif action == "RetractConcern":
-            await prompt_retract_concern(interaction, poll_id)
+            if len(args) == 3:
+                await prompt_retract_concern(interaction, poll_id)
         elif action == "Close":
-            await close_poll(interaction, poll_id)
+            if len(args) == 3:
+                await close_poll(interaction, poll_id)
 
     @cleanup
     @command("poll")
     @privileged
-    async def poll(self, ctx: Context, duration: DurationConverter, *, comment: str) -> None:
+    async def poll(self, ctx: Context, kind: Literal["choice", "counted", "comments", "concerns"], options: str,
+        duration: DurationConverter, *, comment: str) -> None:
         """
-        Create a poll with the specified timeout duration and the given message.
+        Create a poll. Every person can choose one of the provided options, provided in a comma-separated list (possibly
+        emojis). The following types of poll are supported:
+        - `choice`: basic poll displaying what everyone voted for
+        - `counted`: only display the number of votes for every option
+        - `comments`: allow users to attach a comment to their vote
+        - `concerns`: allow raising of concerns
+        Concerns ping everyone who voted previously, prompting them to update their vote. After a given duration of
+        inactivity, the owner of the poll will be prompted to close it.
         """
         if ctx.guild is None:
             raise UserError("This can only be used in a guild")
         if not comment:
             raise UserError("Poll comment must not be empty")
+        option_list = options.split(",")
+        if len(option_list) < 2:
+            raise UserError("At least 2 options are required")
+        if len(option_list) >= 20:
+            raise UserError("At most 20 options are supported")
+
+        if kind == "choice":
+            kind_enum = PollType.CHOICE
+        elif kind == "counted":
+            kind_enum = PollType.COUNTED
+        elif kind == "comments":
+            kind_enum = PollType.WITH_COMMENTS
+        elif kind == "concerns":
+            kind_enum = PollType.WITH_CONCERNS
+
         async with sessionmaker() as session:
             msg = await ctx.channel.send(format("Poll by {!m}:\n\n{}", ctx.author, comment[:3000]),
                 allowed_mentions=AllowedMentions(everyone=False, roles=False, users=[ctx.author]))
-            votes = await ctx.channel.send(render_poll([], []), view=PollView(msg.id),
-                allowed_mentions=user_mentions)
 
             if isinstance(ctx.channel, Thread):
                 channel_id = ctx.channel.parent_id
@@ -466,10 +522,18 @@ class ConsensusCog(Cog):
             else:
                 channel_id = ctx.channel.id
                 thread_id = None
-            session.add(Poll(message_id=msg.id, votes_id=votes.id, guild_id=ctx.guild.id, channel_id=channel_id,
+
+            poll = Poll(poll=kind_enum, message_id=msg.id, votes_id=0, guild_id=ctx.guild.id, channel_id=channel_id,
                 thread_id=thread_id, author_id=ctx.author.id, comment=comment, duration=int(duration.total_seconds()),
-                timeout=datetime.utcnow() + duration, timeout_notified=False))
+                timeout=datetime.utcnow() + duration, timeout_notified=False, options=option_list)
+
+            votes = await ctx.channel.send(render_poll(poll, [], []), view=PollView(poll),
+                allowed_mentions=user_mentions)
+
+            poll.votes_id = votes.id
+            session.add(poll)
             await session.commit()
+
             timeout_task.run_coalesced(1)
 
     @cleanup
