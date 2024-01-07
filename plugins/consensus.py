@@ -243,7 +243,7 @@ def render_poll(poll: Poll, votes: Sequence[Vote], concerns: Sequence[Concern]) 
     return content[:2000]
 
 async def sync_poll(session: AsyncSession, poll_id: int, msg: PartialMessage) -> None:
-    poll = await session.get_one(Poll, poll_id)
+    poll = await session.get(Poll, poll_id)
     assert poll
     stmt = select(Vote).where(Vote.poll_id == poll_id).order_by(nulls_first(Vote.after_concern), Vote.id)
     votes = (await session.execute(stmt)).scalars().all()
