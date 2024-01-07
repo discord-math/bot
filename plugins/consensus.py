@@ -502,6 +502,8 @@ class ConsensusCog(Cog):
             raise UserError("At least 2 options are required")
         if len(option_list) >= 20:
             raise UserError("At most 20 options are supported")
+        if not all(option_list):
+            raise UserError("Option cannot be empty (trailing/repeated comma?)")
 
         if kind == "choice":
             kind_enum = PollType.CHOICE
