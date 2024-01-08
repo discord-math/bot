@@ -229,6 +229,7 @@ def render_poll_summary(options: List[str], votes: Sequence[Vote], concerns: Opt
         else:
             if any(totals):
                 rows.append(", ".join("{}: {}".format(option, total) for total, option in zip(totals, options)))
+                totals = [0] * len(options)
             rows.append(format("\u26A0 {!m}: {}", item.author_id, item.comment))
     if any(totals):
         rows.append(", ".join("{}: {}".format(option, total) for total, option in zip(totals, options)))
@@ -425,7 +426,6 @@ async def close_poll(interaction: Interaction, poll_id: int) -> None:
         except discord.HTTPException:
             pass
         await session.commit()
-
 
 @cog
 class ConsensusCog(Cog):
