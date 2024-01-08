@@ -173,7 +173,10 @@ class ChannelACL(ACL):
     def evaluate(self, user: Optional[Union[Member, User]], channel: Optional[MessageableChannel], nested: Set[str]
         ) -> EvalResult:
         if channel is not None:
-            return EvalResult.TRUE if channel.id == self.channel else EvalResult.FALSE
+            if channel.id == self.channel or (isinstance(channel, Thread) and channel.parent_id == self.channel):
+                return EvalResult.TRUE
+            else:
+                return EvalResult.FALSE
         else:
             return EvalResult.UNKNOWN
 
