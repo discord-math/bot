@@ -1,3 +1,4 @@
+
 # Mathematics Server Discord Bot
 
 This is the open source repository for the utility bot that manages various kinds of things on the Mathematics Discord server. With that purpose in mind, feel free to contribute to this repository. If you'd like to run this bot on your own server, that's fine too, but don't expect support.
@@ -116,7 +117,7 @@ Commands:
 
 Config:
 - ``config plugins.tickets guild <guild id>`` -- guild for which tickets are being managed.
-- ``config plugins.tickets tracked_roles `[<channel id>, ...]` `` -- list of roles assigning which counts as administrative action (e.g. a muted role).
+- ``config plugins.tickets tracked_roles `[<role id>, ...]` `` -- list of roles assigning which counts as administrative action (e.g. a muted role).
 - ``config plugins.tickets ticket_list <channel id>`` -- channel where the log of tickets should be displayed.
 - ``config plugins.tickets prompt_interval <interval>`` -- if a moderator doesn't reply to a prompt for a comment, after how long (in seconds) should they be reminded?
 - ``config plugins.tickets audit_log_precision <float>`` -- in large guilds the audit log may lag behind, causing the bot to only realize much later that an action has had been taken. This is a delay (in seconds) to compensate.
@@ -323,11 +324,11 @@ Commands:
 - `review_queue [any|mine]` -- show a list of links to unresolved applications. The argument `any` will list all unresolved applications, whereas `mine` will list only applications that the user hasn't yet voted on. Without an argument, defaults to `mine`.
 
 Config:
-- ``config plugins.roles_review <role> `{...}` `` -- attempting to self-assign the role will instead make the user go through the application process. The keys in the object are as followws:
+- ``config plugins.roles_review <role> `{...}` `` -- attempting to self-assign the role will instead make the user go through the application process. The keys in the object are as follows:
     - `"prompt": ["<question>[\n<placeholder>]", ...]` -- list of questions to ask an applicant.
     - `"review_channel": <channel id>` -- channel where the applications will be posted and voted on.
     - `"upvote_limit": <number>` -- how many upvotes are needed to accept an application.
-    - `"downvote_limit": <number>` -- how many downvotes are needed to accept an application.
+    - `"downvote_limit": <number>` -- how many downvotes are needed to reject an application.
     - `"pending_role": <role id>` -- (optional) role given to the applying user while the application is pending.
     - `"denied_role": <role id>` -- (optional) role given to the applying user if their application is denied.
 
@@ -368,7 +369,7 @@ Now you can run the bot by executing `main.py`. You can continue the configurati
 .load eval
 .autoload add db_manager
 .autoload add discord_log
-.audoload add eval
+.autoload add eval
 ```
 The `python -m util.db.kv` shell command is analogous to the `.config` Discord command.
 
