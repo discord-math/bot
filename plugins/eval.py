@@ -7,15 +7,16 @@ import traceback
 from types import FunctionType
 from typing import Any, Callable, Dict, TypeVar, Union
 
-from discord.ext.commands import Greedy
+from discord.ext.commands import Greedy, command
 
 from bot.acl import privileged
 from bot.client import client
-from bot.commands import Context, cleanup, command
+from bot.commands import Context, cleanup, plugin_command
 from util.discord import CodeBlock, CodeItem, Inline, PlainItem, Typing, chunk_messages
 
 T = TypeVar("T")
 
+@plugin_command
 @cleanup
 @command("exec", aliases=["eval"])
 @privileged

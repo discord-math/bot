@@ -5,9 +5,10 @@ import re
 from typing import Awaitable, Iterable, List, Optional, Protocol, Set, Union, cast
 
 import aiohttp
+from discord.ext.commands import group
 
 from bot.acl import privileged
-from bot.commands import Context, group
+from bot.commands import Context, plugin_command
 from bot.reactions import get_input
 from bot.tasks import task
 import plugins
@@ -114,6 +115,7 @@ async def resolve_link(link: str) -> Optional[str]:
         pass
     return None
 
+@plugin_command
 @group("phish")
 @privileged
 async def phish_command(ctx: Context) -> None:

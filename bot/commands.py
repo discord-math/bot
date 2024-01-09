@@ -4,14 +4,13 @@ Utilities for registering basic commands. Commands are triggered by a configurab
 
 import asyncio
 import logging
-from typing import Any, Awaitable, Callable, Coroutine, Optional, Protocol, Set, Type, TypeVar, Union, cast, overload
-from typing_extensions import Concatenate, ParamSpec
+from typing import Any, Optional, Protocol, Set, TypeVar, cast
 
 import discord
 from discord import AllowedMentions, Client, Message, PartialMessage
 import discord.ext.commands
 from discord.ext.commands import (BadUnionArgument, Bot, CheckFailure, Cog, Command, CommandError, CommandInvokeError,
-    CommandNotFound, Group, NoPrivateMessage, PrivateMessageOnly, UserInputError)
+    CommandNotFound, NoPrivateMessage, PrivateMessageOnly, UserInputError)
 
 from bot.client import client
 from bot.cogs import cog
@@ -99,53 +98,23 @@ class Commands(Cog):
     async def on_message(self, msg: Message) -> None:
         await client.process_commands(msg)
 
-T = TypeVar("T")
-P = ParamSpec("P")
-BotT = TypeVar('BotT', bound=Bot, covariant=True)
-ContextT = TypeVar('ContextT', bound=Context)
-CogT = TypeVar("CogT", bound=Optional[Cog])
 CommandT = TypeVar("CommandT", bound=Command[Any, Any, Any])
 
-class _CommandDecorator:
-    @overload
-    def __call__(self, func: Callable[Concatenate[CogT, ContextT, P], Awaitable[T]], /
-        ) -> Command[CogT, P, T]: ...
-    @overload
-    def __call__(self, func: Callable[Concatenate[ContextT, P], Awaitable[T]], /
-        ) -> Command[None, P, T]: ...
-    def __call__(self, func: Callable[..., Awaitable[object]], /) -> object: ...
+def plugin_command(cmd: CommandT) -> CommandT:
+    """
+    Register a command to be added/removed together with the plugin. The command must be already wrapped in
+    discord.ext.commands.command or discord.ext.commands.group.
+    """
+    client.add_command(cmd)
+    plugins.finalizer(lambda: client.remove_command(cmd.name))
+    return cmd
 
-@overload
-def command(name: Optional[str], cls: Type[CommandT], **attrs: object) -> Callable[ # type: ignore
-    [Union[Callable[Concatenate[ContextT, P], Awaitable[object]],
-        Callable[Concatenate[CogT, ContextT, P], Awaitable[object]]]], CommandT]: ... # type: ignore
-@overload
-def command(name: Optional[str] = ..., cls: Type[CommandT] = Command, **attrs: object) -> _CommandDecorator: ...
-def command(name: Optional[str] = None, cls: Type[CommandT] = Command, *args: object, **kwargs: object) -> object:
-    def decorator(fun: Callable[Concatenate[ContextT, P], Coroutine[Any, Any, T]]
-        ) -> Callable[Concatenate[ContextT, P], Coroutine[Any, Any, T]]:
-        if isinstance(fun, Command):
-            if args or kwargs:
-                raise TypeError("the provided object is already a Command (args/kwargs have no effect)")
-            cmd = cast(Command[None, P, T], fun)
-        else:
-            cmd = discord.ext.commands.command(name=cast(str, name), cls=cls, *args, **kwargs)(fun)
-        client.add_command(cmd)
-        def cleanup_command() -> None:
-            client.remove_command(cmd.name)
-        plugins.finalizer(cleanup_command)
-        return cmd
-    return decorator
-
-def group(name: Optional[str] = None, *args: object, **kwargs: object) -> Callable[
-    [Union[Callable[Concatenate[ContextT, P], Awaitable[object]],
-        Callable[Concatenate[CogT, ContextT, P], Awaitable[object]]]], Group[CogT, P, ContextT]]:
-    return command(name, cls=Group, *args, **kwargs)
-
-def suppress_usage(cmd: T) -> T:
+def suppress_usage(cmd: CommandT) -> CommandT:
     """This decorator on a command suppresses the usage instructions if the command is invoked incorrectly."""
     cmd.suppress_usage = True # type: ignore
     return cmd
+
+BotT = TypeVar('BotT', bound=Bot, covariant=True)
 
 class CleanupContext(discord.ext.commands.Context[BotT]):
     cleanup: "CleanupReference"

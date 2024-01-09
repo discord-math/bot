@@ -7,12 +7,12 @@ from typing import Awaitable, Dict, Iterable, List, Literal, Optional, Protocol,
 import discord
 from discord import AllowedMentions, Guild, Member, Message
 from discord.abc import Snowflake
-from discord.ext.commands import Greedy
+from discord.ext.commands import Greedy, group
 import discord.utils
 
 from bot.acl import privileged
 from bot.client import client
-from bot.commands import Context, cleanup, group
+from bot.commands import Context, cleanup, plugin_command
 import bot.message_tracker
 import plugins
 import plugins.phish
@@ -241,6 +241,7 @@ async def init() -> None:
         await bot.message_tracker.unsubscribe(__name__, None)
     plugins.finalizer(unsubscribe)
 
+@plugin_command
 @cleanup
 @group("automod")
 @privileged

@@ -3,9 +3,11 @@ import importlib
 import sys
 import traceback
 
+from discord.ext.commands import command, group
+
 from bot.acl import privileged
 import bot.autoload
-from bot.commands import Context, cleanup, command, group
+from bot.commands import Context, cleanup, plugin_command
 import plugins
 from util.discord import CodeItem, Typing, chunk_messages, format
 import util.restart
@@ -13,6 +15,7 @@ import util.restart
 manager = plugins.PluginManager.of(__name__)
 assert manager
 
+@plugin_command
 @command("restart")
 @privileged
 async def restart_command(ctx: Context) -> None:
@@ -34,6 +37,7 @@ async def reply_exception(ctx: Context) -> None:
         await ctx.send(content, files=files)
     del tb
 
+@plugin_command
 @cleanup
 @command("load")
 @privileged
@@ -47,6 +51,7 @@ async def load_command(ctx: Context, plugin: PluginConverter) -> None:
     else:
         await ctx.send("\u2705")
 
+@plugin_command
 @cleanup
 @command("reload")
 @privileged
@@ -60,6 +65,7 @@ async def reload_command(ctx: Context, plugin: PluginConverter) -> None:
     else:
         await ctx.send("\u2705")
 
+@plugin_command
 @cleanup
 @command("unsafereload")
 @privileged
@@ -73,6 +79,7 @@ async def unsafe_reload_command(ctx: Context, plugin: PluginConverter) -> None:
     else:
         await ctx.send("\u2705")
 
+@plugin_command
 @cleanup
 @command("unload")
 @privileged
@@ -86,6 +93,7 @@ async def unload_command(ctx: Context, plugin: PluginConverter) -> None:
     else:
         await ctx.send("\u2705")
 
+@plugin_command
 @cleanup
 @command("unsafeunload")
 @privileged
@@ -99,6 +107,7 @@ async def unsafe_unload_command(ctx: Context, plugin: PluginConverter) -> None:
     else:
         await ctx.send("\u2705")
 
+@plugin_command
 @cleanup
 @command("reloadmod")
 @privileged
@@ -111,6 +120,7 @@ async def reloadmod_command(ctx: Context, module: str) -> None:
     else:
         await ctx.send("\u2705")
 
+@plugin_command
 @cleanup
 @group("autoload", invoke_without_command=True)
 @privileged
@@ -132,6 +142,7 @@ async def autoload_remove(ctx: Context, plugin: PluginConverter) -> None:
     await bot.autoload.set_autoload(plugin, False)
     await ctx.send("\u2705")
 
+@plugin_command
 @cleanup
 @command("plugins")
 @privileged

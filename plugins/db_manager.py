@@ -3,7 +3,7 @@ import json
 from typing import Dict, Iterator, List, Optional, Sequence, Set, Union, cast
 
 import asyncpg
-from discord.ext.commands import Greedy
+from discord.ext.commands import Greedy, command, group
 import yaml
 
 import bot.acl
@@ -11,12 +11,13 @@ from bot.acl import (ACL, ACLCheck, EvalResult, MessageableChannel, evaluate_acl
     privileged, register_action)
 from bot.client import client
 import bot.commands
-from bot.commands import Context, cleanup, command, group
+from bot.commands import Context, cleanup, plugin_command
 from bot.reactions import get_reaction
 import util.db
 import util.db.kv
 from util.discord import CodeBlock, CodeItem, Inline, PlainItem, Quoted, Typing, UserError, chunk_messages, format
 
+@plugin_command
 @cleanup
 @group("config", invoke_without_command=True)
 @privileged
@@ -73,6 +74,7 @@ async def config_delete(ctx: Context, namespace: str, key: str) -> None:
     await conf
     await ctx.send("\u2705")
 
+@plugin_command
 @cleanup
 @command("sql")
 @privileged
@@ -139,6 +141,7 @@ async def sql_command(ctx: Context, args: Greedy[Union[CodeBlock, Inline, str]])
         else:
             await tx.rollback()
 
+@plugin_command
 @cleanup
 @group("acl")
 @privileged

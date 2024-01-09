@@ -2,8 +2,10 @@ import asyncio
 import asyncio.subprocess
 from typing import Optional, Protocol, cast
 
+from discord.ext.commands import command
+
 from bot.acl import privileged
-from bot.commands import Context, cleanup, command
+from bot.commands import Context, cleanup, plugin_command
 import plugins
 import util.db.kv
 from util.discord import CodeItem, Typing, chunk_messages
@@ -18,6 +20,7 @@ async def init() -> None:
     global conf
     conf = cast(UpdateConf, await util.db.kv.load(__name__))
 
+@plugin_command
 @cleanup
 @command("update")
 @privileged
