@@ -1,6 +1,5 @@
 from collections import defaultdict
-import json
-from typing import Dict, Iterator, List, Optional, Sequence, Set, Union, cast
+from typing import Dict, List, Optional, Set, Union, cast
 
 import asyncpg
 from discord.ext.commands import Greedy, command, group
@@ -15,64 +14,7 @@ from bot.commands import Context, cleanup, plugin_command
 from bot.reactions import get_reaction
 import util.db
 import util.db.kv
-from util.discord import CodeBlock, CodeItem, Inline, PlainItem, Quoted, Typing, UserError, chunk_messages, format
-
-@plugin_command
-@cleanup
-@group("config", invoke_without_command=True)
-@privileged
-async def config_command(ctx: Context, namespace: Optional[str], key: Optional[str],
-    value: Optional[Union[CodeBlock, Inline, Quoted]]) -> None:
-    """Edit the key-value configs."""
-    if namespace is None:
-        def namespace_items(nsps: Sequence[str]) -> Iterator[PlainItem]:
-            first = True
-            for nsp in nsps:
-                if first:
-                    first = False
-                else:
-                    yield PlainItem(", ")
-                yield PlainItem(format("{!i}", nsp))
-        for content, _ in chunk_messages(namespace_items(await util.db.kv.get_namespaces())):
-            await ctx.send(content)
-        return
-
-    conf = await util.db.kv.load(namespace)
-
-    if key is None:
-        def keys_items() -> Iterator[PlainItem]:
-            first = True
-            for keys in conf:
-                if first:
-                    first = False
-                else:
-                    yield PlainItem("; ")
-                yield PlainItem(",".join(format("{!i}", key) for key in keys))
-        for content, _ in chunk_messages(keys_items()):
-            await ctx.send(content)
-        return
-
-    keys = key.split(",")
-
-    if value is None:
-        for content, files in chunk_messages((
-            CodeItem(util.db.kv.json_encode(conf[keys]) or "", language="json", filename="{}.json".format(key)),)):
-            await ctx.send(content, files=files)
-        return
-
-    conf[keys] = json.loads(value.text)
-    await conf
-    await ctx.send("\u2705")
-
-@config_command.command("--delete")
-@privileged
-async def config_delete(ctx: Context, namespace: str, key: str) -> None:
-    """Delete the provided key from the config."""
-    conf = await util.db.kv.load(namespace)
-    keys = key.split(",")
-    conf[keys] = None
-    await conf
-    await ctx.send("\u2705")
+from util.discord import CodeBlock, Inline, Typing, UserError, format
 
 @plugin_command
 @cleanup
