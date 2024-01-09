@@ -22,10 +22,7 @@ from util.discord import PlainItem, chunk_messages, format, retry
 
 registry: sqlalchemy.orm.registry = sqlalchemy.orm.registry()
 
-engine = util.db.create_async_engine()
-plugins.finalizer(engine.dispose)
-
-sessionmaker = async_sessionmaker(engine, future=True)
+sessionmaker = async_sessionmaker(util.db.engine, future=True)
 
 @registry.mapped
 class ModmailMessage:
@@ -82,7 +79,7 @@ async def init() -> None:
             message_map[msg.staff_message_id] = msg
 
 async def add_modmail(source: Message, copy: Message) -> None:
-    async with AsyncSession(engine, expire_on_commit=False) as session:
+    async with AsyncSession(util.db.engine, expire_on_commit=False) as session:
         msg = ModmailMessage(dm_channel_id=source.channel.id, dm_message_id=source.id, staff_message_id=copy.id)
         session.add(msg)
         await session.commit()

@@ -1,5 +1,5 @@
 import contextlib
-from typing import AsyncIterator, Callable, Dict, Union
+from typing import AsyncIterator, Callable, Union
 
 import asyncpg
 import sqlalchemy
@@ -25,11 +25,8 @@ async def connection() -> AsyncIterator[util_db_log.LoggingConnection]:
     finally:
         await conn.close()
 
-def create_async_engine(connect_args: Dict[str, object] = {}, **kwargs: object) -> sqlalchemy.ext.asyncio.AsyncEngine:
-    args = connect_args.copy()
-    args.setdefault("connection_class", util_db_log.LoggingConnection)
-    return sqlalchemy.ext.asyncio.create_async_engine(async_connection_uri,
-        pool_pre_ping=True, connect_args=args, **kwargs)
+engine: sqlalchemy.ext.asyncio.AsyncEngine = sqlalchemy.ext.asyncio.create_async_engine(async_connection_uri,
+    pool_pre_ping=True, connect_args={"connection_class": util_db_log.LoggingConnection})
 
 from util.db.initialization import init as init, init_for as init_for
 

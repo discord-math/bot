@@ -43,10 +43,7 @@ conf: LoggerConf
 
 registry: sqlalchemy.orm.registry = sqlalchemy.orm.registry()
 
-engine = util.db.create_async_engine()
-plugins.finalizer(engine.dispose)
-
-sessionmaker = async_sessionmaker(engine, future=True, expire_on_commit=False)
+sessionmaker = async_sessionmaker(util.db.engine, future=True, expire_on_commit=False)
 
 @registry.mapped
 class SavedMessage:

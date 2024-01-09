@@ -17,10 +17,7 @@ from util.frozen_list import FrozenList
 
 registry: sqlalchemy.orm.registry = sqlalchemy.orm.registry()
 
-engine = util.db.create_async_engine()
-plugins.finalizer(engine.dispose)
-
-sessionmaker = async_sessionmaker(engine, future=True)
+sessionmaker = async_sessionmaker(util.db.engine, future=True)
 
 @registry.mapped
 class MemberRole:

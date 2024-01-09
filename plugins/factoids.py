@@ -23,10 +23,7 @@ from util.discord import CodeBlock, Inline, InvocationError, Quoted, UserError, 
 
 registry: sqlalchemy.orm.registry = sqlalchemy.orm.registry()
 
-engine = util.db.create_async_engine()
-plugins.finalizer(engine.dispose)
-
-sessionmaker = async_sessionmaker(engine, future=True)
+sessionmaker = async_sessionmaker(util.db.engine, future=True)
 
 class Flags(TypedDict):
     mentions: NotRequired[bool]

@@ -46,10 +46,7 @@ conf: RolesReviewConf
 
 registry: sqlalchemy.orm.registry = sqlalchemy.orm.registry()
 
-engine = util.db.create_async_engine()
-plugins.finalizer(engine.dispose)
-
-sessionmaker = async_sessionmaker(engine, future=True, expire_on_commit=False)
+sessionmaker = async_sessionmaker(util.db.engine, future=True, expire_on_commit=False)
 
 action_can_vote = register_action("review_can_vote")
 action_can_veto = register_action("review_can_veto")
