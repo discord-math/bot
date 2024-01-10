@@ -272,7 +272,7 @@ class TicketMod:
         If there is a current active ticket, treat it as a comment.
         Either way, update the last handled message in data.
         """
-        prefix = bot.commands.conf.prefix
+        prefix = bot.commands.prefix
         if not prefix or not msg.content.startswith(prefix):
             if (ticket := await self.load_queue()) is not None:
                 logger.debug(format("Processing message from {!m} as comment to Ticket #{}: {!r}",

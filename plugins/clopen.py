@@ -41,26 +41,26 @@ def available_embed() -> Embed:
             "• Type the command {!i} to free the channel when you're done.\n"
             "• Be polite and have a nice day!\n\n"
             "Read {!c} for further information on how to ask a good question, "
-            "and about conduct in the question channels.", helpers, bot.commands.conf.prefix + "close", help_chan)
+            "and about conduct in the question channels.", helpers, bot.commands.prefix + "close", help_chan)
         ).set_author(name="Available help channel!", icon_url=checkmark_url)
 
 def closed_embed(reason: str, reopen: bool) -> Embed:
     if reopen:
-        reason += format("\n\nUse {!i} if this was a mistake.", bot.commands.conf.prefix + "reopen")
+        reason += format("\n\nUse {!i} if this was a mistake.", bot.commands.prefix + "reopen")
     return Embed(color=0x000000, title="Channel closed", description=reason)
 
 def solved_embed(reason: str) -> Embed:
     checkmark_url = "https://cdn.discordapp.com/emojis/1021392975449825322.webp?size=256&quality=lossless"
     return Embed(color=0x7CB342, description=format(
             "Post marked as solved {}.\n\nUse {!i} if this was a mistake.", reason,
-            bot.commands.conf.prefix + "unsolved")
+            bot.commands.prefix + "unsolved")
         ).set_author(name="Solved", icon_url=checkmark_url)
 
 def unsolved_embed(reason: str) -> Embed:
     ping_url = "https://cdn.discordapp.com/emojis/1021392792783683655.webp?size=256&quality=lossless"
     return Embed(color=0x7CB342, description=format(
             "Post marked as unsolved {}.\n\nUse {!i} to mark as solved.", reason,
-            bot.commands.conf.prefix + "solved")
+            bot.commands.prefix + "solved")
         ).set_author(name="Unsolved", icon_url=ping_url)
 
 def limit_embed() -> Embed:
@@ -609,7 +609,7 @@ class ClopenCog(Cog):
                 if conf[msg.channel.id, "state"] == "used":
                     await keep_occupied(msg.channel.id, msg.author.id)
                 elif conf[msg.channel.id, "state"] == "available":
-                    if not msg.content.startswith(bot.commands.conf.prefix):
+                    if not msg.content.startswith(bot.commands.prefix):
                         await occupy(msg.channel.id, msg.id, msg.author)
 
     @Cog.listener()

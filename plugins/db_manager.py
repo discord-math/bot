@@ -2,7 +2,9 @@ from collections import defaultdict
 from typing import Dict, List, Optional, Set, Union, cast
 
 import asyncpg
+from bot.config import plugin_config_command
 from discord.ext.commands import Greedy, command, group
+from sqlalchemy.ext.asyncio import AsyncSession
 import yaml
 
 import bot.acl
@@ -83,6 +85,19 @@ async def sql_command(ctx: Context, args: Greedy[Union[CodeBlock, Inline, str]])
         else:
             await tx.rollback()
 
+@plugin_config_command
+@command("prefix")
+async def config(ctx: Context, prefix: Optional[str]) -> None:
+    async with AsyncSession(util.db.engine) as session:
+        conf = await session.get(bot.commands.GlobalConfig, 0)
+        assert conf
+        if prefix is None:
+            await ctx.send(format("{!i}", conf.prefix))
+        else:
+            conf.prefix = prefix
+            await session.commit()
+            await ctx.send("\u2705")
+
 @plugin_command
 @cleanup
 @group("acl")
@@ -149,7 +164,7 @@ async def acl_set(ctx: Context, acl: str, formula: CodeBlock) -> None:
 @privileged
 async def acl_commands(ctx: Context) -> None:
     """List commands that support ACLs, and the ACL's they're assigned to."""
-    prefix: str = bot.commands.conf.prefix
+    prefix: str = bot.commands.prefix
     acls: Dict[str, Set[str]] = defaultdict(set)
     seen: Set[str] = set()
     for ty, name in bot.acl.conf:

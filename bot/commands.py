@@ -4,13 +4,17 @@ Utilities for registering basic commands. Commands are triggered by a configurab
 
 import asyncio
 import logging
-from typing import Any, Optional, Protocol, Set, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Optional, Set, TypeVar
 
 import discord
-from discord import AllowedMentions, Client, Message, PartialMessage
+from discord import AllowedMentions, Message, PartialMessage
 import discord.ext.commands
 from discord.ext.commands import (BadUnionArgument, Bot, CheckFailure, Cog, Command, CommandError, CommandInvokeError,
     CommandNotFound, NoPrivateMessage, PrivateMessageOnly, UserInputError)
+from sqlalchemy import TEXT, BigInteger, Computed
+from sqlalchemy.ext.asyncio import AsyncSession
+import sqlalchemy.orm
+from sqlalchemy.orm import Mapped, mapped_column
 
 from bot.client import client
 from bot.cogs import cog
@@ -18,20 +22,35 @@ import plugins
 import util.db.kv
 from util.discord import format
 
-class CommandsConfig(Protocol):
-    prefix: str
 
-conf: CommandsConfig
+registry = sqlalchemy.orm.registry()
+
+@registry.mapped
+class GlobalConfig:
+    __tablename__ = "commands_config"
+    id: Mapped[int] = mapped_column(BigInteger, Computed("0"), primary_key=True)
+    prefix: Mapped[str] = mapped_column(TEXT, nullable=False)
+
+    if TYPE_CHECKING:
+        def __init__(self, prefix: str, id: int = ...) -> None: ...
+
 logger: logging.Logger = logging.getLogger(__name__)
+prefix: str
 
 @plugins.init
 async def init() -> None:
-    global conf
-    conf = cast(CommandsConfig, await util.db.kv.load(__name__))
+    global prefix
+    await util.db.init(util.db.get_ddl(registry.metadata.create_all))
 
-def bot_prefix(bot: Client, msg: Message) -> str:
-    return conf.prefix
-client.command_prefix = bot_prefix
+    async with AsyncSession(util.db.engine, expire_on_commit=False) as session:
+        conf = await session.get(GlobalConfig, 0)
+        if not conf:
+            conf = GlobalConfig(prefix=str((await util.db.kv.load(__name__)).prefix))
+            session.add(conf)
+            await session.commit()
+
+        prefix = client.command_prefix = conf.prefix
+
 @plugins.finalizer
 def cleanup_prefix() -> None:
     client.command_prefix = ()

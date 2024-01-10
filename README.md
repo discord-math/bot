@@ -337,7 +337,7 @@ Config:
 A `/whois <user>` slash-command for locating users and printing useful information about them.
 
 ### Miscellaneous Configuration
-- ``config bot.commands prefix `"<prefix>"` `` -- set the prefix for the bot's "ordinary" commands.
+- `config commands prefix "<prefix>"` -- set the prefix for the bot's "ordinary" commands.
 
 ## Running
 
