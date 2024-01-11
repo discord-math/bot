@@ -669,7 +669,7 @@ class ClopenCog(Cog):
                 await manage_title(interaction, thread_id)
 
     @privileged
-    @command("close")
+    @command("close", aliases=["solved"])
     async def close_command(self, ctx: Context) -> None:
         """For use in help channels and help forum posts. Close a channel and/or mark the post as solved."""
         if ctx.channel.id in conf.channels:
@@ -687,7 +687,7 @@ class ClopenCog(Cog):
             asyncio.create_task(wait_close_post(ctx.channel, format("Closed by {!m}", ctx.author)))
 
     @privileged
-    @command("reopen")
+    @command("reopen", aliases=["unsolved"])
     async def reopen_command(self, ctx: Context) -> None:
         """For use in help channels and help forum posts. Reopen a recently closed channel and/or mark the post as
         unsolved."""
@@ -717,23 +717,3 @@ class ClopenCog(Cog):
                 await ctx.send(content, allowed_mentions=AllowedMentions.none())
         else:
             await ctx.send("\u2705", allowed_mentions=AllowedMentions.none())
-
-    @privileged
-    @command("solved")
-    async def solved_command(self, ctx: Context) -> None:
-        """For use in help forum posts. Mark the post as solved."""
-        if isinstance(ctx.channel, Thread) and ctx.channel.parent_id == conf.forum:
-            if ctx.author.id != ctx.channel.owner_id:
-                if manage_clopen.evaluate(*evaluate_ctx(ctx)) != EvalResult.TRUE:
-                    return
-            await solved(ctx.channel, format("by {!m}", ctx.author))
-
-    @privileged
-    @command("unsolved")
-    async def unsolved_command(self, ctx: Context) -> None:
-        """For use in help forum posts. Mark the post as unsolved."""
-        if isinstance(ctx.channel, Thread) and ctx.channel.parent_id == conf.forum:
-            if ctx.author.id != ctx.channel.owner_id:
-                if manage_clopen.evaluate(*evaluate_ctx(ctx)) != EvalResult.TRUE:
-                    return
-            await unsolved(ctx.channel, format("by {!m}", ctx.author))
