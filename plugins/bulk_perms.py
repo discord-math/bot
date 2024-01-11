@@ -6,10 +6,11 @@ from typing import Awaitable, Callable, Dict, List, Optional, Set, Tuple, Union
 from discord import (AllowedMentions, CategoryChannel, File, ForumChannel, Member, Object, PermissionOverwrite,
     Permissions, Role, StageChannel, TextChannel, VoiceChannel)
 import discord.abc
+from discord.ext.commands import command
 import discord.flags
 
 from bot.acl import privileged
-from bot.commands import Context, command
+from bot.commands import Context, plugin_command
 from bot.reactions import get_reaction
 from util.discord import InvocationError, PlainItem, UserError, chunk_messages, format
 
@@ -37,8 +38,9 @@ def disambiguated_name(channel: discord.abc.GuildChannel) -> str:
     chans.sort(key=lambda chan: chan.id)
     return "{} ({})".format(channel.name, 1 + chans.index(channel))
 
-@privileged
+@plugin_command
 @command("exportperms")
+@privileged
 async def exportperms(ctx: Context) -> None:
     """Export all role and channel permission settings into CSV."""
     if ctx.guild is None:
@@ -116,8 +118,9 @@ def edit_channel_overwrites(channel: GuildChannel,
 def sync_channel(channel: SubChannel) -> Callable[[], Awaitable[object]]:
     return lambda: channel.edit(sync_permissions=True)
 
-@privileged
+@plugin_command
 @command("importperms")
+@privileged
 async def importperms(ctx: Context) -> None:
     """Import all role and channel permission settings from an attached CSV file."""
     if ctx.guild is None:

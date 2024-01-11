@@ -14,7 +14,7 @@ from typing import (Any, AsyncContextManager, Awaitable, Callable, Dict, Generic
     Protocol, Sequence, Tuple, Type, TypeVar, Union, cast)
 
 import discord
-from discord import (CategoryChannel, File, ForumChannel, Member, Message, Object, PartialMessage, Role, StageChannel,
+from discord import (CategoryChannel, File, ForumChannel, Guild, Member, Message, Object, PartialMessage, Role, StageChannel,
     TextChannel, User, VoiceChannel)
 from discord.abc import GuildChannel, Messageable, Snowflake
 import discord.context_managers
@@ -460,6 +460,42 @@ class RoleConverter(Role):
                 return role
         else:
             raise BadArgument(format("Could not find role with ID {} in any server", obj.id))
+
+class PartialGuildConverter(Snowflake):
+    id: int
+    mention_re: re.Pattern[str] = re.compile(r"<#(\d+)>")
+    id_re: re.Pattern[str] = re.compile(r"\d{15,}")
+
+    @classmethod
+    async def convert(cls, ctx: Context[Bot], arg: str) -> Snowflake:
+        if match := cls.mention_re.fullmatch(arg):
+            return Object(int(match[1]))
+        elif match := cls.id_re.fullmatch(arg):
+            return Object(int(match[0]))
+        elif arg == "this":
+            if ctx.guild is None:
+                raise NoPrivateMessage("\"this\" can only be used on a server")
+            return ctx.guild
+
+        matches = priority_find(lambda r: named_priority(r, arg), ctx.bot.guilds)
+        if len(matches) > 1:
+            raise BadArgument(format("Multiple servers match {}", arg))
+        elif len(matches) == 1:
+            return matches[0]
+        else:
+            raise BadArgument(format("Could not find server named {}", arg))
+
+class GuildConverter(Guild):
+    @classmethod
+    async def convert(cls, ctx: Context[Bot], arg: str) -> Guild:
+        obj = await PartialGuildConverter.convert(ctx, arg)
+        if isinstance(obj, Guild):
+            return obj
+        guild = ctx.bot.get_guild(obj.id)
+        if guild is not None:
+            return guild
+        else:
+            raise BadArgument(format("Could not find server with ID {}", obj.id))
 
 C = TypeVar("C", bound=GuildChannel)
 

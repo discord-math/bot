@@ -6,10 +6,11 @@ from typing import Awaitable, Iterator, Optional, Protocol, Tuple, TypedDict, ca
 
 import discord
 from discord import AllowedMentions, MessageReference, Object, TextChannel, Thread
+from discord.ext.commands import command, group
 
 from bot.acl import privileged
 from bot.client import client
-from bot.commands import Context, cleanup, command, group
+from bot.commands import Context, cleanup, plugin_command
 from bot.tasks import task
 import plugins
 import util.db.kv
@@ -106,6 +107,7 @@ async def init() -> None:
 
     expiry_task.run_coalesced(0)
 
+@plugin_command
 @cleanup
 @command("remindme", aliases=["remind"])
 @privileged
@@ -128,6 +130,7 @@ async def remindme_command(ctx: Context, interval: DurationConverter, *, text: O
     await ctx.send("Created reminder {}".format(format_reminder(reminder))[:2000],
         allowed_mentions=AllowedMentions.none())
 
+@plugin_command
 @cleanup
 @group("reminder", aliases=["reminders"], invoke_without_command=True)
 @privileged

@@ -1,12 +1,14 @@
 import asyncio
 from datetime import datetime, timedelta
 import logging
-from typing import TYPE_CHECKING, Awaitable, Dict, Optional, Protocol, cast
+from typing import TYPE_CHECKING, Dict, Optional
 
 import discord
 from discord import (Activity, ActivityType, AllowedMentions, Client, DMChannel, Intents, Message, MessageReference,
     TextChannel, Thread)
-from sqlalchemy import TIMESTAMP, BigInteger, func, select, update
+from discord.ext.commands import group
+from sqlalchemy import TEXT, TIMESTAMP, BigInteger, func, select, update
+from sqlalchemy.dialects.postgresql import INTERVAL
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 import sqlalchemy.orm
 from sqlalchemy.orm import Mapped, mapped_column
@@ -14,15 +16,16 @@ from sqlalchemy.schema import CreateSchema
 
 import bot.client
 from bot.cogs import Cog, cog
+from bot.commands import Context
+from bot.config import plugin_config_command
 from bot.reactions import get_reaction
 import plugins
 import util.db
-import util.db.kv
-from util.discord import PlainItem, chunk_messages, format, retry
+from util.discord import (DurationConverter, PartialChannelConverter, PartialGuildConverter, PartialRoleConverter,
+    PlainItem, UserError, chunk_messages, format, retry)
 
-registry: sqlalchemy.orm.registry = sqlalchemy.orm.registry()
-
-sessionmaker = async_sessionmaker(util.db.engine, future=True)
+registry = sqlalchemy.orm.registry()
+sessionmaker = async_sessionmaker(util.db.engine, expire_on_commit=False)
 
 @registry.mapped
 class ModmailMessage:
@@ -48,28 +51,27 @@ class ModmailThread:
     if TYPE_CHECKING:
         def __init__(self, *, user_id: int, thread_first_message_id: int, last_used: int) -> None: ...
 
-class ModmailConf(Awaitable[None], Protocol):
-    token: str
-    guild: int
-    channel: int
-    role: int
-    thread_expiry: int
+@registry.mapped
+class GuildConfig:
+    __tablename__ = "guilds"
+    __table_args__ = {"schema": "modmail"}
 
-conf: ModmailConf
+    guild_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    token: Mapped[str] = mapped_column(TEXT, nullable=False)
+    channel_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    role_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    thread_expiry: Mapped[timedelta] = mapped_column(INTERVAL, nullable=False)
+
+    if TYPE_CHECKING:
+        def __init__(self, *, guild_id: int, token: str, channel_id: int, role_id: int, thread_expiry: timedelta
+            ) -> None: ...
+
 logger: logging.Logger = logging.getLogger(__name__)
 
 message_map: Dict[int, ModmailMessage] = {}
 
 @plugins.init
 async def init() -> None:
-    global conf
-    conf = cast(ModmailConf, await util.db.kv.load(__name__))
-
-    conf.guild = int(conf.guild)
-    conf.channel = int(conf.channel)
-    conf.role = int(conf.role)
-    await conf
-
     await util.db.init(util.db.get_ddl(
         CreateSchema("modmail"),
         registry.metadata.create_all))
@@ -79,32 +81,32 @@ async def init() -> None:
             message_map[msg.staff_message_id] = msg
 
 async def add_modmail(source: Message, copy: Message) -> None:
-    async with AsyncSession(util.db.engine, expire_on_commit=False) as session:
+    async with sessionmaker() as session:
         msg = ModmailMessage(dm_channel_id=source.channel.id, dm_message_id=source.id, staff_message_id=copy.id)
         session.add(msg)
         await session.commit()
         message_map[msg.staff_message_id] = msg
 
-async def update_thread(user_id: int) -> Optional[int]:
+async def update_thread(conf: GuildConfig, user_id: int) -> Optional[int]:
     async with sessionmaker() as session:
         stmt = (update(ModmailThread).returning(ModmailThread.thread_first_message_id)
             .where(ModmailThread.user_id == user_id,
-                ModmailThread.last_used > func.current_timestamp() - timedelta(seconds=conf.thread_expiry))
+                ModmailThread.last_used > func.current_timestamp() - conf.thread_expiry)
             .values(last_used=func.current_timestamp())
             .execution_options(synchronize_session=False))
-
         thread = (await session.execute(stmt)).scalars().first()
         await session.commit()
         return thread
 
 async def create_thread(user_id: int, msg_id: int) -> None:
     async with sessionmaker() as session:
-        thread = ModmailThread(user_id=user_id, thread_first_message_id=msg_id,
-            last_used=func.current_timestamp()) # type: ignore
-        session.add(thread)
+        session.add(ModmailThread(user_id=user_id, thread_first_message_id=msg_id,
+            last_used=func.current_timestamp())) # type: ignore
         await session.commit()
 
 class ModMailClient(Client):
+    conf: GuildConfig
+
     async def on_ready(self) -> None:
         await self.change_presence(activity=Activity(type=ActivityType.watching, name="DMs"))
 
@@ -114,15 +116,15 @@ class ModMailClient(Client):
     async def on_message(self, msg: Message) -> None:
         if not msg.guild and self.user is not None and msg.author.id != self.user.id:
             try:
-                guild = bot.client.client.get_guild(int(conf.guild))
+                guild = bot.client.client.get_guild(self.conf.guild_id)
                 if guild is None: return
-                channel = guild.get_channel(int(conf.channel))
+                channel = guild.get_channel(self.conf.channel_id)
                 if not isinstance(channel, (TextChannel, Thread)): return
-                role = guild.get_role(int(conf.role))
+                role = guild.get_role(self.conf.role_id)
                 if role is None: return
             except (ValueError, AttributeError):
                 return
-            thread_id = await update_thread(msg.author.id)
+            thread_id = await update_thread(self.conf, msg.author.id)
 
             items = [PlainItem(format("**From {}#{}** {} {!m} on {}:\n\n",
                     msg.author.name, msg.author.discriminator, msg.author.id, msg.author, msg.created_at)),
@@ -165,6 +167,10 @@ class Modmail(Cog):
             return
         if msg.reference.message_id not in message_map:
             return
+        if not msg.guild:
+            return
+        if not (client := clients.get(msg.guild.id)):
+            return
         modmail = message_map[msg.reference.message_id]
 
         anon_react = "\U0001F574"
@@ -204,14 +210,14 @@ class Modmail(Cog):
             else:
                 await msg.channel.send("Signed reply delivered" if result == "named" else "Anonymous reply delivered")
 
-client: Client = ModMailClient(
-    max_messages=None,
-    intents=Intents(dm_messages=True),
-    allowed_mentions=AllowedMentions(everyone=False, roles=False))
+clients: Dict[int, ModMailClient] = {}
 
 @plugins.init
 async def init_task() -> None:
-    async def run_modmail() -> None:
+    async def run_modmail(conf: GuildConfig) -> None:
+        client = clients[conf.guild_id] = ModMailClient(max_messages=None, intents=Intents(dm_messages=True),
+            allowed_mentions=AllowedMentions(everyone=False, roles=False))
+        client.conf = conf
         try:
             async with client:
                 await client.start(conf.token, reconnect=True)
@@ -222,5 +228,73 @@ async def init_task() -> None:
         finally:
             await client.close()
 
-    bot_task: asyncio.Task[None] = asyncio.create_task(run_modmail(), name="Modmail client")
-    plugins.finalizer(bot_task.cancel)
+    async with sessionmaker() as session:
+        for conf in (await session.execute(select(GuildConfig))).scalars():
+            task = asyncio.create_task(run_modmail(conf), name="Modmail client for {}".format(conf.guild_id))
+            plugins.finalizer(task.cancel)
+
+class GuildContext(Context):
+    guild_id: int
+
+@plugin_config_command
+@group("modmail")
+async def config(ctx: GuildContext, guild: PartialGuildConverter) -> None:
+    ctx.guild_id = guild.id
+
+@config.command("new")
+async def config_new(ctx: GuildContext, token: str, channel: PartialChannelConverter, role: PartialRoleConverter,
+    thread_expiry: DurationConverter) -> None:
+    async with sessionmaker() as session:
+        session.add(GuildConfig(guild_id=ctx.guild_id, token=token, channel_id=channel.id, role_id=role.id,
+            thread_expiry=thread_expiry))
+        await session.commit()
+        await ctx.send("\u2705")
+
+async def get_conf(session: AsyncSession, ctx: GuildContext) -> GuildConfig:
+    if (conf := await session.get(GuildConfig, ctx.guild_id)) is None:
+        raise UserError("No config for {}".format(ctx.guild_id))
+    return conf
+
+@config.command("token")
+async def config_token(ctx: GuildContext, token: Optional[str]) -> None:
+    async with sessionmaker() as session:
+        conf = await get_conf(session, ctx)
+        if token is None:
+            await ctx.send(format("{!i}", conf.token))
+        else:
+            conf.token = token
+            await session.commit()
+            await ctx.send("\u2705")
+
+@config.command("channel")
+async def config_channel(ctx: GuildContext, channel: Optional[PartialChannelConverter]) -> None:
+    async with sessionmaker() as session:
+        conf = await get_conf(session, ctx)
+        if channel is None:
+            await ctx.send(format("{!c}", conf.channel_id))
+        else:
+            conf.channel_id = channel.id
+            await session.commit()
+            await ctx.send("\u2705")
+
+@config.command("role")
+async def config_role(ctx: GuildContext, role: Optional[PartialRoleConverter]) -> None:
+    async with sessionmaker() as session:
+        conf = await get_conf(session, ctx)
+        if role is None:
+            await ctx.send(format("{!M}", conf.role_id), allowed_mentions=AllowedMentions.none())
+        else:
+            conf.role_id = role.id
+            await session.commit()
+            await ctx.send("\u2705")
+
+@config.command("thread_expiry")
+async def config_thread_expiry(ctx: GuildContext, thread_expiry: Optional[DurationConverter]) -> None:
+    async with sessionmaker() as session:
+        conf = await get_conf(session, ctx)
+        if thread_expiry is None:
+            await ctx.send(str(thread_expiry))
+        else:
+            conf.thread_expiry = thread_expiry
+            await session.commit()
+            await ctx.send("\u2705")

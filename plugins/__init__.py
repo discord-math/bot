@@ -402,6 +402,7 @@ def trace_import(name: str, globals: Optional[Dict[str, object]] = None, locals:
                     current.name, current_manager, parent, other_manager))
             else:
                 current_manager.add_dependency(current.name, parent)
+        importlib.import_module(parent)
     return builtins.__import__(name, globals, locals, fromlist, level)
 
 trace_builtins = ModuleType(builtins.__name__)

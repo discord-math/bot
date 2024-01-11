@@ -3,10 +3,11 @@ from typing import Dict, Optional
 
 import discord
 from discord import MessageType, RawReactionActionEvent
+from discord.ext.commands import command
 
 from bot.acl import privileged
 from bot.client import client
-from bot.commands import Context, add_cleanup, cleanup, command
+from bot.commands import Context, add_cleanup, cleanup, plugin_command
 from bot.reactions import ReactionMonitor
 from util.discord import ReplyConverter, TempMessage, UserError, format, partial_from_reply
 
@@ -18,6 +19,7 @@ class AbortDueToOtherPin(Exception):
 
 unpin_requests: Dict[int, ReactionMonitor[RawReactionActionEvent]] = {}
 
+@plugin_command
 @cleanup
 @command("pin")
 @privileged
@@ -83,6 +85,7 @@ async def pin_command(ctx: Context, message: Optional[ReplyConverter]) -> None:
         except asyncio.TimeoutError:
             pin_msg_task.cancel()
 
+@plugin_command
 @cleanup
 @command("unpin")
 @privileged

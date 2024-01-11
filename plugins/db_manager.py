@@ -1,78 +1,27 @@
 from collections import defaultdict
-import json
-from typing import Dict, Iterator, List, Optional, Sequence, Set, Union, cast
+from typing import Dict, List, Optional, Set, Union, cast
 
 import asyncpg
-from discord.ext.commands import Greedy
+from discord.ext.commands import Greedy, command, group
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 import yaml
 
 import bot.acl
 from bot.acl import (ACL, ACLCheck, EvalResult, MessageableChannel, evaluate_acl, evaluate_acl_meta, live_actions,
     privileged, register_action)
+import bot.autoload
 from bot.client import client
 import bot.commands
-from bot.commands import Context, cleanup, command, group
+from bot.commands import Context, cleanup, plugin_command
+from bot.config import plugin_config_command
 from bot.reactions import get_reaction
+from plugins.bot_manager import PluginConverter
 import util.db
 import util.db.kv
-from util.discord import CodeBlock, CodeItem, Inline, PlainItem, Quoted, Typing, UserError, chunk_messages, format
+from util.discord import CodeBlock, Inline, Typing, UserError, format
 
-@cleanup
-@group("config", invoke_without_command=True)
-@privileged
-async def config_command(ctx: Context, namespace: Optional[str], key: Optional[str],
-    value: Optional[Union[CodeBlock, Inline, Quoted]]) -> None:
-    """Edit the key-value configs."""
-    if namespace is None:
-        def namespace_items(nsps: Sequence[str]) -> Iterator[PlainItem]:
-            first = True
-            for nsp in nsps:
-                if first:
-                    first = False
-                else:
-                    yield PlainItem(", ")
-                yield PlainItem(format("{!i}", nsp))
-        for content, _ in chunk_messages(namespace_items(await util.db.kv.get_namespaces())):
-            await ctx.send(content)
-        return
-
-    conf = await util.db.kv.load(namespace)
-
-    if key is None:
-        def keys_items() -> Iterator[PlainItem]:
-            first = True
-            for keys in conf:
-                if first:
-                    first = False
-                else:
-                    yield PlainItem("; ")
-                yield PlainItem(",".join(format("{!i}", key) for key in keys))
-        for content, _ in chunk_messages(keys_items()):
-            await ctx.send(content)
-        return
-
-    keys = key.split(",")
-
-    if value is None:
-        for content, files in chunk_messages((
-            CodeItem(util.db.kv.json_encode(conf[keys]) or "", language="json", filename="{}.json".format(key)),)):
-            await ctx.send(content, files=files)
-        return
-
-    conf[keys] = json.loads(value.text)
-    await conf
-    await ctx.send("\u2705")
-
-@config_command.command("--delete")
-@privileged
-async def config_delete(ctx: Context, namespace: str, key: str) -> None:
-    """Delete the provided key from the config."""
-    conf = await util.db.kv.load(namespace)
-    keys = key.split(",")
-    conf[keys] = None
-    await conf
-    await ctx.send("\u2705")
-
+@plugin_command
 @cleanup
 @command("sql")
 @privileged
@@ -139,6 +88,20 @@ async def sql_command(ctx: Context, args: Greedy[Union[CodeBlock, Inline, str]])
         else:
             await tx.rollback()
 
+@plugin_config_command
+@command("prefix")
+async def config_prefix(ctx: Context, prefix: Optional[str]) -> None:
+    async with AsyncSession(util.db.engine) as session:
+        conf = await session.get(bot.commands.GlobalConfig, 0)
+        assert conf
+        if prefix is None:
+            await ctx.send(format("{!i}", conf.prefix))
+        else:
+            conf.prefix = prefix
+            await session.commit()
+            await ctx.send("\u2705")
+
+@plugin_command
 @cleanup
 @group("acl")
 @privileged
@@ -204,7 +167,7 @@ async def acl_set(ctx: Context, acl: str, formula: CodeBlock) -> None:
 @privileged
 async def acl_commands(ctx: Context) -> None:
     """List commands that support ACLs, and the ACL's they're assigned to."""
-    prefix: str = bot.commands.conf.prefix
+    prefix: str = bot.commands.prefix
     acls: Dict[str, Set[str]] = defaultdict(set)
     seen: Set[str] = set()
     for ty, name in bot.acl.conf:
@@ -355,3 +318,29 @@ async def acl_meta(ctx: Context, acl: str, meta: Optional[str]) -> None:
     await bot.acl.conf
 
     await ctx.send("\u2705")
+
+@plugin_config_command
+@group("autoload", invoke_without_command=True)
+async def config_autoload(ctx: Context) -> None:
+    order = defaultdict(list)
+    stmt = select(bot.autoload.AutoloadedPlugin).order_by(bot.autoload.AutoloadedPlugin.order)
+    async with AsyncSession(util.db.engine) as session:
+        for plugin in (await session.execute(stmt)).scalars():
+            order[plugin.order].append(plugin.name)
+
+    await ctx.send("\n".join("- {}: {}".format(i, ", ".join(format("{!i}", plugin) for plugin in plugins))
+        for i, plugins in order.items()))
+
+@config_autoload.command("add")
+async def config_autoload_add(ctx: Context, plugin: PluginConverter, order: int) -> None:
+    async with AsyncSession(util.db.engine) as session:
+        session.add(bot.autoload.AutoloadedPlugin(name=plugin, order=order))
+        await session.commit()
+        await ctx.send("\u2705")
+
+@config_autoload.command("remove")
+async def config_autoload_remove(ctx: Context, plugin: PluginConverter) -> None:
+    async with AsyncSession(util.db.engine) as session:
+        await session.delete(await session.get(bot.autoload.AutoloadedPlugin, plugin))
+        await session.commit()
+        await ctx.send("\u2705")

@@ -96,9 +96,6 @@ class HelpCommand(discord.ext.commands.HelpCommand):
                     privnote = "\nYou are not allowed to use this command here specifically."
                     break
 
-        await self.get_destination().send(format("**Usage:** {!i}{}\n{}{}",
-            usage, akanote, desc, privnote))
-
         await self.get_destination().send(format(
             "**Usage:** {!i}{}\n{}\n**Sub-commands:**\n{}{}\n\nType {!i} for more info on a sub-command.",
             usage, akanote, desc, "\n".join(subcommands), privnote,

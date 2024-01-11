@@ -20,9 +20,6 @@ Commands:
 - `reloadmod <module>` -- reload a module (that's not a plugin).
 - `unsafereload <plugin>` -- do an "unsafe" in-place reload.
 - `unsafeunload <plugin>` -- unload a single plugin.
-- `autoload` -- list plugins that are to be auto-loaded on bot startup. Note that loading a plugin doesn't put it on the auto-load list, and adding a plugin to the auto-load list doesn't load it immediately.
-    - `autoload add <plugin>` -- add a plugin to the auto-load list.
-    - `autoload remove <plugin>` -- remove a plugin from the auto-load list.
 
 ### `db_manager`
 
@@ -81,7 +78,9 @@ Commands:
 - `update [name]` -- update the specified repository (by default the one in the current directory).
 
 Config:
-- ``config plugins.update <name> `/path/to/repo/` `` -- directory for the specified repository.
+- `config update` -- list repositories.
+- `config update add <name> </path/to/repo>` -- add a repository. The specified path will be used as the CWD for `git` operations.
+- `config update remove <name>` -- remove a repository.
 
 ### `help`
 
@@ -135,11 +134,11 @@ Config:
 Run a mod-mail system. A separate bot user is spun up listening for DM's. Upon receiving a DM, the bot forwards it to a staff channel, and confirms delivery to the user by reacting under the message. When staff reply to the modmail, the reply is forwarded back to the user. The staff is prompted for whether the reply should be anonymous or not.
 
 Config:
-- ``config plugins.modmail token `"<token>"` `` -- bot token for the modmail user. Ideally this is a separate user, otherwise modmail would conflict with ticket prompts.
-- ``config plugins.modmail guild <guild id>`` -- the guild for which this modmail is run.
-- ``config plugins.modmail channel <channel id>`` -- the staff channel to which the modmails are forwarded.
-- ``config plugins.modmail role <role id>`` -- the role which is pinged by (new) modmails.
-- ``config plugins.modmail thread_expiry <duration>`` -- multiple consecutive messages from the same user are considered to be a part of the same thread and don't ping the role. This duration specifies how long it has to pass (in seconds) since the last message for it to be considered a separate thread.
+- `config modmail <server> new <token> <channel> <role> <duration>` -- set up modmail for the given server. The supplied token should ideally be for a separate user, otherwise modmail would conflict with ticket prompts. The channel is the staff channel to which the modmails are forwarded. The role is the one pinged by (new) modmails. Multiple consecutive messages from the same user are considered to be a part of the same thread and don't ping the role. The supplied duration specifies how long it has to pass since the last message for it to be considered a separate thread.
+- `config modmail <server> token [token]` -- edit the modmail client token for the given server.
+- `config modmail <server> token [channel]` -- edit the staff channel.
+- `config modmail <server> role [role]` -- edit the role that gets pinged.
+- `config modmail <server> thread_delay [duration]` -- edit the thread creation threshold.
 
 ### `automod`
 
@@ -337,7 +336,10 @@ Config:
 A `/whois <user>` slash-command for locating users and printing useful information about them.
 
 ### Miscellaneous Configuration
-- ``config bot.commands prefix `"<prefix>"` `` -- set the prefix for the bot's "ordinary" commands.
+- `config commands prefix "<prefix>"` -- set the prefix for the bot's "ordinary" commands.
+- `config autoload` -- list plugins that are to be auto-loaded on bot startup. Note that loading a plugin doesn't put it on the auto-load list, and adding a plugin to the auto-load list doesn't load it immediately.
+- `config autoload add <plugin> <order>` -- add a plugin to the auto-load list. The higher the order the later the plugin gets loaded.
+- `config autoload remove <plugin>` -- remove a plugin from the auto-load list.
 
 ## Running
 

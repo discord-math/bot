@@ -3,9 +3,10 @@ import importlib
 import sys
 import traceback
 
+from discord.ext.commands import command
+
 from bot.acl import privileged
-import bot.autoload
-from bot.commands import Context, cleanup, command, group
+from bot.commands import Context, cleanup, plugin_command
 import plugins
 from util.discord import CodeItem, Typing, chunk_messages, format
 import util.restart
@@ -13,6 +14,7 @@ import util.restart
 manager = plugins.PluginManager.of(__name__)
 assert manager
 
+@plugin_command
 @command("restart")
 @privileged
 async def restart_command(ctx: Context) -> None:
@@ -34,6 +36,7 @@ async def reply_exception(ctx: Context) -> None:
         await ctx.send(content, files=files)
     del tb
 
+@plugin_command
 @cleanup
 @command("load")
 @privileged
@@ -47,6 +50,7 @@ async def load_command(ctx: Context, plugin: PluginConverter) -> None:
     else:
         await ctx.send("\u2705")
 
+@plugin_command
 @cleanup
 @command("reload")
 @privileged
@@ -60,6 +64,7 @@ async def reload_command(ctx: Context, plugin: PluginConverter) -> None:
     else:
         await ctx.send("\u2705")
 
+@plugin_command
 @cleanup
 @command("unsafereload")
 @privileged
@@ -73,6 +78,7 @@ async def unsafe_reload_command(ctx: Context, plugin: PluginConverter) -> None:
     else:
         await ctx.send("\u2705")
 
+@plugin_command
 @cleanup
 @command("unload")
 @privileged
@@ -86,6 +92,7 @@ async def unload_command(ctx: Context, plugin: PluginConverter) -> None:
     else:
         await ctx.send("\u2705")
 
+@plugin_command
 @cleanup
 @command("unsafeunload")
 @privileged
@@ -99,6 +106,7 @@ async def unsafe_unload_command(ctx: Context, plugin: PluginConverter) -> None:
     else:
         await ctx.send("\u2705")
 
+@plugin_command
 @cleanup
 @command("reloadmod")
 @privileged
@@ -111,27 +119,7 @@ async def reloadmod_command(ctx: Context, module: str) -> None:
     else:
         await ctx.send("\u2705")
 
-@cleanup
-@group("autoload", invoke_without_command=True)
-@privileged
-async def autoload_command(ctx: Context) -> None:
-    """Manage plugins loaded at startup."""
-    await ctx.send(", ".join(format("{!i}", name) for name in bot.autoload.get_autoload()))
-
-@autoload_command.command("add")
-@privileged
-async def autoload_add(ctx: Context, plugin: PluginConverter) -> None:
-    """Add a plugin to be loaded at startup."""
-    await bot.autoload.set_autoload(plugin, True)
-    await ctx.send("\u2705")
-
-@autoload_command.command("remove")
-@privileged
-async def autoload_remove(ctx: Context, plugin: PluginConverter) -> None:
-    """Remove a plugin from startup loading list."""
-    await bot.autoload.set_autoload(plugin, False)
-    await ctx.send("\u2705")
-
+@plugin_command
 @cleanup
 @command("plugins")
 @privileged

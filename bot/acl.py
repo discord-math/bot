@@ -21,8 +21,8 @@ from collections import defaultdict
 import enum
 from functools import total_ordering
 import logging
-from typing import (Any, Awaitable, Callable, Coroutine, Dict, Iterator, List, Literal, Optional, Protocol, Set, Tuple,
-    TypedDict, Union, cast, overload)
+from typing import (Any, Awaitable, Callable, Dict, Iterator, List, Literal, Optional, Protocol, Set, Tuple, TypedDict,
+    TypeVar, Union, cast, overload)
 
 from discord import DMChannel, GroupChannel, Interaction, Member, Thread, User
 from discord.abc import GuildChannel
@@ -282,7 +282,9 @@ class ACLCheck:
                 ctx.author, ctx.channel, acl, ctx.command.qualified_name))
             return False
 
-def privileged(fun: Callable[..., Coroutine[Any, Any, None]]) -> Callable[..., Coroutine[Any, Any, None]]:
+CommandT = TypeVar("CommandT", bound=Callable[..., Any])
+
+def privileged(fun: CommandT) -> CommandT:
     """A decorator indicating that a command should be bound an unspecified configurable ACL."""
     return discord.ext.commands.check(ACLCheck())(fun)
 

@@ -1,9 +1,12 @@
 import asyncio.subprocess
 
+from discord.ext.commands import command
+
 from bot.acl import privileged
-from bot.commands import Context, cleanup, command
+from bot.commands import Context, cleanup, plugin_command
 from util.discord import format
 
+@plugin_command
 @cleanup
 @command("version")
 @privileged
