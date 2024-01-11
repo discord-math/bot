@@ -21,12 +21,17 @@ from collections import defaultdict
 import enum
 from functools import total_ordering
 import logging
-from typing import (Any, Awaitable, Callable, Dict, Iterator, List, Literal, Optional, Protocol, Set, Tuple, TypedDict,
-    TypeVar, Union, cast, overload)
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Set, Tuple, TypedDict, TypeVar, Union, cast
 
 from discord import DMChannel, GroupChannel, Interaction, Member, Thread, User
 from discord.abc import GuildChannel
 import discord.ext.commands
+from sqlalchemy import TEXT, ForeignKey, select
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.ext.asyncio import async_sessionmaker
+import sqlalchemy.orm
+from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.schema import CreateSchema
 
 from bot.commands import Context
 import plugins
@@ -58,37 +63,97 @@ class NestedData(TypedDict):
 
 ACLData = Union[RoleData, UserData, ChannelData, CategoryData, NotData, AndData, OrData, NestedData]
 
-class ACLConf(Awaitable[None], Protocol):
-    @overload
-    def __getitem__(self, key: Tuple[Literal["acl"], str]) -> Optional[ACLData]: ...
+registry = sqlalchemy.orm.registry()
+sessionmaker = async_sessionmaker(util.db.engine, expire_on_commit=False)
 
-    @overload
-    def __getitem__(self, key: Tuple[Literal["command"], str]) -> Optional[str]: ...
+@registry.mapped
+class ACL:
+    __tablename__ = "acls"
+    __table_args__ = {"schema": "permissions"}
 
-    @overload
-    def __getitem__(self, key: Tuple[Literal["action"], str]) -> Optional[str]: ...
+    name: Mapped[str] = mapped_column(TEXT, primary_key=True)
+    data: Mapped[ACLData] = mapped_column(JSONB, nullable=False)
+    meta: Mapped[Optional[str]] = mapped_column(TEXT, ForeignKey(name))
 
-    @overload
-    def __getitem__(self, key: Tuple[Literal["meta"], str]) -> Optional[str]: ...
+    @staticmethod
+    def parse_data(data: ACLData) -> ACLExpr:
+        if "role" in data:
+            return RoleACL(data["role"])
+        elif "user" in data:
+            return UserACL(data["user"])
+        elif "channel" in data:
+            return ChannelACL(data["channel"])
+        elif "category" in data:
+            return CategoryACL(data["category"])
+        elif "not" in data:
+            return NotACL(ACL.parse_data(data["not"]))
+        elif "and" in data:
+            return AndACL([ACL.parse_data(acl) for acl in data["and"]])
+        elif "or" in data:
+            return OrACL([ACL.parse_data(acl) for acl in data["or"]])
+        elif "acl" in data:
+            return NestedACL(data["acl"])
+        raise ValueError("Invalid ACL data: {!r}".format(data))
 
-    @overload
-    def __setitem__(self, key: Tuple[Literal["acl"], str], value: Optional[ACLData]) -> None: ...
+    def parse(self) -> ACLExpr:
+        return ACL.parse_data(self.data)
 
-    @overload
-    def __setitem__(self, key: Tuple[Literal["command"], str], value: Optional[str]) -> None: ...
+    if TYPE_CHECKING:
+        def __init__(self, name: str, data: ACLData, meta: Optional[str] = ...) -> None: ...
 
-    @overload
-    def __setitem__(self, key: Tuple[Literal["action"], str], value: Optional[str]) -> None: ...
+@registry.mapped
+class CommandPermissions:
+    __tablename__ = "commands"
+    __table_args__ = {"schema": "permissions"}
 
-    @overload
-    def __setitem__(self, key: Tuple[Literal["meta"], str], value: Optional[str]) -> None: ...
+    name: Mapped[str] = mapped_column(TEXT, primary_key=True)
+    acl: Mapped[str] = mapped_column(TEXT, ForeignKey(ACL.name), nullable=False)
 
-    def __iter__(self) -> Iterator[Tuple[Literal["acl", "comand", "action", "meta"], str]]: ...
+    if TYPE_CHECKING:
+        def __init__(self, name: str, acl: str) -> None: ...
+
+@registry.mapped
+class ActionPermissions:
+    __tablename__ = "actions"
+    __table_args__ = {"schema": "permissions"}
+
+    name: Mapped[str] = mapped_column(TEXT, primary_key=True)
+    acl: Mapped[str] = mapped_column(TEXT, ForeignKey(ACL.name), nullable=False)
+
+    if TYPE_CHECKING:
+        def __init__(self, name: str, acl: str) -> None: ...
+
+acls: Dict[str, ACL]
+commands: Dict[str, str]
+actions: Dict[str, str]
 
 @plugins.init
 async def init() -> None:
-    global conf
-    conf = cast(ACLConf, await util.db.kv.load(__name__))
+    global acls, commands, actions
+    await util.db.init(util.db.get_ddl(
+        CreateSchema("permissions"),
+        registry.metadata.create_all))
+
+    async with sessionmaker() as session:
+        conf = await util.db.kv.load(__name__)
+        for kind, name in conf:
+            if kind == "acl":
+                session.add(ACL(name=name, data=ACL.parse_data(cast(ACLData, conf["acl", name])).serialize(),
+                    meta=cast(Optional[str], conf["meta", name])))
+            elif kind == "command":
+                session.add(CommandPermissions(name=name, acl=cast(str, conf["command", name])))
+            elif kind == "action":
+                session.add(ActionPermissions(name=name, acl=cast(str, conf["action", name])))
+        await session.commit()
+        for kind, name in [(kind, name) for kind, name in conf]:
+            conf[kind, name] = None
+
+        stmt = select(ACL)
+        acls = {acl.name: acl for acl in (await session.execute(stmt)).scalars()}
+        stmt = select(CommandPermissions)
+        commands = {command.name: command.acl for command in (await session.execute(stmt)).scalars()}
+        stmt = select(ActionPermissions)
+        actions = {command.name: command.acl for command in (await session.execute(stmt)).scalars()}
 
 @total_ordering
 class EvalResult(enum.Enum):
@@ -101,37 +166,17 @@ class EvalResult(enum.Enum):
 
 MessageableChannel = Union[GuildChannel, Thread, DMChannel, GroupChannel]
 
-class ACL(ABC):
+class ACLExpr(ABC):
     @abstractmethod
     def evaluate(self, user: Optional[Union[Member, User]], channel: Optional[MessageableChannel], nested: Set[str]
         ) -> EvalResult:
         raise NotImplemented
 
-    @staticmethod
-    def parse(data: ACLData) -> ACL:
-        if "role" in data:
-            return RoleACL(data["role"])
-        elif "user" in data:
-            return UserACL(data["user"])
-        elif "channel" in data:
-            return ChannelACL(data["channel"])
-        elif "category" in data:
-            return CategoryACL(data["category"])
-        elif "not" in data:
-            return NotACL(ACL.parse(data["not"]))
-        elif "and" in data:
-            return AndACL([ACL.parse(acl) for acl in data["and"]])
-        elif "or" in data:
-            return OrACL([ACL.parse(acl) for acl in data["or"]])
-        elif "acl" in data:
-            return NestedACL(data["acl"])
-        raise ValueError("Invalid ACL data: {!r}".format(data))
-
     @abstractmethod
     def serialize(self) -> ACLData:
         raise NotImplemented
 
-class RoleACL(ACL):
+class RoleACL(ACLExpr):
     role: int
 
     def __init__(self, role: int):
@@ -147,7 +192,7 @@ class RoleACL(ACL):
     def serialize(self) -> ACLData:
         return {"role": self.role}
 
-class UserACL(ACL):
+class UserACL(ACLExpr):
     user: int
 
     def __init__(self, user: int):
@@ -164,7 +209,7 @@ class UserACL(ACL):
         return {"user": self.user}
 
 
-class ChannelACL(ACL):
+class ChannelACL(ACLExpr):
     channel: int
 
     def __init__(self, channel: int):
@@ -183,7 +228,7 @@ class ChannelACL(ACL):
     def serialize(self) -> ACLData:
         return {"channel": self.channel}
 
-class CategoryACL(ACL):
+class CategoryACL(ACLExpr):
     category: Optional[int]
 
     def __init__(self, category: Optional[int]):
@@ -202,10 +247,10 @@ class CategoryACL(ACL):
     def serialize(self) -> ACLData:
         return {"category": self.category}
 
-class NotACL(ACL):
-    acl: ACL
+class NotACL(ACLExpr):
+    acl: ACLExpr
 
-    def __init__(self, acl: ACL):
+    def __init__(self, acl: ACLExpr):
         self.acl = acl
 
     def evaluate(self, user: Optional[Union[Member, User]], channel: Optional[MessageableChannel], nested: Set[str]
@@ -221,10 +266,10 @@ class NotACL(ACL):
     def serialize(self) -> ACLData:
         return {"not": self.acl.serialize()}
 
-class AndACL(ACL):
-    acls: List[ACL]
+class AndACL(ACLExpr):
+    acls: List[ACLExpr]
 
-    def __init__(self, acls: List[ACL]):
+    def __init__(self, acls: List[ACLExpr]):
         self.acls = acls
 
     def evaluate(self, user: Optional[Union[Member, User]], channel: Optional[MessageableChannel], nested: Set[str]
@@ -234,10 +279,10 @@ class AndACL(ACL):
     def serialize(self) -> ACLData:
         return {"and": [acl.serialize() for acl in self.acls]}
 
-class OrACL(ACL):
-    acls: List[ACL]
+class OrACL(ACLExpr):
+    acls: List[ACLExpr]
 
-    def __init__(self, acls: List[ACL]):
+    def __init__(self, acls: List[ACLExpr]):
         self.acls = acls
 
     def evaluate(self, user: Optional[Union[Member, User]], channel: Optional[MessageableChannel], nested: Set[str]
@@ -247,7 +292,7 @@ class OrACL(ACL):
     def serialize(self) -> ACLData:
         return {"or": [acl.serialize() for acl in self.acls]}
 
-class NestedACL(ACL):
+class NestedACL(ACLExpr):
     acl: str
 
     def __init__(self, acl: str):
@@ -267,14 +312,14 @@ def evaluate_acl(acl: Optional[str], user: Optional[Union[Member, User]], channe
         return EvalResult.UNKNOWN
     if acl in nested:
         return EvalResult.UNKNOWN
-    if (data := conf["acl", acl]) is None:
+    if (data := acls.get(acl)) is None:
         return EvalResult.UNKNOWN
-    return ACL.parse(data).evaluate(user, channel, nested | {acl})
+    return data.parse().evaluate(user, channel, nested | {acl})
 
 class ACLCheck:
     def __call__(self, ctx: Context) -> bool:
         assert ctx.command
-        acl = conf["command", ctx.command.qualified_name]
+        acl = commands.get(ctx.command.qualified_name)
         if max(acl_override.evaluate(*evaluate_ctx(ctx)), evaluate_acl(acl, *evaluate_ctx(ctx))) == EvalResult.TRUE:
             return True
         else:
@@ -298,7 +343,7 @@ class Action:
 
     def evaluate(self, user: Optional[Union[Member, User]], channel: Optional[MessageableChannel],
         nested: Set[str] = set()) -> EvalResult:
-        result = evaluate_acl(conf["action", self.action], user, channel, nested)
+        result = evaluate_acl(actions.get(self.action), user, channel, nested)
         if self != acl_override:
             result = max(result, acl_override.evaluate(user, channel))
         return result
@@ -322,7 +367,11 @@ def evaluate_acl_meta(acl: Optional[str], user: Optional[Union[Member, User]], c
     """Given an ACL check whether the given user and channel can *edit* it."""
     result = acl_override.evaluate(user, channel)
     if acl is not None:
-        result = max(result, evaluate_acl(conf["meta", acl], user, channel))
+        if (data := acls.get(acl)) is not None:
+            meta = data.meta
+        else:
+            meta = None
+        result = max(result, evaluate_acl(meta, user, channel))
     return result
 
 def evaluate_ctx(ctx: Context) -> Tuple[Union[Member, User], MessageableChannel]:

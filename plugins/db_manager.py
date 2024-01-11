@@ -8,8 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import yaml
 
 import bot.acl
-from bot.acl import (ACL, ACLCheck, EvalResult, MessageableChannel, evaluate_acl, evaluate_acl_meta, live_actions,
-    privileged, register_action)
+from bot.acl import (ACL, ACLCheck, ActionPermissions, CommandPermissions, EvalResult, MessageableChannel, evaluate_acl,
+    evaluate_acl_meta, live_actions, privileged, register_action)
 import bot.autoload
 from bot.client import client
 import bot.commands
@@ -114,15 +114,17 @@ async def acl_list(ctx: Context) -> None:
     """List ACLs."""
     acls: Set[str] = set()
     used: Set[Optional[str]] = set()
-    for ty, name in bot.acl.conf:
-        if ty == "acl":
-            acls.add(name)
-        elif ty == "command":
-            used.add(bot.acl.conf["command", name])
-        elif ty == "action":
-            used.add(bot.acl.conf["action", name])
-        elif ty == "meta":
-            used.add(bot.acl.conf["meta", name])
+    async with AsyncSession(util.db.engine) as session:
+        stmt = select(bot.acl.ACL)
+        for acl in (await session.execute(stmt)).scalars():
+            acls.add(acl.name)
+            used.add(acl.meta)
+        stmt = select(bot.acl.CommandPermissions.acl)
+        for acl in (await session.execute(stmt)).scalars():
+            used.add(acl)
+        stmt = select(bot.acl.ActionPermissions.acl)
+        for acl in (await session.execute(stmt)).scalars():
+            used.add(acl)
     output = "ACLs: {}".format(", ".join(format("{!i}", name) for name in acls if name in used))
     if len(acls - used):
         output += "\nUnused: {}".format(", ".join(format("{!i}", name) for name in acls if name not in used))
@@ -132,10 +134,11 @@ async def acl_list(ctx: Context) -> None:
 @privileged
 async def acl_show(ctx: Context, acl: str) -> None:
     """Show the formula for the given ACL."""
-    if (data := bot.acl.conf["acl", acl]) is None:
-        raise UserError(format("No such ACL: {!i}", acl))
+    async with AsyncSession(util.db.engine) as session:
+        if (data := await session.get(bot.acl.ACL, acl)) is None:
+            raise UserError(format("No such ACL: {!i}", acl))
 
-    await ctx.send(format("{!b:yaml}", yaml.dump(data)))
+    await ctx.send(format("{!b:yaml}", yaml.dump(data.data)))
 
 acl_override = register_action("acl_override")
 
@@ -144,7 +147,7 @@ acl_override = register_action("acl_override")
 async def acl_set(ctx: Context, acl: str, formula: CodeBlock) -> None:
     """Set the formula for the given ACL."""
     if evaluate_acl_meta(acl, ctx.author, cast(MessageableChannel, ctx.channel)) != EvalResult.TRUE:
-        if (meta := bot.acl.conf["meta", acl]) is None:
+        if (meta := bot.acl.acls[acl].meta) is None:
             raise UserError("You must match the `acl_override` action to edit this ACL")
         else:
             raise UserError(format("You do not match the meta-ACL {!i}", meta))
@@ -158,8 +161,12 @@ async def acl_set(ctx: Context, acl: str, formula: CodeBlock) -> None:
     except ValueError as exc:
         raise UserError(str(exc))
 
-    bot.acl.conf["acl", acl] = data
-    await bot.acl.conf
+    async with AsyncSession(util.db.engine, expire_on_commit=False) as session:
+        obj = await session.get(bot.acl.ACL, acl)
+        assert obj
+        obj.data = data
+        await session.commit()
+        bot.acl.acls[acl] = obj
 
     await ctx.send("\u2705")
 
@@ -170,11 +177,12 @@ async def acl_commands(ctx: Context) -> None:
     prefix: str = bot.commands.prefix
     acls: Dict[str, Set[str]] = defaultdict(set)
     seen: Set[str] = set()
-    for ty, name in bot.acl.conf:
-        if ty == "command":
-            if (acl := bot.acl.conf["command", name]) is not None:
-                acls[acl].add(name)
-                seen.add(name)
+
+    async with AsyncSession(util.db.engine) as session:
+        stmt = select(bot.acl.CommandPermissions)
+        for cmd in (await session.execute(stmt)).scalars():
+            acls[cmd.acl].add(cmd.name)
+            seen.add(cmd.name)
     output = "\n".join(
         format("- {} require the {!i} ACL",
             ", ".join(format("{!i}", prefix + command) for command in sorted(commands)), acl)
@@ -194,19 +202,19 @@ async def acl_commands(ctx: Context) -> None:
 async def acl_command_cmd(ctx: Context, command: str, acl: Optional[str]) -> None:
     """Restrict the use of the given command to the given ACL."""
     channel = cast(MessageableChannel, ctx.channel)
-    old_acl = bot.acl.conf["command", command]
+    old_acl = bot.acl.commands.get(command)
     if evaluate_acl_meta(old_acl, ctx.author, channel) != EvalResult.TRUE:
-        if (meta := bot.acl.conf["meta", old_acl] if old_acl is not None else None) is None:
+        if (meta := bot.acl.acls[old_acl].meta if old_acl is not None else None) is None:
             msg = "You must match the `acl_override` action to edit this command"
         else:
             msg = format("You do not match the meta-ACL {!i} of the previous ACL {!i}", meta, old_acl)
         raise UserError(msg)
 
-    if acl is not None and bot.acl.conf["acl", acl] is None:
+    if acl is not None and acl not in bot.acl.acls:
         raise UserError(format("No such ACL: {!i}", acl))
 
     if evaluate_acl_meta(acl, ctx.author, channel) != EvalResult.TRUE:
-        if (meta := bot.acl.conf["meta", acl] if acl is not None else None) is None:
+        if (meta := bot.acl.acls[acl].meta if acl is not None else None) is None:
             reason = "the new ACL has no meta and you do not match the `acl_override` action"
         else:
             reason = format("you do not match the meta-ACL {!i} of the new ACL", meta)
@@ -215,8 +223,19 @@ async def acl_command_cmd(ctx: Context, command: str, acl: Optional[str]) -> Non
         if await get_reaction(prompt, ctx.author, {"\u274C": False, "\u2705": True}, timeout=60) != True:
             return
 
-    bot.acl.conf["command", command] = acl
-    await bot.acl.conf
+    async with AsyncSession(util.db.engine) as session:
+        if obj := await session.get(CommandPermissions, command):
+            if acl is not None:
+                obj.acl = acl
+            else:
+                await session.delete(obj)
+        elif acl is not None:
+            session.add(bot.acl.CommandPermissions(name=command, acl=acl))
+        await session.commit()
+        if acl is not None:
+            bot.acl.commands[command] = acl
+        else:
+            del bot.acl.commands[command]
 
     await ctx.send("\u2705")
 
@@ -226,11 +245,12 @@ async def acl_actions(ctx: Context) -> None:
     """List actions that support ACLs, and the ACL's they're assigned to."""
     acls: Dict[str, Set[str]] = defaultdict(set)
     seen: Set[str] = set()
-    for ty, name in bot.acl.conf:
-        if ty == "action":
-            if (acl := bot.acl.conf["action", name]) is not None:
-                acls[acl].add(name)
-                seen.add(name)
+
+    async with AsyncSession(util.db.engine) as session:
+        stmt = select(bot.acl.ActionPermissions)
+        for action in (await session.execute(stmt)).scalars():
+            acls[action.acl].add(action.name)
+            seen.add(action.name)
     output = "\n".join(
         format("- {} require the {!i} ACL", ", ".join(format("{!i}", action) for action in actions), acl)
             for acl, actions in acls.items())
@@ -246,19 +266,19 @@ async def acl_actions(ctx: Context) -> None:
 async def acl_action(ctx: Context, action: str, acl: Optional[str]) -> None:
     """Restrict the use of the given action to the given ACL."""
     channel = cast(MessageableChannel, ctx.channel)
-    old_acl = bot.acl.conf["action", action]
+    old_acl = bot.acl.actions.get(action)
     if evaluate_acl_meta(old_acl, ctx.author, channel) != EvalResult.TRUE:
-        if (meta := bot.acl.conf["meta", old_acl] if old_acl is not None else None) is None:
+        if (meta := bot.acl.acls[old_acl].meta if old_acl is not None else None) is None:
             msg = "You must match the `acl_override` action to edit this action"
         else:
             msg = format("You do not match the meta-ACL {!i} of the previous ACL {!i}", meta, old_acl)
         raise UserError(msg)
 
-    if acl is not None and bot.acl.conf["acl", acl] is None:
+    if acl is not None and acl not in bot.acl.acls:
         raise UserError(format("No such ACL: {!i}", acl))
 
     if evaluate_acl_meta(acl, ctx.author, channel) != EvalResult.TRUE:
-        if (meta := bot.acl.conf["meta", acl] if acl is not None else None) is None:
+        if (meta := bot.acl.acls[acl].meta if acl is not None else None) is None:
             reason = "the new ACL has no meta and you do not match the `acl_override` action"
         else:
             reason = format("you do not match the meta-ACL {!i} of the new ACL", meta)
@@ -267,8 +287,19 @@ async def acl_action(ctx: Context, action: str, acl: Optional[str]) -> None:
         if await get_reaction(prompt, ctx.author, {"\u274C": False, "\u2705": True}, timeout=60) != True:
             return
 
-    bot.acl.conf["action", action] = acl
-    await bot.acl.conf
+    async with AsyncSession(util.db.engine) as session:
+        if obj := await session.get(ActionPermissions, action):
+            if acl is not None:
+                obj.acl = acl
+            else:
+                await session.delete(obj)
+        elif acl is not None:
+            session.add(bot.acl.ActionPermissions(name=action, acl=acl))
+        await session.commit()
+        if acl is not None:
+            bot.acl.actions[action] = acl
+        else:
+            del bot.acl.actions[action]
 
     await ctx.send("\u2705")
 
@@ -277,31 +308,33 @@ async def acl_action(ctx: Context, action: str, acl: Optional[str]) -> None:
 async def acl_metas(ctx: Context) -> None:
     """List meta-ACLs for ACLs."""
     acls: Dict[str, Set[str]] = defaultdict(set)
-    for ty, name in bot.acl.conf:
-        if ty == "meta":
-            if (acl := bot.acl.conf["meta", name]) is not None:
-                acls[acl].add(name)
+    async with AsyncSession(util.db.engine) as session:
+        stmt = select(bot.acl.ACL)
+        for acl in (await session.execute(stmt)).scalars():
+            if acl.meta is not None:
+                acls[acl.meta].add(acl.name)
     output = "\n".join(
         format("- {} require the {!i} ACL to be edited", ", ".join(format("{!i}", acl) for acl in acls), meta)
             for meta, acls in acls.items())
     await ctx.send(output or "No meta-ACLs assigned")
-
 
 @acl_command.command("meta")
 @privileged
 async def acl_meta(ctx: Context, acl: str, meta: Optional[str]) -> None:
     """Restrict editing of the given ACL (and its associated commands and actions) to the given meta-ACL."""
     channel = cast(MessageableChannel, ctx.channel)
+
+    if acl not in bot.acl.acls:
+        raise UserError(format("No such ACL: {!i}", acl))
+
     if evaluate_acl_meta(acl, ctx.author, channel) != EvalResult.TRUE:
-        if (old_meta := bot.acl.conf["meta", acl]) is None:
+        if (old_meta := bot.acl.acls[acl].meta) is None:
             msg = "You must match the `acl_override` action to edit this ACL"
         else:
             msg = format("You do not match the previous meta-ACL {!i}", old_meta)
         raise UserError(msg)
 
-    if bot.acl.conf["acl", acl] is None:
-        raise UserError(format("No such ACL: {!i}", acl))
-    if meta is not None and bot.acl.conf["acl", meta] is None:
+    if meta is not None and meta not in bot.acl.acls:
         raise UserError(format("No such ACL: {!i}", meta))
 
     if max(evaluate_acl(meta, ctx.author, channel), acl_override.evaluate(ctx.author, channel)) != EvalResult.TRUE:
@@ -314,8 +347,12 @@ async def acl_meta(ctx: Context, acl: str, meta: Optional[str]) -> None:
         if await get_reaction(prompt, ctx.author, {"\u274C": False, "\u2705": True}, timeout=60) != True:
             return
 
-    bot.acl.conf["meta", acl] = meta
-    await bot.acl.conf
+    async with AsyncSession(util.db.engine, expire_on_commit=False) as session:
+        obj = await session.get(bot.acl.ACL, acl)
+        assert obj
+        obj.meta = meta
+        await session.commit()
+        bot.acl.acls[acl] = obj
 
     await ctx.send("\u2705")
 

@@ -32,6 +32,10 @@ Commands:
     - `config <namespace> <key>` -- display the value associated to the specified key.
     - `config <namespace> <key> <value>` -- set a value for the specified key.
     - `config --delete <namespace> <key>` -- delete the specified key.
+- `config commands prefix "<prefix>"` -- set the prefix for the bot's "ordinary" commands.
+- `config autoload` -- list plugins that are to be auto-loaded on bot startup. Note that loading a plugin doesn't put it on the auto-load list, and adding a plugin to the auto-load list doesn't load it immediately.
+- `config autoload add <plugin> <order>` -- add a plugin to the auto-load list. The higher the order the later the plugin gets loaded.
+- `config autoload remove <plugin>` -- remove a plugin from the auto-load list.
 - ``sql ```query``` `` -- execute arbitrary SQL on the database. The queries must be wrapped in code blocks or inlines. Queries that result in changes always prompt for confirmation.
 - `acl` -- edit Access Control Lists: permission settings for commands and other miscellaneous actions. An ACL is a formula involving users, roles, channels, categories, and boolean connectives. A command or an action can be mapped to an ACL, which will restrict who can use the command/action and where.
     - `acl list` -- list ACL formulas.
@@ -252,7 +256,7 @@ Log member and message updates. Member joins, leaves, nickname and username chan
 
 Config:
 - ``config plugins.log temp_channel <channel id>`` -- the "temporary" channel.
-- ``config plugins.log pemr_channel <channel id>`` -- the "permanent" channel.
+- ``config plugins.log perm_channel <channel id>`` -- the "permanent" channel.
 - ``config plugins.log keep <interval>`` -- how long (in seconds) to keep edits/deletes for.
 - ``config plugins.log interval <interval>`` -- how often (in seconds) to clean up the "temporary" channel.
 - ``config plugins.log file_path `/path/to/attachments/` `` -- where to save message attachments.
@@ -291,7 +295,9 @@ Commands:
 Ensure that certain roles are mutually exclusive, e.g. a mute role must exclude any roles that enable sending messages.
 
 Config:
-- ``config plugins.roleoverride <roleA> `[<roleB>, ...]` `` -- whenever roleA is added, roleB will be removed.
+- `config roleoverride` -- list role overrides.
+- `config roleoverride add <retained role> <excluded role>` -- add a role override such that whenever you have both of the roles, the excluded role is removed.
+- `config roleoverride remove <retained role> <excluded role>` -- remove a role override.
 
 ### `bulk_perms`
 
@@ -337,12 +343,6 @@ Config:
 ### `whois`
 
 A `/whois <user>` slash-command for locating users and printing useful information about them.
-
-### Miscellaneous Configuration
-- `config commands prefix "<prefix>"` -- set the prefix for the bot's "ordinary" commands.
-- `config autoload` -- list plugins that are to be auto-loaded on bot startup. Note that loading a plugin doesn't put it on the auto-load list, and adding a plugin to the auto-load list doesn't load it immediately.
-- `config autoload add <plugin> <order>` -- add a plugin to the auto-load list. The higher the order the later the plugin gets loaded.
-- `config autoload remove <plugin>` -- remove a plugin from the auto-load list.
 
 ## Running
 

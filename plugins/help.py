@@ -22,7 +22,7 @@ class HelpCommand(discord.ext.commands.HelpCommand):
                 allowed = True
                 for check in cmd.checks:
                     if isinstance(check, ACLCheck):
-                        acl = bot.acl.conf["command", cmd.qualified_name]
+                        acl = bot.acl.commands.get(cmd.qualified_name)
                         if evaluate_acl(acl, self.context.author, None) == EvalResult.FALSE:
                             allowed = False
                             break
@@ -50,7 +50,7 @@ class HelpCommand(discord.ext.commands.HelpCommand):
         privnote = ""
         for check in command.checks:
             if isinstance(check, ACLCheck):
-                acl = bot.acl.conf["command", command.qualified_name]
+                acl = bot.acl.commands.get(command.qualified_name)
                 if evaluate_acl(acl, self.context.author, None) == EvalResult.FALSE:
                     privnote = "\nYou are not allowed to use this command."
                     break
@@ -88,7 +88,7 @@ class HelpCommand(discord.ext.commands.HelpCommand):
         privnote = ""
         for check in group.checks:
             if isinstance(check, ACLCheck):
-                acl = bot.acl.conf["command", group.qualified_name]
+                acl = bot.acl.commands.get(group.qualified_name)
                 if evaluate_acl(acl, self.context.author, None) == EvalResult.FALSE:
                     privnote = "\nYou are not allowed to use this command."
                     break

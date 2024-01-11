@@ -35,7 +35,7 @@ async def init() -> None:
 
     async with sessionmaker() as session:
         conf = await util.db.kv.load(__name__)
-        if isinstance(guild_id := conf.guild_id, int):
+        if isinstance(guild_id := conf.guild, int):
             if isinstance(vanity := conf.vanity, str):
                 session.add(GuildConfig(guild_id=guild_id, vanity=vanity))
                 conf.guild_id = None
