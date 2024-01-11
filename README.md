@@ -81,7 +81,9 @@ Commands:
 - `update [name]` -- update the specified repository (by default the one in the current directory).
 
 Config:
-- ``config plugins.update <name> `/path/to/repo/` `` -- directory for the specified repository.
+- `config update` -- list repositories.
+- `config update add <name> </path/to/repo>` -- add a repository. The specified path will be used as the CWD for `git` operations.
+- `config update remove <name>` -- remove a repository.
 
 ### `help`
 

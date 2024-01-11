@@ -1,24 +1,45 @@
 import asyncio
 import asyncio.subprocess
-from typing import Optional, Protocol, cast
+from typing import TYPE_CHECKING, Optional
 
-from discord.ext.commands import command
+from discord.ext.commands import command, group
+from sqlalchemy import TEXT, select
+from sqlalchemy.ext.asyncio import async_sessionmaker
+import sqlalchemy.orm
+from sqlalchemy.orm import Mapped, mapped_column
 
 from bot.acl import privileged
 from bot.commands import Context, cleanup, plugin_command
+from bot.config import plugin_config_command
 import plugins
 import util.db.kv
-from util.discord import CodeItem, Typing, chunk_messages
+from util.discord import CodeItem, Typing, chunk_messages, format
 
-class UpdateConf(Protocol):
-    def __getitem__(self, key: str) -> Optional[str]: ...
+registry = sqlalchemy.orm.registry()
+sessionmaker = async_sessionmaker(util.db.engine)
 
-conf: UpdateConf
+@registry.mapped
+class GitDirectory:
+    __tablename__ = "update_git_directories"
+
+    name: Mapped[str] = mapped_column(TEXT, primary_key=True)
+    directory: Mapped[str] = mapped_column(TEXT, nullable=False)
+
+    if TYPE_CHECKING:
+        def __init__(self, *, name: str, directory: str) -> None: ...
 
 @plugins.init
 async def init() -> None:
-    global conf
-    conf = cast(UpdateConf, await util.db.kv.load(__name__))
+    await util.db.init(util.db.get_ddl(registry.metadata.create_all))
+
+    async with sessionmaker() as session:
+        conf = await util.db.kv.load(__name__)
+        for key in [key for key, in conf]:
+            session.add(GitDirectory(name=key, directory=str(conf[key])))
+            conf[key] = None
+        await session.commit()
+        await conf
+
 
 @plugin_command
 @cleanup
@@ -26,7 +47,12 @@ async def init() -> None:
 @privileged
 async def update_command(ctx: Context, bot_directory: Optional[str]) -> None:
     """Pull changes from git remote."""
-    cwd = conf[bot_directory] if bot_directory is not None else None
+    async with sessionmaker() as session:
+        cwd = None
+        if bot_directory is not None:
+            if conf := await session.get(GitDirectory, bot_directory):
+                cwd = conf.directory
+
     git_pull = await asyncio.create_subprocess_exec("git", "pull", "--ff-only", "--recurse-submodules", cwd=cwd,
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
 
@@ -39,3 +65,26 @@ async def update_command(ctx: Context, bot_directory: Optional[str]) -> None:
 
     for content, files in chunk_messages((CodeItem(output, filename="update.txt"),)):
         await ctx.send(content, files=files)
+
+@plugin_config_command
+@group("update", invoke_without_command=True)
+async def config(ctx: Context) -> None:
+    async with sessionmaker() as session:
+        stmt = select(GitDirectory)
+        await ctx.send("\n".join(format("- {!i}: {!i}", conf.name, conf.directory)
+            for conf in (await session.execute(stmt)).scalars())
+            or "No repositories registered")
+
+@config.command("add")
+async def config_add(ctx: Context, name: str, directory: str) -> None:
+    async with sessionmaker() as session:
+        session.add(GitDirectory(name=name, directory=directory))
+        await session.commit()
+        await ctx.send("\u2705")
+
+@config.command("remove")
+async def config_remove(ctx: Context, name: str) -> None:
+    async with sessionmaker() as session:
+        await session.delete(await session.get(GitDirectory, name))
+        await session.commit()
+        await ctx.send("\u2705")
