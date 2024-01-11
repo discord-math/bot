@@ -63,8 +63,11 @@ def unsolved_embed(reason: str) -> Embed:
             bot.commands.prefix + "solved")
         ).set_author(name="Unsolved", icon_url=ping_url)
 
-def limit_embed() -> Embed:
-    return Embed(color=0xB37C42, description="Please don't occupy multiple help channels.")
+def limit_embed(user_id: int = 0) -> Embed:
+    extra_str = ""
+    if user_id:
+        extra_str = " You occupy ".join(client.get_channel(id) for id in conf.channels if conf[id, "owner"] == user_id and conf[id, "state"] in ("used", "pending",))
+    return Embed(color=0xB37C42, description="Please don't occupy multiple help channels." + extra_str)
 
 def prompt_message(mention: int) -> str:
     return format("{!m} Has your question been resolved?", mention)
@@ -113,7 +116,6 @@ channel_locks: Dict[int, asyncio.Lock] = defaultdict(asyncio.Lock)
 @task(name="Clopen scheduler task", exc_backoff_base=10)
 async def scheduler_task() -> None:
     await client.wait_until_ready()
-
     if sum(conf[id, "state"] == "available" for id in conf.channels) < conf.min_avail:
         for id in conf.channels:
             if conf[id, "state"] == "hidden":
@@ -247,7 +249,7 @@ async def enact_occupied(channel: TextChannel, owner: Union[User, Member], *,
     except discord.Forbidden:
         pass
     if reached_limit:
-        await channel.send(embed=limit_embed(), allowed_mentions=AllowedMentions.none())
+        await channel.send(embed=limit_embed(owner.id), allowed_mentions=AllowedMentions.none())
 
 async def keep_occupied(id: int, msg_author_id: int) -> None:
     logger.debug("Bumping {} by {}".format(id, msg_author_id))
