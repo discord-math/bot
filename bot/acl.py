@@ -138,15 +138,21 @@ async def init() -> None:
         conf = await util.db.kv.load(__name__)
         for kind, name in conf:
             if kind == "acl":
-                session.add(ACL(name=name, data=ACL.parse_data(cast(ACLData, conf["acl", name])).serialize(),
-                    meta=cast(Optional[str], conf["meta", name])))
+                session.add(ACL(name=name, data=ACL.parse_data(cast(ACLData, conf["acl", name])).serialize()))
             elif kind == "command":
                 session.add(CommandPermissions(name=name, acl=cast(str, conf["command", name])))
             elif kind == "action":
                 session.add(ActionPermissions(name=name, acl=cast(str, conf["action", name])))
         await session.commit()
+        for kind, name in conf:
+            if kind == "meta":
+                acl = await session.get(ACL, name)
+                assert acl
+                acl.meta = cast(str, conf["meta", name])
+        await session.commit()
         for kind, name in [(kind, name) for kind, name in conf]:
             conf[kind, name] = None
+        await conf
 
         stmt = select(ACL)
         acls = {acl.name: acl for acl in (await session.execute(stmt)).scalars()}
