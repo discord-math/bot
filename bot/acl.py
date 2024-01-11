@@ -21,8 +21,8 @@ from collections import defaultdict
 import enum
 from functools import total_ordering
 import logging
-from typing import (Any, Awaitable, Callable, Dict, Iterator, List, Literal, Optional, Protocol, Set, Tuple, TypeVar, TypedDict,
-    Union, cast, overload)
+from typing import (Any, Awaitable, Callable, Dict, Iterator, List, Literal, Optional, Protocol, Set, Tuple, TypedDict,
+    TypeVar, Union, cast, overload)
 
 from discord import DMChannel, GroupChannel, Interaction, Member, Thread, User
 from discord.abc import GuildChannel

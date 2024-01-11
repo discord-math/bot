@@ -20,9 +20,6 @@ Commands:
 - `reloadmod <module>` -- reload a module (that's not a plugin).
 - `unsafereload <plugin>` -- do an "unsafe" in-place reload.
 - `unsafeunload <plugin>` -- unload a single plugin.
-- `autoload` -- list plugins that are to be auto-loaded on bot startup. Note that loading a plugin doesn't put it on the auto-load list, and adding a plugin to the auto-load list doesn't load it immediately.
-    - `autoload add <plugin>` -- add a plugin to the auto-load list.
-    - `autoload remove <plugin>` -- remove a plugin from the auto-load list.
 
 ### `db_manager`
 
@@ -340,6 +337,9 @@ A `/whois <user>` slash-command for locating users and printing useful informati
 
 ### Miscellaneous Configuration
 - `config commands prefix "<prefix>"` -- set the prefix for the bot's "ordinary" commands.
+- `config autoload` -- list plugins that are to be auto-loaded on bot startup. Note that loading a plugin doesn't put it on the auto-load list, and adding a plugin to the auto-load list doesn't load it immediately.
+- `config autoload add <plugin> <order>` -- add a plugin to the auto-load list. The higher the order the later the plugin gets loaded.
+- `config autoload remove <plugin>` -- remove a plugin from the auto-load list.
 
 ## Running
 

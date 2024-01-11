@@ -22,7 +22,6 @@ import plugins
 import util.db.kv
 from util.discord import format
 
-
 registry = sqlalchemy.orm.registry()
 
 @registry.mapped
