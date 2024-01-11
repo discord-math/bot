@@ -49,7 +49,7 @@ Commands:
 Output bot logs to a channel on Discord.
 
 Config:
-- `config plugins.discord_log channel <channel id>` -- ID of the channel to log to.
+- `config syslog channel ["None"|channel]` -- configure the channel where the bot logs to.
 
 ### `eval`
 
@@ -170,11 +170,13 @@ Commands:
 - `phish remove <url or domain>` -- locally mark a domain as safe.
 
 Config:
-- ``config plugins.phish api `"https://.../"` `` -- the API used to obtain the list of phishing domains.
-- ``config plugins.phish identity `"<identity>"` `` -- the identity presented to the API.
-- ``config plugins.phish resolve_domains `["domain.com", ...]` `` -- the list of domains for which we want to resolve redirects (URL shorteners).
-- ``config plugins.phish submit_url `"https://.../"` `` -- the API used to submit new domains.
-- ``config plugins.phish submit_token `"<token>"` `` -- the authorization header for the submission API.
+- `config phish api_url ["None"|https://.../]` -- configure the API used to obtain the list of phishing domains.
+- `config phish identity ["None"|identity]` -- configure the identity presented to the API.
+- `config phish submit_url ["None"|https://.../]` -- configure the API used to submit new domains.
+- `config phish submit_token ["None"|token]` -- configure the authorization header for the submission API.
+- `config phish shortener` -- list domains for which we want to resolve redirects (URL shorteners).
+- `config phish shortener add <domain>` -- add shortener.
+- `config phish shortener remove <domain>` -- remove shortener.
 
 ### `clopen`
 
@@ -260,8 +262,9 @@ Config:
 If for any reason the server loses a vanity URL, this plugins attempts to restore it whenever possible.
 
 Config:
-- ``config plugins.keepvanity guild <guild id>`` -- the guild.
-- ``config plugins.keepvanity vanity `"vanity"` `` -- the vanity code, without `discord.gg` and without the `/`.
+- `config keepvanity` -- list managed servers.
+- `config keepvanity add <server> <vanity>` -- add a server. The vanity code must be provided without `discord.gg` and without the `/`.
+- `config keepvanity remove <server>` -- remove a server.
 
 ### `pins`
 
@@ -345,7 +348,7 @@ A `/whois <user>` slash-command for locating users and printing useful informati
 
 The bot requires:
  - Python 3.9+
- - PostgreSQL 10+
+ - PostgreSQL 12+
  - Libraries listed in `requirements.txt`
 
 You will need to create a static config file called `bot.conf` in the working

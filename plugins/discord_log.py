@@ -3,19 +3,35 @@ import logging
 import sys
 from threading import Lock
 from types import FrameType
-from typing import Iterator, List, Optional, Protocol, cast
+from typing import TYPE_CHECKING, Iterator, List, Literal, Optional, Union, cast
 
 from discord import Client
+from discord.ext.commands import command
+from sqlalchemy import BigInteger, Computed
+from sqlalchemy.ext.asyncio import async_sessionmaker
+import sqlalchemy.orm
+from sqlalchemy.orm import Mapped, mapped_column
 
 from bot.client import client
+from bot.commands import Context
+from bot.config import plugin_config_command
 import plugins
 import util.db.kv
-from util.discord import CodeItem, chunk_messages
+from util.discord import CodeItem, PartialTextChannelConverter, chunk_messages, format
 
-class LoggingConf(Protocol):
-    channel: Optional[str]
+registry = sqlalchemy.orm.registry()
+sessionmaker = async_sessionmaker(util.db.engine, expire_on_commit=False)
 
-conf: LoggingConf
+@registry.mapped
+class GlobalConfig:
+    __tablename__ = "syslog_config"
+    id: Mapped[int] = mapped_column(BigInteger, Computed("0"), primary_key=True)
+    channel_id: Mapped[Optional[int]] = mapped_column(BigInteger)
+
+    if TYPE_CHECKING:
+        def __init__(self, id: int = ..., channel_id: Optional[int] = ...) -> None: ...
+
+conf: GlobalConfig
 logger: logging.Logger = logging.getLogger(__name__)
 
 class DiscordHandler(logging.Handler):
@@ -54,14 +70,10 @@ class DiscordHandler(logging.Handler):
         except:
             return
 
-        if conf.channel is None:
-            return
-        try:
-            chan_id = int(conf.channel)
-        except ValueError:
+        if client.is_closed():
             return
 
-        if client.is_closed():
+        if conf.channel_id is None:
             return
 
         text = self.format(record)
@@ -81,12 +93,19 @@ class DiscordHandler(logging.Handler):
                 self.queue.append(text)
             else:
                 self.queue.append(text)
-                asyncio.create_task(self.log_discord(chan_id, client), name="Logging to Discord")
+                asyncio.create_task(self.log_discord(conf.channel_id, client), name="Logging to Discord")
 
 @plugins.init
 async def init() -> None:
     global conf
-    conf = cast(LoggingConf, await util.db.kv.load(__name__))
+    await util.db.init(util.db.get_ddl(registry.metadata.create_all))
+    async with sessionmaker() as session:
+        c = await session.get(GlobalConfig, 0)
+        if not c:
+            c = GlobalConfig(channel_id=cast(Optional[int], (await util.db.kv.load(__name__)).channel))
+            session.add(c)
+            await session.commit()
+        conf = c
 
     handler: logging.Handler = DiscordHandler(logging.ERROR)
     handler.setFormatter(logging.Formatter("%(name)s %(levelname)s: %(message)s"))
@@ -95,3 +114,18 @@ async def init() -> None:
     def finalizer() -> None:
         logging.getLogger().removeHandler(handler)
     plugins.finalizer(finalizer)
+
+@plugin_config_command
+@command("syslog")
+async def config(ctx: Context, channel: Optional[Union[Literal["None"], PartialTextChannelConverter]]) -> None:
+    global conf
+    async with sessionmaker() as session:
+        c = await session.get(GlobalConfig, 0)
+        assert c
+        if channel is None:
+            await ctx.send("None" if c.channel_id is None else format("{!c}", conf.channel_id))
+        else:
+            c.channel_id = None if channel == "None" else channel.id
+            await session.commit()
+            conf = c
+            await ctx.send("\u2705")

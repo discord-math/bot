@@ -238,8 +238,8 @@ class GuildContext(Context):
 
 @plugin_config_command
 @group("modmail")
-async def config(ctx: GuildContext, guild: PartialGuildConverter) -> None:
-    ctx.guild_id = guild.id
+async def config(ctx: GuildContext, server: PartialGuildConverter) -> None:
+    ctx.guild_id = server.id
 
 @config.command("new")
 async def config_new(ctx: GuildContext, token: str, channel: PartialChannelConverter, role: PartialRoleConverter,
