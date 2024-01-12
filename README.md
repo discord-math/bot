@@ -354,29 +354,18 @@ The bot requires:
 You will need to create a static config file called `bot.conf` in the working
 directory of the bot, see `bot.conf.example`.
 
-Furthermore you will need to do a little bit of initial configuration so that
-the bot can respond to your commands. From the directory containing `bot.conf`
-run the following (adjust `PYTHONPATH` so that the necessary modules are in
-scope):
+Next you will need to do a little bit of initial configuration so that the bot can respond to your commands. From the directory containing `bot.conf` run the following (adjust `PYTHONPATH` so that the necessary module is in scope):
 ```sh
-python -m util.db.kv bot.commands prefix '"."'
-python -m util.db.kv bot.autoload plugins.bot_manager 'true'
-# Create an admin role and give it ultimate permissions
-python -m util.db.kv bot.acl action,acl_override '"admin"'
-# Add yourself to the admin role, substitute your own discord user id
-python -m util.db.kv bot.acl acl,admin '{"user": 207092805644845057}'
+python -m util.setup
 ```
-Now you can run the bot by executing `main.py`. You can continue the configuration over Discord (you may find it useful to load some of the administration modules). For example:
+This will prompt you for your Discord user ID, and the command prefix.
+
+Now you can run the bot by executing `main.py`. You can continue the configuration over Discord, for example:
 ```
-.load db_manager
-.config plugins.discord_log channel 268882890576756737
 .load discord_log
-.load eval
-.autoload add db_manager
-.autoload add discord_log
-.autoload add eval
+.config syslog 268882890576756737
+.config autoload add discord_log 0
 ```
-The `python -m util.db.kv` shell command is analogous to the `.config` Discord command.
 
 If you'd like to use your own plugins from a different repository, say from
 `$DIR`, you can put it on the `PYTHONPATH`, and the bot will look for plugins in

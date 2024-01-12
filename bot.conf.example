@@ -1,6 +1,7 @@
 # A config with values that are very unlikely to change during execution
 [DB]
 # Database connection string
+# If you have PostgreSQL running locally, most likely you want just the dbname= parameter
 dsn = dbname=db host=localhost port=12345
 # Directory with migration files
 migrations = migrations/
