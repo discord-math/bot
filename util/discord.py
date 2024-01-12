@@ -591,7 +591,7 @@ def partial_from_reply(pmsg: Optional[PartialMessage], ctx: Context[Bot]) -> Par
         return pmsg
     if (ref := ctx.message.reference) is not None:
         if isinstance(msg := ref.resolved, Message):
-            return partial_message(msg.channel, msg.id)
+            return PartialMessage(channel=msg.channel, id=msg.id)
         if (channel := client.get_channel(ref.channel_id)) is None:
             raise InvocationError(format("Could not find channel by ID {}", ref.channel_id))
         if ref.message_id is None:
