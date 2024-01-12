@@ -99,7 +99,7 @@ class ACL:
         return ACL.parse_data(self.data)
 
     if TYPE_CHECKING:
-        def __init__(self, name: str, data: ACLData, meta: Optional[str] = ...) -> None: ...
+        def __init__(self, *, name: str, data: ACLData, meta: Optional[str] = ...) -> None: ...
 
 @registry.mapped
 class CommandPermissions:
@@ -110,7 +110,7 @@ class CommandPermissions:
     acl: Mapped[str] = mapped_column(TEXT, ForeignKey(ACL.name), nullable=False)
 
     if TYPE_CHECKING:
-        def __init__(self, name: str, acl: str) -> None: ...
+        def __init__(self, *, name: str, acl: str) -> None: ...
 
 @registry.mapped
 class ActionPermissions:
@@ -121,7 +121,7 @@ class ActionPermissions:
     acl: Mapped[str] = mapped_column(TEXT, ForeignKey(ACL.name), nullable=False)
 
     if TYPE_CHECKING:
-        def __init__(self, name: str, acl: str) -> None: ...
+        def __init__(self, *, name: str, acl: str) -> None: ...
 
 acls: Dict[str, ACL]
 commands: Dict[str, str]

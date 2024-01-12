@@ -44,7 +44,7 @@ class Factoid:
     flags: Mapped[Optional[Flags]] = mapped_column(JSONB)
 
     if TYPE_CHECKING:
-        def __init__(self, /, author_id: int, created_at: datetime, uses: int, id: Optional[int] = ...,
+        def __init__(self, *, author_id: int, created_at: datetime, uses: int, id: Optional[int] = ...,
             message_text: Optional[str] = ..., embed_data: Optional[Mapping[str, object]] = ...,
             used_at: Optional[datetime] = ..., flags: Optional[Mapping[str, object]] = ...) -> None: ...
 

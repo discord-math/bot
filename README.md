@@ -287,8 +287,8 @@ Commands:
 - `remind <interval> <text>` -- synonym for the above.
 - `reminder` -- list active reminders.
 - `reminders` -- synonym for the above.
-- `reminder remove <index>` -- remove a reminder by index.
-- `reminders remove <index>` -- synonym for the above.
+- `reminder remove <id>` -- remove a reminder by ID.
+- `reminders remove <id>` -- synonym for the above.
 
 ### `roleoverride`
 

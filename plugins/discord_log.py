@@ -29,7 +29,7 @@ class GlobalConfig:
     channel_id: Mapped[Optional[int]] = mapped_column(BigInteger)
 
     if TYPE_CHECKING:
-        def __init__(self, id: int = ..., channel_id: Optional[int] = ...) -> None: ...
+        def __init__(self, *, id: int = ..., channel_id: Optional[int] = ...) -> None: ...
 
 conf: GlobalConfig
 logger: logging.Logger = logging.getLogger(__name__)

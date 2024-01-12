@@ -36,7 +36,7 @@ class GlobalConfig:
     submit_token: Mapped[Optional[str]] = mapped_column(TEXT)
 
     if TYPE_CHECKING:
-        def __init__(self, id: int = ..., api_url: Optional[str] = ..., identity: Optional[str] = ...,
+        def __init__(self, *, id: int = ..., api_url: Optional[str] = ..., identity: Optional[str] = ...,
             submit_url: Optional[str] = ..., submit_token: Optional[str] = ...) -> None: ...
 
 @registry.mapped
@@ -47,7 +47,7 @@ class ResolvedDomain:
     domain: Mapped[str] = mapped_column(TEXT, primary_key=True)
 
     if TYPE_CHECKING:
-        def __init__(self, domain: str) -> None: ...
+        def __init__(self, *, domain: str) -> None: ...
 
 @registry.mapped
 class BlockedDomain:
@@ -57,7 +57,7 @@ class BlockedDomain:
     domain: Mapped[str] = mapped_column(TEXT, primary_key=True)
 
     if TYPE_CHECKING:
-        def __init__(self, domain: str) -> None: ...
+        def __init__(self, *, domain: str) -> None: ...
 
 @registry.mapped
 class AllowedDomain:

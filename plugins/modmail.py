@@ -7,12 +7,13 @@ import discord
 from discord import (Activity, ActivityType, AllowedMentions, Client, DMChannel, Intents, Message, MessageReference,
     TextChannel, Thread)
 from discord.ext.commands import group
-from sqlalchemy import TEXT, TIMESTAMP, BigInteger, func, select, update
+from sqlalchemy import TEXT, TIMESTAMP, BigInteger, select, update
 from sqlalchemy.dialects.postgresql import INTERVAL
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 import sqlalchemy.orm
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.schema import CreateSchema
+from sqlalchemy.sql.functions import current_timestamp
 
 import bot.client
 from bot.cogs import Cog, cog
@@ -49,7 +50,7 @@ class ModmailThread:
     last_used: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False)
 
     if TYPE_CHECKING:
-        def __init__(self, *, user_id: int, thread_first_message_id: int, last_used: int) -> None: ...
+        def __init__(self, *, user_id: int, thread_first_message_id: int, last_used: datetime) -> None: ...
 
 @registry.mapped
 class GuildConfig:
@@ -91,8 +92,8 @@ async def update_thread(conf: GuildConfig, user_id: int) -> Optional[int]:
     async with sessionmaker() as session:
         stmt = (update(ModmailThread).returning(ModmailThread.thread_first_message_id)
             .where(ModmailThread.user_id == user_id,
-                ModmailThread.last_used > func.current_timestamp() - conf.thread_expiry)
-            .values(last_used=func.current_timestamp())
+                ModmailThread.last_used > current_timestamp() - conf.thread_expiry)
+            .values(last_used=current_timestamp())
             .execution_options(synchronize_session=False))
         thread = (await session.execute(stmt)).scalars().first()
         await session.commit()
@@ -101,7 +102,7 @@ async def update_thread(conf: GuildConfig, user_id: int) -> Optional[int]:
 async def create_thread(user_id: int, msg_id: int) -> None:
     async with sessionmaker() as session:
         session.add(ModmailThread(user_id=user_id, thread_first_message_id=msg_id,
-            last_used=func.current_timestamp())) # type: ignore
+            last_used=current_timestamp())) # type: ignore
         await session.commit()
 
 class ModMailClient(Client):

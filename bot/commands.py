@@ -31,7 +31,7 @@ class GlobalConfig:
     prefix: Mapped[str] = mapped_column(TEXT, nullable=False)
 
     if TYPE_CHECKING:
-        def __init__(self, prefix: str, id: int = ...) -> None: ...
+        def __init__(self, *, prefix: str, id: int = ...) -> None: ...
 
 logger: logging.Logger = logging.getLogger(__name__)
 prefix: str
