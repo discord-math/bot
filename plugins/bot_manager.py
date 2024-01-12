@@ -11,8 +11,10 @@ import plugins
 from util.discord import CodeItem, Typing, chunk_messages, format
 import util.restart
 
+
 manager = plugins.PluginManager.of(__name__)
 assert manager
+
 
 @plugin_command
 @command("restart")
@@ -22,6 +24,7 @@ async def restart_command(ctx: Context) -> None:
     await ctx.send("Restarting...")
     util.restart.restart()
 
+
 class PluginConverter(str):
     @classmethod
     async def convert(cls, ctx: Context, arg: str) -> str:
@@ -29,12 +32,15 @@ class PluginConverter(str):
             arg = "plugins." + arg
         return arg
 
+
 async def reply_exception(ctx: Context) -> None:
     _, exc, tb = sys.exc_info()
-    for content, files in chunk_messages((
-        CodeItem("".join(traceback.format_exception(None, exc, tb)), language="py", filename="error.txt"),)):
+    for content, files in chunk_messages(
+        (CodeItem("".join(traceback.format_exception(None, exc, tb)), language="py", filename="error.txt"),)
+    ):
         await ctx.send(content, files=files)
     del tb
+
 
 @plugin_command
 @cleanup
@@ -50,6 +56,7 @@ async def load_command(ctx: Context, plugin: PluginConverter) -> None:
     else:
         await ctx.send("\u2705")
 
+
 @plugin_command
 @cleanup
 @command("reload")
@@ -63,6 +70,7 @@ async def reload_command(ctx: Context, plugin: PluginConverter) -> None:
         await reply_exception(ctx)
     else:
         await ctx.send("\u2705")
+
 
 @plugin_command
 @cleanup
@@ -78,6 +86,7 @@ async def unsafe_reload_command(ctx: Context, plugin: PluginConverter) -> None:
     else:
         await ctx.send("\u2705")
 
+
 @plugin_command
 @cleanup
 @command("unload")
@@ -91,6 +100,7 @@ async def unload_command(ctx: Context, plugin: PluginConverter) -> None:
         await reply_exception(ctx)
     else:
         await ctx.send("\u2705")
+
 
 @plugin_command
 @cleanup
@@ -106,6 +116,7 @@ async def unsafe_unload_command(ctx: Context, plugin: PluginConverter) -> None:
     else:
         await ctx.send("\u2705")
 
+
 @plugin_command
 @cleanup
 @command("reloadmod")
@@ -118,6 +129,7 @@ async def reloadmod_command(ctx: Context, module: str) -> None:
         await reply_exception(ctx)
     else:
         await ctx.send("\u2705")
+
 
 @plugin_command
 @cleanup
@@ -133,5 +145,9 @@ async def plugins_command(ctx: Context) -> None:
             except KeyError:
                 key = "???"
             output[key].append(name)
-    await ctx.send("\n".join(format("- {!i}: {}", key, ", ".join(format("{!i}", name) for name in sorted(plugins)))
-        for key, plugins in output.items()))
+    await ctx.send(
+        "\n".join(
+            format("- {!i}: {}", key, ", ".join(format("{!i}", name) for name in sorted(plugins)))
+            for key, plugins in output.items()
+        )
+    )

@@ -5,7 +5,9 @@ from discord.ext.commands import Cog as Cog, command as command, group as group
 from bot.client import client
 import plugins
 
+
 T = TypeVar("T", bound=Cog)
+
 
 def cog(cls: Type[T]) -> T:
     """Decorator for cog classes that are loaded/unloaded from the bot together with the plugin."""
@@ -15,9 +17,12 @@ def cog(cls: Type[T]) -> T:
 
     async def initialize_cog() -> None:
         await client.add_cog(cog)
+
         async def finalize_cog() -> None:
             await client.remove_cog(cog_name)
+
         plugins.finalizer(finalize_cog)
+
     plugins.init(initialize_cog)
 
     return cog

@@ -3,5 +3,5 @@ aiohttp-session
 asyncpg
 datrie
 PyYAML
-sqlalchemy
+sqlalchemy >= 2
 typing_extensions

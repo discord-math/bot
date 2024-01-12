@@ -16,8 +16,10 @@ import plugins
 import util.db.kv
 from util.discord import PartialGuildConverter, format
 
+
 registry = sqlalchemy.orm.registry()
 sessionmaker = async_sessionmaker(util.db.engine)
+
 
 @registry.mapped
 class GuildConfig:
@@ -27,7 +29,10 @@ class GuildConfig:
     vanity: Mapped[str] = mapped_column(TEXT, nullable=False)
 
     if TYPE_CHECKING:
-        def __init__(self, *, guild_id: int, vanity: str) -> None: ...
+
+        def __init__(self, *, guild_id: int, vanity: str) -> None:
+            ...
+
 
 @plugins.init
 async def init() -> None:
@@ -46,6 +51,7 @@ async def init() -> None:
         for guild in client.guilds:
             await check_guild_vanity(session, guild)
 
+
 async def check_guild_vanity(session: AsyncSession, guild: Guild) -> None:
     if conf := await session.get(GuildConfig, guild.id):
         try:
@@ -57,9 +63,11 @@ async def check_guild_vanity(session: AsyncSession, guild: Guild) -> None:
             pass
         await guild.edit(vanity_code=conf.vanity)
 
+
 @cog
 class KeepVanity(Cog):
     """Restores the guild vanity URL as soon as enough boosts are available"""
+
     @Cog.listener()
     async def on_ready(self) -> None:
         async with sessionmaker() as session:
@@ -75,14 +83,19 @@ class KeepVanity(Cog):
         async with sessionmaker() as session:
             await check_guild_vanity(session, msg.guild)
 
+
 @plugin_config_command
 @group("keepvanity", invoke_without_command=True)
 async def config(ctx: Context) -> None:
     async with sessionmaker() as session:
         stmt = select(GuildConfig)
-        await ctx.send("\n".join(format("- {!c}: {!i}", conf.guild_id, conf.vanity)
-            for conf in (await session.execute(stmt)).scalars())
-            or "No servers registered")
+        await ctx.send(
+            "\n".join(
+                format("- {!c}: {!i}", conf.guild_id, conf.vanity) for conf in (await session.execute(stmt)).scalars()
+            )
+            or "No servers registered"
+        )
+
 
 @config.command("add")
 async def config_add(ctx: Context, server: PartialGuildConverter, vanity: str) -> None:
@@ -90,6 +103,7 @@ async def config_add(ctx: Context, server: PartialGuildConverter, vanity: str) -
         session.add(GuildConfig(guild_id=server.id, vanity=vanity))
         await session.commit()
         await ctx.send("\u2705")
+
 
 @config.command("remove")
 async def config_remove(ctx: Context, server: PartialGuildConverter) -> None:

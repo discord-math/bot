@@ -18,9 +18,20 @@ import plugins
 import plugins.phish
 import plugins.tickets
 import util.db.kv
-from util.discord import (CodeBlock, DurationConverter, Inline, InvocationError, PartialRoleConverter, PlainItem,
-    UserError, chunk_messages, format, retry)
+from util.discord import (
+    CodeBlock,
+    DurationConverter,
+    Inline,
+    InvocationError,
+    PartialRoleConverter,
+    PlainItem,
+    UserError,
+    chunk_messages,
+    format,
+    retry,
+)
 from util.frozen_list import FrozenList
+
 
 class AutomodConf(Awaitable[None], Protocol):
     active: FrozenList[int]
@@ -28,28 +39,46 @@ class AutomodConf(Awaitable[None], Protocol):
     exempt_roles: FrozenList[int]
 
     @overload
-    def __getitem__(self, k: Tuple[int, Literal["keyword"]]) -> Optional[FrozenList[str]]: ...
+    def __getitem__(self, k: Tuple[int, Literal["keyword"]]) -> Optional[FrozenList[str]]:
+        ...
+
     @overload
-    def __getitem__(self, k: Tuple[int, Literal["type"]]) -> Optional[Literal["substring", "word", "regex"]]: ...
+    def __getitem__(self, k: Tuple[int, Literal["type"]]) -> Optional[Literal["substring", "word", "regex"]]:
+        ...
+
     @overload
-    def __getitem__(self, k: Tuple[int, Literal["action"]]
-        ) -> Optional[Literal["delete", "note", "mute", "kick", "ban"]]: ...
+    def __getitem__(
+        self, k: Tuple[int, Literal["action"]]
+    ) -> Optional[Literal["delete", "note", "mute", "kick", "ban"]]:
+        ...
+
     @overload
-    def __getitem__(self, k: Tuple[int, Literal["duration"]]) -> Optional[float]: ...
+    def __getitem__(self, k: Tuple[int, Literal["duration"]]) -> Optional[float]:
+        ...
+
     @overload
-    def __setitem__(self, k: Tuple[int, Literal["keyword"]], v: Optional[FrozenList[str]]) -> None: ...
+    def __setitem__(self, k: Tuple[int, Literal["keyword"]], v: Optional[FrozenList[str]]) -> None:
+        ...
+
     @overload
-    def __setitem__(self, k: Tuple[int, Literal["type"]], v: Optional[Literal["substring", "word", "regex"]]
-        ) -> None: ...
+    def __setitem__(self, k: Tuple[int, Literal["type"]], v: Optional[Literal["substring", "word", "regex"]]) -> None:
+        ...
+
     @overload
-    def __setitem__(self, k: Tuple[int, Literal["action"]],
-        v: Optional[Literal["delete", "note", "mute", "kick", "ban"]]) -> None: ...
+    def __setitem__(
+        self, k: Tuple[int, Literal["action"]], v: Optional[Literal["delete", "note", "mute", "kick", "ban"]]
+    ) -> None:
+        ...
+
     @overload
-    def __setitem__(self, k: Tuple[int, Literal["duration"]], v: Optional[float]) -> None: ...
+    def __setitem__(self, k: Tuple[int, Literal["duration"]], v: Optional[float]) -> None:
+        ...
+
 
 logger = logging.getLogger(__name__)
 
 conf: AutomodConf
+
 
 def to_regex(kind: Literal["substring", "word", "regex"], keyword: str) -> str:
     if kind == "substring":
@@ -59,7 +88,10 @@ def to_regex(kind: Literal["substring", "word", "regex"], keyword: str) -> str:
     else:
         return r"(?:{})".format(keyword)
 
+
 regex: re.Pattern[str]
+
+
 def generate_regex() -> None:
     global regex
     parts = []
@@ -70,6 +102,7 @@ def generate_regex() -> None:
         regex = re.compile("|".join(parts), re.I)
     else:
         regex = re.compile("(?!)")
+
 
 def parse_note(text: Optional[str]) -> Dict[int, int]:
     data = {}
@@ -83,16 +116,19 @@ def parse_note(text: Optional[str]) -> Dict[int, int]:
                     pass
     return data
 
+
 def serialize_note(data: Dict[int, int]) -> str:
     return "Automod:\n" + "\n".join("pattern {} matched {} times".format(index, value) for index, value in data.items())
+
 
 async def do_create_automod_note(target_id: int, index: int) -> None:
     async with plugins.tickets.sessionmaker() as session:
         assert client.user is not None
         notes = await plugins.tickets.find_notes_prefix(session, "Automod:\n", modid=client.user.id, targetid=target_id)
         if len(notes) == 0:
-            await plugins.tickets.create_note(session, serialize_note({index: 1}), modid=client.user.id,
-                targetid=target_id, approved=True)
+            await plugins.tickets.create_note(
+                session, serialize_note({index: 1}), modid=client.user.id, targetid=target_id, approved=True
+            )
         else:
             data = parse_note(notes[-1].comment)
             data[index] = 1 + data.get(index, 0)
@@ -101,10 +137,13 @@ async def do_create_automod_note(target_id: int, index: int) -> None:
             await session.commit()
         await session.commit()
 
+
 def fork_create_automod_note(target_id: int, index: int) -> None:
     asyncio.create_task(do_create_automod_note(target_id, index), name=format("Automod note {!m}", target_id))
 
+
 URL_regex: re.Pattern[str] = re.compile(r"https?://([^/]*)/?\S*", re.I)
+
 
 async def do_delete_message(msg: Message) -> None:
     try:
@@ -114,8 +153,10 @@ async def do_delete_message(msg: Message) -> None:
     except discord.Forbidden:
         logger.error("Could not delete message {}".format(msg.jump_url), exc_info=True)
 
+
 def fork_delete_message(msg: Message) -> None:
     asyncio.create_task(do_delete_message(msg), name="Automod cleanup {}".format(msg.id))
+
 
 async def do_kick_user(guild: Guild, user: Snowflake, reason: str) -> None:
     try:
@@ -125,8 +166,10 @@ async def do_kick_user(guild: Guild, user: Snowflake, reason: str) -> None:
     except discord.Forbidden:
         logger.error(format("Could not kick user {!m} ({})", user, reason), exc_info=True)
 
+
 def fork_kick_user(guild: Guild, user: Snowflake, reason: str) -> None:
     asyncio.create_task(do_kick_user(guild, user, reason), name=format("Automod kick {!m}", user))
+
 
 async def do_ban_user(guild: Guild, user: Snowflake, reason: str) -> None:
     try:
@@ -136,10 +179,12 @@ async def do_ban_user(guild: Guild, user: Snowflake, reason: str) -> None:
     except discord.Forbidden:
         logger.error(format("Could not ban user {!m} ({})", user, reason), exc_info=True)
 
+
 def fork_ban_user(guild: Guild, user: Snowflake, duration: Optional[float], reason: str) -> None:
     if duration is not None:
         reason = "Banned by {}: {} seconds, {}".format(client.user.id if client.user else None, int(duration), reason)
     asyncio.create_task(do_ban_user(guild, user, reason), name=format("Automod ban {!m}", user))
+
 
 async def do_time_out(member: Member, until: datetime, reason: str) -> None:
     try:
@@ -149,9 +194,11 @@ async def do_time_out(member: Member, until: datetime, reason: str) -> None:
     except discord.Forbidden:
         logger.error(format("Could not mute member {!m} ({})", member, reason), exc_info=True)
 
+
 def fork_time_out(member: Member, duration: float, reason: str) -> None:
     until = discord.utils.utcnow() + timedelta(seconds=duration)
     asyncio.create_task(do_time_out(member, until, reason), name=format("Automod mute {!m}", member))
+
 
 def phish_match(msg: Message, text: str) -> None:
     assert msg.guild is not None
@@ -162,16 +209,20 @@ def phish_match(msg: Message, text: str) -> None:
         fork_ban_user(msg.guild, msg.author, None, "Automatic action: found phishing domain: {}".format(text))
     fork_delete_message(msg)
 
+
 async def resolve_link(msg: Message, link: str) -> None:
     if (target := await plugins.phish.resolve_link(link)) is not None:
         if (match := URL_regex.match(target)) is not None:
             if plugins.phish.is_bad_domain(match.group(1)):
                 phish_match(msg, format("{!i} -> {!i}", link, match.group(1)))
 
+
 async def process_messages(msgs: Iterable[Message]) -> None:
     for msg in msgs:
-        if msg.guild is None: continue
-        if msg.author.bot: continue
+        if msg.guild is None:
+            continue
+        if msg.author.bot:
+            continue
 
         try:
             match: Optional[re.Match[str]]
@@ -190,7 +241,8 @@ async def process_messages(msgs: Iterable[Message]) -> None:
                     if value is not None:
                         index = int(key[1:])
                         break
-                else: continue
+                else:
+                    continue
                 logger.info("Message {} matches pattern {}".format(msg.id, index))
                 if isinstance(msg.author, Member):
                     if any(role.id in conf.exempt_roles for role in msg.author.roles):
@@ -223,13 +275,17 @@ async def process_messages(msgs: Iterable[Message]) -> None:
         except:
             logger.error("Could not automod scan {}".format(msg.jump_url), exc_info=True)
 
+
 @plugins.init
 async def init() -> None:
     global conf
     conf = cast(AutomodConf, await util.db.kv.load(__name__))
-    if conf.index is None: conf.index = 1
-    if conf.active is None: conf.active = FrozenList()
-    if conf.exempt_roles is None: conf.exempt_roles = FrozenList()
+    if conf.index is None:
+        conf.index = 1
+    if conf.active is None:
+        conf.active = FrozenList()
+    if conf.exempt_roles is None:
+        conf.exempt_roles = FrozenList()
     for i in range(conf.index):
         if isinstance(keyword := conf[i, "keyword"], str):
             conf[i, "keyword"] = FrozenList((keyword,))
@@ -237,9 +293,12 @@ async def init() -> None:
     await conf
     generate_regex()
     await bot.message_tracker.subscribe(__name__, None, process_messages, missing=True, retroactive=False)
+
     async def unsubscribe() -> None:
         await bot.message_tracker.unsubscribe(__name__, None)
+
     plugins.finalizer(unsubscribe)
+
 
 @plugin_command
 @cleanup
@@ -248,6 +307,7 @@ async def init() -> None:
 async def automod_command(ctx: Context) -> None:
     """Manage automod."""
     pass
+
 
 @automod_command.group("exempt", invoke_without_command=True)
 @privileged
@@ -260,8 +320,8 @@ async def automod_exempt(ctx: Context) -> None:
             output.append(format("{!M}({!i} {!i})", role, role.name, role.id))
         else:
             output.append(format("{!M}({!i})", id, id))
-    await ctx.send("Roles exempt from automod: {}".format(", ".join(output)),
-        allowed_mentions=AllowedMentions.none())
+    await ctx.send("Roles exempt from automod: {}".format(", ".join(output)), allowed_mentions=AllowedMentions.none())
+
 
 @automod_exempt.command("add")
 @privileged
@@ -271,8 +331,8 @@ async def automod_exempt_add(ctx: Context, role: PartialRoleConverter) -> None:
     roles.add(role.id)
     conf.exempt_roles = FrozenList(roles)
     await conf
-    await ctx.send(format("{!M} is now exempt from automod", role),
-        allowed_mentions=AllowedMentions.none())
+    await ctx.send(format("{!M} is now exempt from automod", role), allowed_mentions=AllowedMentions.none())
+
 
 @automod_exempt.command("remove")
 @privileged
@@ -282,8 +342,8 @@ async def automod_exempt_remove(ctx: Context, role: PartialRoleConverter) -> Non
     roles.discard(role.id)
     conf.exempt_roles = FrozenList(roles)
     await conf
-    await ctx.send(format("{!M} is no longer exempt from automod", role),
-        allowed_mentions=AllowedMentions.none())
+    await ctx.send(format("{!M} is no longer exempt from automod", role), allowed_mentions=AllowedMentions.none())
+
 
 @automod_command.command("list")
 @privileged
@@ -291,30 +351,40 @@ async def automod_list(ctx: Context) -> None:
     """List all automod patterns (CW)."""
     items = [PlainItem("**Automod patterns**:\n")]
     for i in conf.active:
-        if (keywords := conf[i, "keyword"]) is not None and (kind := conf[i, "type"]) is not None and (
-            action := conf[i, "action"]) is not None:
+        if (
+            (keywords := conf[i, "keyword"]) is not None
+            and (kind := conf[i, "type"]) is not None
+            and (action := conf[i, "action"]) is not None
+        ):
             if action in ["mute", "ban"]:
                 duration = " for {} seconds".format(conf[i, "duration"]) if conf[i, "duration"] else " permanently"
             else:
                 duration = ""
-            items.append(PlainItem("**{}**: {} {} -> {}{}\n".format(i, kind,
-                ", ".join(format("||{!i}||", keyword) for keyword in keywords), action, duration)))
+            items.append(
+                PlainItem(
+                    "**{}**: {} {} -> {}{}\n".format(
+                        i, kind, ", ".join(format("||{!i}||", keyword) for keyword in keywords), action, duration
+                    )
+                )
+            )
 
     for content, _ in chunk_messages(items):
         await ctx.send(content)
 
+
 @automod_command.command("add")
 @privileged
-async def automod_add(ctx: Context, kind: Literal["substring", "word", "regex"],
-    patterns: Greedy[Union[CodeBlock, Inline, str]]) -> None:
+async def automod_add(
+    ctx: Context, kind: Literal["substring", "word", "regex"], patterns: Greedy[Union[CodeBlock, Inline, str]]
+) -> None:
     """
-        Add an automod pattern with one or more keywords.
-        "substring" means the patterns will be matched anywhere in a message;
-        "word" means the patterns have to match a separate word;
-        "regex" means the patterns are case-insensitive regexes (use (?-i) to enable case sensitivity)
+    Add an automod pattern with one or more keywords.
+    "substring" means the patterns will be matched anywhere in a message;
+    "word" means the patterns have to match a separate word;
+    "regex" means the patterns are case-insensitive regexes (use (?-i) to enable case sensitivity)
     """
     await ctx.message.delete()
-    ctx.send = ctx.channel.send # type: ignore # Undoing the effect of cleanup
+    ctx.send = ctx.channel.send  # type: ignore # Undoing the effect of cleanup
     if len(patterns) == 0:
         raise InvocationError("Provide at least one pattern")
     keywords: List[str] = []
@@ -343,8 +413,12 @@ async def automod_add(ctx: Context, kind: Literal["substring", "word", "regex"],
         conf[i, "type"] = kind
         conf[i, "action"] = None
         await conf
-    await ctx.send("Added {} as pattern **{}** with no action".format(
-        ", ".join(format("||{!i}||", keyword) for keyword in keywords), i))
+    await ctx.send(
+        "Added {} as pattern **{}** with no action".format(
+            ", ".join(format("||{!i}||", keyword) for keyword in keywords), i
+        )
+    )
+
 
 @automod_command.command("remove")
 @privileged
@@ -360,15 +434,19 @@ async def automod_remove(ctx: Context, number: int) -> None:
     await conf
     generate_regex()
     if keywords is not None and kind is not None:
-        await ctx.send("Removed {} {}".format(kind,
-            ", ".join(format("||{!i}||", keyword) for keyword in keywords)))
+        await ctx.send("Removed {} {}".format(kind, ", ".join(format("||{!i}||", keyword) for keyword in keywords)))
     else:
         await ctx.send("No such pattern")
 
+
 @automod_command.command("action")
 @privileged
-async def automod_action(ctx: Context, number: int, action: Literal["delete", "note", "mute", "kick", "ban"],
-    duration: Optional[DurationConverter]) -> None:
+async def automod_action(
+    ctx: Context,
+    number: int,
+    action: Literal["delete", "note", "mute", "kick", "ban"],
+    duration: Optional[DurationConverter],
+) -> None:
     """Assign an action to an automod pattern. (All actions imply deletion)."""
     if conf[number, "keyword"] is None or conf[number, "type"] is None:
         raise UserError("No such pattern")

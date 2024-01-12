@@ -18,12 +18,16 @@ import util.db.log as util_db_log
 from util.frozen_dict import FrozenDict
 from util.frozen_list import FrozenList
 
+
 schema_initialized = False
+
 
 async def init_schema() -> None:
     global schema_initialized
     if not schema_initialized:
-        await util_db.init_for(__name__, """
+        await util_db.init_for(
+            __name__,
+            """
             CREATE TABLE kv
                 ( namespace TEXT NOT NULL
                 , key TEXT ARRAY NOT NULL
@@ -31,8 +35,10 @@ async def init_schema() -> None:
                 , PRIMARY KEY(namespace, key) );
             CREATE INDEX kv_namespace_index
                 ON kv USING BTREE(namespace);
-            """)
+            """,
+        )
         schema_initialized = True
+
 
 def json_freeze(value: Optional[object]) -> Optional[object]:
     if isinstance(value, list):
@@ -42,8 +48,10 @@ def json_freeze(value: Optional[object]) -> Optional[object]:
     else:
         return value
 
+
 class ThawingJSONEncoder(json.JSONEncoder):
     __slots__ = ()
+
     def default(self, o: object) -> object:
         if isinstance(o, FrozenList):
             return o.copy()
@@ -52,11 +60,14 @@ class ThawingJSONEncoder(json.JSONEncoder):
         else:
             return super().default(o)
 
+
 def json_encode(value: object) -> Optional[str]:
     return json.dumps(value, cls=ThawingJSONEncoder) if value is not None else None
 
+
 def json_decode(text: Optional[str]) -> object:
     return json_freeze(json.loads(text)) if text is not None else None
+
 
 @contextlib.asynccontextmanager
 async def connect() -> AsyncIterator[util_db_log.LoggingConnection]:
@@ -64,40 +75,64 @@ async def connect() -> AsyncIterator[util_db_log.LoggingConnection]:
     async with util_db.connection() as conn:
         yield conn
 
+
 async def get_raw_value(namespace: Sequence[str], key: Sequence[str]) -> Optional[str]:
     async with connect() as conn:
-        val = await conn.fetchval("""
+        val = await conn.fetchval(
+            """
             SELECT value FROM kv WHERE namespace = $1 AND key = $2
-            """, namespace, tuple(key))
+            """,
+            namespace,
+            tuple(key),
+        )
         return cast(Optional[str], val)
+
 
 async def get_raw_key_values(namespace: str) -> Dict[Tuple[str, ...], str]:
     async with connect() as conn:
-        rows = await conn.fetch("""
+        rows = await conn.fetch(
+            """
             SELECT key, value FROM kv WHERE namespace = $1
-            """, namespace)
+            """,
+            namespace,
+        )
         return {tuple(row["key"]): row["value"] for row in rows}
+
 
 async def get_namespaces() -> Sequence[str]:
     async with connect() as conn:
-        rows = await conn.fetch("""
+        rows = await conn.fetch(
+            """
             SELECT DISTINCT namespace FROM kv
-            """)
+            """
+        )
         return [row["namespace"] for row in rows]
+
 
 async def set_raw_value(namespace: str, key: Sequence[str], value: Optional[str], log_value: bool = True) -> None:
     async with connect() as conn:
         if value is None:
-            await conn.execute("""
+            await conn.execute(
+                """
                 DELETE FROM kv
                 WHERE namespace = $1 AND key = $2
-                """, namespace, tuple(key))
+                """,
+                namespace,
+                tuple(key),
+            )
         else:
-            await conn.execute("""
+            await conn.execute(
+                """
                 INSERT INTO kv (namespace, key, value)
                 VALUES ($1, $2, $3)
                 ON CONFLICT (namespace, key) DO UPDATE SET value = EXCLUDED.value
-                """, namespace, tuple(key), value, log_data=True if log_value else {1, 2})
+                """,
+                namespace,
+                tuple(key),
+                value,
+                log_data=True if log_value else {1, 2},
+            )
+
 
 async def set_raw_values(namespace: str, dict: Dict[Sequence[str], Optional[str]], log_value: bool = False) -> None:
     removals = [(namespace, tuple(key)) for key, value in dict.items() if value is None]
@@ -105,16 +140,24 @@ async def set_raw_values(namespace: str, dict: Dict[Sequence[str], Optional[str]
     async with connect() as conn:
         async with conn.transaction():
             if removals:
-                await conn.executemany("""
+                await conn.executemany(
+                    """
                     DELETE FROM kv
                     WHERE namespace = $1 AND key = $2
-                    """, removals)
+                    """,
+                    removals,
+                )
             if updates:
-                await conn.executemany("""
+                await conn.executemany(
+                    """
                     INSERT INTO kv (namespace, key, value)
                     VALUES ($1, $2, $3)
                     ON CONFLICT (namespace, key) DO UPDATE SET value = EXCLUDED.value
-                    """, updates, log_data=True if log_value else {1, 2})
+                    """,
+                    updates,
+                    log_data=True if log_value else {1, 2},
+                )
+
 
 class ConfigStore(Dict[Tuple[str, ...], str]):
     __slots__ = ("__weakref__", "ready")
@@ -124,15 +167,18 @@ class ConfigStore(Dict[Tuple[str, ...], str]):
         super().__init__(*args, **kwargs)
         self.ready = asyncio.Event()
 
+
 config_stores: WeakValueDictionary[str, ConfigStore]
 config_stores = WeakValueDictionary()
 
 KeyType = Union[str, int, Sequence[Union[str, int]]]
 
+
 def encode_key(key: KeyType) -> Tuple[str, ...]:
     if isinstance(key, (str, int)):
         key = (key,)
     return tuple(str(k) for k in key)
+
 
 class Config:
     """
@@ -142,6 +188,7 @@ class Config:
     __setitem__/__setattr__ will update the in-memory copy. awaiting will commit the keys that were modified by this
     Config object to the DB (the values may have since been overwritten by other Config objects)
     """
+
     __slots__ = "_namespace", "_log_value", "_store", "_dirty"
     _namespace: str
     _log_value: bool
@@ -188,6 +235,7 @@ class Config:
         if key.startswith("_"):
             return super().__setattr__(key, value)
         self[key] = value
+
 
 async def load(namespace: str, log_value: bool = False) -> Config:
     store = config_stores.get(namespace)

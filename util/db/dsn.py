@@ -1,8 +1,10 @@
 import re
 import urllib.parse
 
+
 dsn_re: re.Pattern[str] = re.compile(r"\s*(\w*)\s*=\s*(?:([^\s' \\]+)|'((?:[^'\\]|\\.)*)')\s*")
 unquote_re: re.Pattern[str] = re.compile(r"\\(.)")
+
 
 def dsn_to_uri(dsn: str) -> str:
     """
@@ -18,6 +20,7 @@ def dsn_to_uri(dsn: str) -> str:
             val = unquote_re.sub(r"\1", val_quoted)
         kvs.append((key, val))
     return "postgres://?" + urllib.parse.urlencode(kvs)
+
 
 def uri_to_asyncpg(uri: str) -> str:
     return "postgresql+asyncpg://?dsn=" + urllib.parse.quote(uri, safe="")

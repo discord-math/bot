@@ -3,8 +3,20 @@ import csv
 from io import BytesIO, StringIO
 from typing import Awaitable, Callable, Dict, List, Optional, Set, Tuple, Union
 
-from discord import (AllowedMentions, CategoryChannel, File, ForumChannel, Member, Object, PermissionOverwrite,
-    Permissions, Role, StageChannel, TextChannel, VoiceChannel)
+from discord import (
+    AllowedMentions,
+    CategoryChannel,
+    File,
+    ForumChannel,
+    Member,
+    Object,
+    PermissionOverwrite,
+    Permissions,
+    Role,
+    StageChannel,
+    TextChannel,
+    VoiceChannel,
+)
 import discord.abc
 from discord.ext.commands import command
 import discord.flags
@@ -14,13 +26,17 @@ from bot.commands import Context, plugin_command
 from bot.reactions import get_reaction
 from util.discord import InvocationError, PlainItem, UserError, chunk_messages, format
 
+
 def channel_sort_key(channel: discord.abc.GuildChannel) -> Tuple[int, bool, int]:
     if isinstance(channel, CategoryChannel):
         return (channel.position, False, -1)
     else:
-        return (channel.category.position if channel.category is not None else -1,
+        return (
+            channel.category.position if channel.category is not None else -1,
             isinstance(channel, (VoiceChannel, StageChannel)),
-            channel.position)
+            channel.position,
+        )
+
 
 def overwrite_sort_key(pair: Tuple[Union[Role, Member, Object], PermissionOverwrite]) -> int:
     if isinstance(pair[0], Role):
@@ -31,12 +47,14 @@ def overwrite_sort_key(pair: Tuple[Union[Role, Member, Object], PermissionOverwr
     else:
         return -1
 
+
 def disambiguated_name(channel: discord.abc.GuildChannel) -> str:
     chans: List[discord.abc.GuildChannel] = [chan for chan in channel.guild.channels if chan.name == channel.name]
     if len(chans) < 2:
         return channel.name
     chans.sort(key=lambda chan: chan.id)
     return "{} ({})".format(channel.name, 1 + chans.index(channel))
+
 
 @plugin_command
 @command("exportperms")
@@ -57,10 +75,13 @@ async def exportperms(ctx: Context) -> None:
         if isinstance(channel, CategoryChannel):
             header = [disambiguated_name(channel), ""]
         else:
-            header = [disambiguated_name(channel.category) if channel.category is not None else "",
-                disambiguated_name(channel)]
+            header = [
+                disambiguated_name(channel.category) if channel.category is not None else "",
+                disambiguated_name(channel),
+            ]
         writer.writerow(header + ["(synced)" if channel.permissions_synced else ""])
-        if channel.permissions_synced: continue
+        if channel.permissions_synced:
+            continue
         for target, overwrite in sorted(channel.overwrites.items(), key=overwrite_sort_key):
             if isinstance(target, Role):
                 name = "Role {}".format(target.name)
@@ -70,53 +91,69 @@ async def exportperms(ctx: Context) -> None:
                 name = "Role {}".format(target.id)
             else:
                 name = "User {}".format(target.id)
-            writer.writerow(header + [name] + ["+" if allow else "-" if deny else "/"
-                for (_, allow), (_, deny) in zip(*overwrite.pair())])
+            writer.writerow(
+                header
+                + [name]
+                + ["+" if allow else "-" if deny else "/" for (_, allow), (_, deny) in zip(*overwrite.pair())]
+            )
 
     await ctx.send(file=File(BytesIO(file.getvalue().encode()), "perms.csv"))
+
 
 def tweak_permissions(permissions: Permissions, add_mask: int, remove_mask: int) -> Permissions:
     return Permissions(permissions.value & ~remove_mask | add_mask)
 
-def tweak_overwrite(overwrite: PermissionOverwrite,
-    add_mask: int, remove_mask: int, reset_mask: int) -> PermissionOverwrite:
+
+def tweak_overwrite(
+    overwrite: PermissionOverwrite, add_mask: int, remove_mask: int, reset_mask: int
+) -> PermissionOverwrite:
     allow, deny = overwrite.pair()
     return PermissionOverwrite.from_pair(
-        tweak_permissions(allow, add_mask, reset_mask),
-        tweak_permissions(deny, remove_mask, reset_mask))
+        tweak_permissions(allow, add_mask, reset_mask), tweak_permissions(deny, remove_mask, reset_mask)
+    )
 
-def overwrites_for(channel: discord.abc.GuildChannel, target: Union[Role, Member]
-    ) -> PermissionOverwrite:
+
+def overwrites_for(channel: discord.abc.GuildChannel, target: Union[Role, Member]) -> PermissionOverwrite:
     for t, overwrite in channel.overwrites.items():
         if t.id == target.id:
             return overwrite
     return PermissionOverwrite()
 
+
 SubChannel = Union[TextChannel, VoiceChannel, StageChannel, ForumChannel]
 GuildChannel = Union[CategoryChannel, SubChannel]
 
-def edit_role_perms(role: Role, add_mask: int, remove_mask: int
-    ) -> Callable[[], Awaitable[Optional[Role]]]:
-    return lambda: role.edit(permissions=Permissions(
-        role.permissions.value & ~remove_mask | add_mask))
 
-def edit_channel_category(channel: SubChannel, category: Optional[CategoryChannel]
-    ) -> Callable[[], Awaitable[object]]:
+def edit_role_perms(role: Role, add_mask: int, remove_mask: int) -> Callable[[], Awaitable[Optional[Role]]]:
+    return lambda: role.edit(permissions=Permissions(role.permissions.value & ~remove_mask | add_mask))
+
+
+def edit_channel_category(channel: SubChannel, category: Optional[CategoryChannel]) -> Callable[[], Awaitable[object]]:
     return lambda: channel.edit(category=category)
 
-def edit_channel_overwrites(channel: GuildChannel,
-    overwrites: Dict[Union[Role, Member], Tuple[int, int, int]]) -> Callable[[], Awaitable[object]]:
+
+def edit_channel_overwrites(
+    channel: GuildChannel, overwrites: Dict[Union[Role, Member], Tuple[int, int, int]]
+) -> Callable[[], Awaitable[object]]:
     if isinstance(channel, (VoiceChannel, CategoryChannel, StageChannel)):
-        return lambda: channel.edit(overwrites={target:
-            tweak_overwrite(overwrites_for(channel, target), add_mask, remove_mask, reset_mask)
-            for target, (add_mask, remove_mask, reset_mask) in overwrites.items()})
+        return lambda: channel.edit(
+            overwrites={
+                target: tweak_overwrite(overwrites_for(channel, target), add_mask, remove_mask, reset_mask)
+                for target, (add_mask, remove_mask, reset_mask) in overwrites.items()
+            }
+        )
     else:
-        return lambda: channel.edit(overwrites={target:
-            tweak_overwrite(overwrites_for(channel, target), add_mask, remove_mask, reset_mask)
-            for target, (add_mask, remove_mask, reset_mask) in overwrites.items()})
+        return lambda: channel.edit(
+            overwrites={
+                target: tweak_overwrite(overwrites_for(channel, target), add_mask, remove_mask, reset_mask)
+                for target, (add_mask, remove_mask, reset_mask) in overwrites.items()
+            }
+        )
+
 
 def sync_channel(channel: SubChannel) -> Callable[[], Awaitable[object]]:
     return lambda: channel.edit(sync_permissions=True)
+
 
 @plugin_command
 @command("importperms")
@@ -242,23 +279,29 @@ async def importperms(ctx: Context) -> None:
                         changes.append("\U0001F533" + perm)
                         reset_mask |= flag.flag
                 if changes:
-                    output.append(format(
-                        "{!c} {!M}: {}" if isinstance(target, Role) else "{!c} {!m}: {}",
-                        channel, target, ", ".join(changes)))
+                    output.append(
+                        format(
+                            "{!c} {!M}: {}" if isinstance(target, Role) else "{!c} {!m}: {}",
+                            channel,
+                            target,
+                            ", ".join(changes),
+                        )
+                    )
                 new_overwrites[channel][target] = (add_mask, remove_mask, reset_mask)
             else:
                 new_overwrites[channel]
     for channel in new_overwrites:
-        if channel in want_sync: continue
+        if channel in want_sync:
+            continue
         for add_mask, remove_mask, reset_mask in new_overwrites[channel].values():
             if add_mask != 0 or remove_mask != 0 or reset_mask != 0:
                 overwrites_changed.add(channel)
                 break
         for target in channel.overwrites:
             if target not in new_overwrites[channel]:
-                output.append(format(
-                    "{!c} remove {!M}" if isinstance(target, Role) else "{!c} remove {!m}",
-                    channel, target))
+                output.append(
+                    format("{!c} remove {!M}" if isinstance(target, Role) else "{!c} remove {!m}", channel, target)
+                )
                 overwrites_changed.add(channel)
         actions.append(edit_channel_overwrites(channel, new_overwrites[channel]))
     for channel in want_sync:

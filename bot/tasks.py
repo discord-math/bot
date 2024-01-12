@@ -4,7 +4,9 @@ from typing import Awaitable, Callable, Optional
 
 import plugins
 
+
 logger: logging.Logger = logging.getLogger(__name__)
+
 
 class Task(asyncio.Task[None]):
     __slots__ = "cb", "timeout", "exc_backoff_base", "exc_backoff_multiplier", "queue"
@@ -14,8 +16,14 @@ class Task(asyncio.Task[None]):
     exc_backoff_multiplier: int
     queue: asyncio.Queue[Optional[float]]
 
-    def __init__(self, cb: Callable[[], Awaitable[object]], *, every: Optional[float] = None,
-        exc_backoff_base: Optional[float] = None, name: Optional[str] = None) -> None:
+    def __init__(
+        self,
+        cb: Callable[[], Awaitable[object]],
+        *,
+        every: Optional[float] = None,
+        exc_backoff_base: Optional[float] = None,
+        name: Optional[str] = None,
+    ) -> None:
         super().__init__(self.task_loop(), loop=asyncio.get_event_loop(), name=name)
         self.cb = cb
         self.timeout = every
@@ -61,8 +69,10 @@ class Task(asyncio.Task[None]):
                     await asyncio.sleep(self.exc_backoff_base * self.exc_backoff_multiplier)
                     self.exc_backoff_multiplier *= 2
 
-def task(*, every: Optional[float] = None, exc_backoff_base: Optional[float] = None, name: Optional[str] = None
-    ) -> Callable[[Callable[[], Awaitable[object]]], Task]:
+
+def task(
+    *, every: Optional[float] = None, exc_backoff_base: Optional[float] = None, name: Optional[str] = None
+) -> Callable[[Callable[[], Awaitable[object]]], Task]:
     """
     A decorator that registers the function as a task that is called periodically or upon request. The task is cancelled
     on plugin unload. The "every" parameter causes the task to wait at most that many seconds between executions. A task
@@ -70,8 +80,10 @@ def task(*, every: Optional[float] = None, exc_backoff_base: Optional[float] = N
     additional delay in case the task throws an exception, and the delay increases exponentially if the task keeps
     throwing exceptions.
     """
+
     def register_task(cb: Callable[[], Awaitable[object]]) -> Task:
         task = Task(cb, every=every, exc_backoff_base=exc_backoff_base, name=name)
         plugins.finalizer(task.cancel)
         return task
+
     return register_task

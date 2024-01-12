@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from typing import Dict, Generic, Iterable, Iterator, Set, TypeVar
 
+
 T = TypeVar("T")
+
 
 class Digraph(Generic[T]):
     """A directed graph with no isolated vertices and no duplicate edges."""
@@ -36,6 +38,7 @@ class Digraph(Generic[T]):
     def paths_from(self, x: T) -> Iterator[T]:
         """Return vertices that can be reached from x via a path."""
         seen: Set[T] = set()
+
         def dfs(x: T) -> Iterator[T]:
             if x in seen:
                 return
@@ -44,11 +47,13 @@ class Digraph(Generic[T]):
             if x in self.fwd:
                 for y in self.fwd[x]:
                     yield from dfs(y)
+
         yield from dfs(x)
 
     def paths_to(self, x: T) -> Iterator[T]:
         """Return vertices that can reached x via a path."""
         seen: Set[T] = set()
+
         def dfs(x: T) -> Iterator[T]:
             if x in seen:
                 return
@@ -57,12 +62,14 @@ class Digraph(Generic[T]):
             if x in self.bck:
                 for y in self.bck[x]:
                     yield from dfs(y)
+
         yield from dfs(x)
 
     def subgraph_paths_from(self, x: T) -> Digraph[T]:
         """Return an induced subgraph of exactly those vertices that can be reached from x via a path."""
         graph: Digraph[T] = Digraph()
         seen: Set[T] = set()
+
         def dfs(x: T) -> None:
             if x in seen:
                 return
@@ -71,6 +78,7 @@ class Digraph(Generic[T]):
                 for y in self.fwd[x]:
                     graph.add_edge(x, y)
                     dfs(y)
+
         dfs(x)
         return graph
 
@@ -78,6 +86,7 @@ class Digraph(Generic[T]):
         """Return an induced subgraph of exactly those vertices that can reach x via a path."""
         graph: Digraph[T] = Digraph()
         seen: Set[T] = set()
+
         def dfs(x: T) -> None:
             if x in seen:
                 return
@@ -86,6 +95,7 @@ class Digraph(Generic[T]):
                 for y in self.bck[x]:
                     graph.add_edge(y, x)
                     dfs(y)
+
         dfs(x)
         return graph
 
@@ -95,6 +105,7 @@ class Digraph(Generic[T]):
         iteration than y. The sources are forcibly included in the iteration.
         """
         seen: Set[T] = set()
+
         def dfs(x: T) -> Iterator[T]:
             if x in seen:
                 return
@@ -103,6 +114,7 @@ class Digraph(Generic[T]):
                 for y in self.bck[x]:
                     yield from dfs(y)
             yield x
+
         for x in self.fwd:
             yield from dfs(x)
         for x in self.bck:
@@ -116,6 +128,7 @@ class Digraph(Generic[T]):
         iteration than y. The sources are forcibly included in the iteration.
         """
         seen: Set[T] = set()
+
         def dfs(x: T) -> Iterator[T]:
             if x in seen:
                 return
@@ -124,6 +137,7 @@ class Digraph(Generic[T]):
                 for y in self.fwd[x]:
                     yield from dfs(y)
             yield x
+
         for x in self.bck:
             yield from dfs(x)
         for x in self.fwd:

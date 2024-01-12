@@ -10,26 +10,68 @@ import logging
 import math
 import re
 import string
-from typing import (Any, AsyncContextManager, Awaitable, Callable, Dict, Generic, Iterable, Iterator, List, Optional,
-    Protocol, Sequence, Tuple, Type, TypeVar, Union, cast)
+from typing import (
+    Any,
+    AsyncContextManager,
+    Awaitable,
+    Callable,
+    Dict,
+    Generic,
+    Iterable,
+    Iterator,
+    List,
+    Optional,
+    Protocol,
+    Sequence,
+    Tuple,
+    Type,
+    TypeVar,
+    Union,
+    cast,
+)
 
 import discord
-from discord import (CategoryChannel, File, ForumChannel, Guild, Member, Message, Object, PartialMessage, Role, StageChannel,
-    TextChannel, User, VoiceChannel)
+from discord import (
+    CategoryChannel,
+    File,
+    ForumChannel,
+    Guild,
+    Member,
+    Message,
+    Object,
+    PartialMessage,
+    Role,
+    StageChannel,
+    TextChannel,
+    User,
+    VoiceChannel,
+)
 from discord.abc import GuildChannel, Messageable, Snowflake
 import discord.context_managers
-from discord.ext.commands import (ArgumentParsingError, BadArgument, Bot, CommandError, Context, MessageNotFound,
-    NoPrivateMessage, PartialMessageConverter, UserInputError)
+from discord.ext.commands import (
+    ArgumentParsingError,
+    BadArgument,
+    Bot,
+    CommandError,
+    Context,
+    MessageNotFound,
+    NoPrivateMessage,
+    PartialMessageConverter,
+    UserInputError,
+)
 import discord.ext.commands.view
 from discord.ext.commands.view import StringView
 import discord.state
 
 from bot.client import client
 
+
 logger: logging.Logger = logging.getLogger(__name__)
+
 
 class Quoted:
     """This class is a command argument converter equivalent to the behavior of a str argument."""
+
     __slots__ = "text"
     text: str
 
@@ -45,6 +87,7 @@ class Quoted:
     @classmethod
     async def convert(cls, ctx: Context[Bot], arg: str) -> Quoted:
         return cls(arg)
+
 
 def undo_get_quoted_word(view: StringView, arg: str) -> int:
     """
@@ -64,6 +107,7 @@ def undo_get_quoted_word(view: StringView, arg: str) -> int:
                 offset = 2
                 break
     return view.index - offset - len(arg) - sum(ch in escaped_quotes for ch in arg)
+
 
 class CodeBlock(Quoted):
     """A command argument in Discord's ```code block``` syntax"""
@@ -94,8 +138,10 @@ class CodeBlock(Quoted):
             return cls(match["block"], language=match["language"] or None)
         raise ArgumentParsingError("Please provide a codeblock")
 
+
 class Inline(Quoted):
     """A command argument in Discord's `inline code` syntax."""
+
     __slots__ = "text"
     text: str
 
@@ -125,6 +171,7 @@ class Inline(Quoted):
             ctx.view.index = match.end()
             return cls(match[1] or match[2])
         raise ArgumentParsingError("Please provide an inline")
+
 
 class Formatter(string.Formatter):
     """
@@ -176,27 +223,36 @@ class Formatter(string.Formatter):
             return str(value)
         return super().format_field(value, format_spec)
 
+
 formatter: string.Formatter = Formatter()
 format = formatter.format
 
+
 class UserError(CommandError):
     """General exceptions in commands."""
+
     __slots__ = ()
+
 
 class InvocationError(UserInputError):
     """Exceptions in commands that are to do with the user input. Triggers displaying the command's usage."""
+
     __slots__ = ()
+
 
 class NamedType(Protocol):
     id: int
     name: str
+
 
 class NicknamedType(Protocol):
     id: int
     name: str
     nick: str
 
+
 M = TypeVar("M", bound=Union[NamedType, NicknamedType])
+
 
 def smart_find(name_or_id: str, iterable: Iterable[M]) -> Optional[M]:
     """
@@ -237,7 +293,9 @@ def smart_find(name_or_id: str, iterable: Iterable[M]) -> Optional[M]:
         return infix_matches[0]
     return None
 
+
 T = TypeVar("T")
+
 
 def priority_find(predicate: Callable[[T], Union[float, int, None]], iterable: Iterable[T]) -> List[T]:
     """
@@ -261,8 +319,10 @@ def priority_find(predicate: Callable[[T], Union[float, int, None]], iterable: I
             continue
     return results
 
+
 class Typing(AsyncContextManager[None]):
     """An async context manager that starts a typing indication after a short timeout."""
+
     __slots__ = "typing", "timeout", "lock", "task"
     typing: discord.context_managers.Typing
     timeout: float
@@ -283,15 +343,17 @@ class Typing(AsyncContextManager[None]):
     async def __aenter__(self) -> None:
         self.task = asyncio.create_task(self.start_typing(), name="Typing")
 
-    async def __aexit__(self, exc_type, exc_val, tb) -> None: # type: ignore
+    async def __aexit__(self, exc_type, exc_val, tb) -> None:  # type: ignore
         async with self.lock:
             if self.task:
                 self.task.cancel()
             else:
                 await self.typing.__aexit__(exc_type, exc_val, tb)
 
+
 class TempMessage(AsyncContextManager[Message]):
     """An async context manager that sends a message upon entering, and deletes it upon exiting."""
+
     __slots__ = "sendable", "args", "kwargs", "message"
     sendable: Messageable
     args: Any
@@ -307,12 +369,13 @@ class TempMessage(AsyncContextManager[Message]):
         self.message = await self.sendable.send(*self.args, **self.kwargs)
         return self.message
 
-    async def __aexit__(self, exc_type, exc_val, tb) -> None: # type: ignore
+    async def __aexit__(self, exc_type, exc_val, tb) -> None:  # type: ignore
         try:
             if self.message is not None:
                 await self.message.delete()
         except (discord.Forbidden, discord.NotFound):
             pass
+
 
 def nicknamed_priority(u: Union[NamedType, NicknamedType], s: str) -> Optional[int]:
     name = u.name
@@ -336,6 +399,7 @@ def nicknamed_priority(u: Union[NamedType, NicknamedType], s: str) -> Optional[i
     else:
         return None
 
+
 def named_priority(x: NamedType, s: str) -> Optional[int]:
     name = x.name
     if s == name:
@@ -348,6 +412,7 @@ def named_priority(x: NamedType, s: str) -> Optional[int]:
         return 0
     else:
         return None
+
 
 # Argument converters for various Discord datatypes
 # We inherit XCoverter from X, so that given a declaration x: XConverter could be used with the assumption that really
@@ -388,6 +453,7 @@ class PartialUserConverter(Snowflake):
         else:
             raise BadArgument(format("Could not find user {} {}", arg, where))
 
+
 class MemberConverter(User):
     @classmethod
     async def convert(cls, ctx: Context[Bot], arg: str) -> Optional[Member]:
@@ -401,11 +467,13 @@ class MemberConverter(User):
             raise BadArgument(format("Found a user with ID {}, but they are not on this server", obj.id))
 
         member = ctx.guild.get_member(obj.id)
-        if member is not None: return member
+        if member is not None:
+            return member
         try:
             return await ctx.guild.fetch_member(obj.id)
         except discord.NotFound:
             raise BadArgument(format("Could not find member with ID {} on this server", obj.id))
+
 
 class UserConverter(User):
     @classmethod
@@ -415,11 +483,13 @@ class UserConverter(User):
             return obj
         user = ctx.bot.get_user(obj.id)
 
-        if user is not None: return user
+        if user is not None:
+            return user
         try:
             return await ctx.bot.fetch_user(obj.id)
         except discord.NotFound:
             raise BadArgument(format("Could not find user with ID {}", obj.id))
+
 
 class PartialRoleConverter(Snowflake):
     id: int
@@ -444,6 +514,7 @@ class PartialRoleConverter(Snowflake):
         else:
             raise BadArgument(format("Could not find role {} on this server", arg))
 
+
 class RoleConverter(Role):
     @classmethod
     async def convert(cls, ctx: Context[Bot], arg: str) -> Role:
@@ -461,6 +532,7 @@ class RoleConverter(Role):
         else:
             raise BadArgument(format("Could not find role with ID {} in any server", obj.id))
 
+
 class PartialGuildConverter(Snowflake):
     id: int
     mention_re: re.Pattern[str] = re.compile(r"<#(\d+)>")
@@ -474,7 +546,7 @@ class PartialGuildConverter(Snowflake):
             return Object(int(match[0]))
         elif arg == "this":
             if ctx.guild is None:
-                raise NoPrivateMessage("\"this\" can only be used on a server")
+                raise NoPrivateMessage('"this" can only be used on a server')
             return ctx.guild
 
         matches = priority_find(lambda r: named_priority(r, arg), ctx.bot.guilds)
@@ -484,6 +556,7 @@ class PartialGuildConverter(Snowflake):
             return matches[0]
         else:
             raise BadArgument(format("Could not find server named {}", arg))
+
 
 class GuildConverter(Guild):
     @classmethod
@@ -497,7 +570,9 @@ class GuildConverter(Guild):
         else:
             raise BadArgument(format("Could not find server with ID {}", obj.id))
 
+
 C = TypeVar("C", bound=GuildChannel)
+
 
 class PCConv(Generic[C]):
     mention_re: re.Pattern[str] = re.compile(r"<#(\d+)>")
@@ -508,8 +583,8 @@ class PCConv(Generic[C]):
         VoiceChannel: "voice channel",
         CategoryChannel: "category channel",
         StageChannel: "stage channel",
-        ForumChannel: "forum"}
-
+        ForumChannel: "forum",
+    }
 
     @classmethod
     async def partial_convert(cls, ctx: Context[Bot], arg: str, ty: Type[C]) -> Snowflake:
@@ -563,28 +638,34 @@ class PCConv(Generic[C]):
         else:
             raise BadArgument(format("Could not find {} by ID {} on any server", kind, obj.id))
 
+
 class PartialChannelConverter(GuildChannel):
     @classmethod
     async def convert(cls, ctx: Context[Bot], arg: str) -> Snowflake:
         return await PCConv.partial_convert(ctx, arg, GuildChannel)
+
 
 class PartialTextChannelConverter(GuildChannel):
     @classmethod
     async def convert(cls, ctx: Context[Bot], arg: str) -> Snowflake:
         return await PCConv.partial_convert(ctx, arg, TextChannel)
 
+
 class PartialCategoryChannelConverter(GuildChannel):
     @classmethod
     async def convert(cls, ctx: Context[Bot], arg: str) -> Snowflake:
         return await PCConv.partial_convert(ctx, arg, CategoryChannel)
+
 
 class ChannelConverter(GuildChannel):
     @classmethod
     async def convert(cls, ctx: Context[Bot], arg: str) -> GuildChannel:
         return await PCConv.convert(ctx, arg, GuildChannel)
 
+
 def partial_message(channel: Snowflake, id: int) -> PartialMessage:
     return PartialMessage(channel=client.get_partial_messageable(channel.id), id=id)
+
 
 def partial_from_reply(pmsg: Optional[PartialMessage], ctx: Context[Bot]) -> PartialMessage:
     if pmsg is not None:
@@ -599,12 +680,14 @@ def partial_from_reply(pmsg: Optional[PartialMessage], ctx: Context[Bot]) -> Par
         return partial_message(channel, ref.message_id)
     raise InvocationError("Expected either a message link, channel ID - message ID, or a reply to a message")
 
+
 class ReplyConverter(PartialMessage):
     """
     Parse a PartialMessage either from either the replied-to message, or from the command (using an URL or a
     ChannelID-MessageID). If the command ends before this argument is parsed, the converter won't even be called, so if
     this is the last non-optional parameter, wrap it in Optional, and pass the result via partial_from_reply.
     """
+
     @classmethod
     async def convert(cls, ctx: Context[Bot], arg: str) -> PartialMessage:
         pos = undo_get_quoted_word(ctx.view, arg)
@@ -615,6 +698,7 @@ class ReplyConverter(PartialMessage):
             return await PartialMessageConverter().convert(ctx, arg)
         except MessageNotFound:
             raise BadArgument("Expected either a message link or channel ID - message ID")
+
 
 duration_re = re.compile(
     r"""
@@ -628,7 +712,8 @@ duration_re = re.compile(
     (?P<years> y(?:(?:ea)?rs?)?)
     )[^\w'"]*
     """,
-    re.VERBOSE | re.IGNORECASE)
+    re.VERBOSE | re.IGNORECASE,
+)
 duration_expansion = {
     "seconds": timedelta(seconds=1),
     "minutes": timedelta(minutes=1),
@@ -636,7 +721,9 @@ duration_expansion = {
     "days": timedelta(days=1),
     "weeks": timedelta(days=7),
     "months": timedelta(days=30),
-    "years": timedelta(days=365)}
+    "years": timedelta(days=365),
+}
+
 
 def parse_duration(text: str) -> Tuple[timedelta, int]:
     """
@@ -651,6 +738,7 @@ def parse_duration(text: str) -> Tuple[timedelta, int]:
         delta += int(match[1]) * duration_expansion[match.lastgroup]
     return delta, pos
 
+
 class DurationConverter(timedelta):
     @classmethod
     async def convert(cls, ctx: Context[Bot], arg: str) -> timedelta:
@@ -662,19 +750,25 @@ class DurationConverter(timedelta):
         else:
             raise BadArgument("Expected a duration (e.g. 1 day 6 hours)")
 
+
 class PlainItem:
     """An item that is formatted as itself, possibly split across multiple messages if too large."""
-    __slots__ = "text",
+
+    __slots__ = ("text",)
     text: str
+
     def __init__(self, text: str):
         self.text = text
 
+
 class CodeItem:
     """An item that is formatted as either a code block, or an attached file if too large."""
+
     __slots__ = "text", "language", "filename"
     text: str
     language: Optional[str]
     filename: Optional[str]
+
     def __init__(self, text: str, *, language: Optional[str] = None, filename: Optional[str] = None):
         self.text = text
         self.language = language
@@ -709,7 +803,7 @@ def chunk_messages(items: Iterable[Union[PlainItem, CodeItem]]) -> Iterator[Tupl
                     yield content, files
                     content, files = "", []
                 content += text
-        elif isinstance(item, CodeItem): # type: ignore
+        elif isinstance(item, CodeItem):  # type: ignore
             if len(item.text) > MAX_CONTENT or len(str(CodeBlock(item.text, language=item.language))) > MAX_CONTENT:
                 if len(files) >= MAX_FILES:
                     yield content, files
@@ -724,20 +818,29 @@ def chunk_messages(items: Iterable[Union[PlainItem, CodeItem]]) -> Iterator[Tupl
     if content or files:
         yield content, files
 
+
 def HTTPMeta(status: int) -> Type[type]:
     class HTTPMeta(type):
         def __instancecheck__(self, instance: object) -> bool:
             return isinstance(instance, discord.HTTPException) and instance.status == status
+
     return HTTPMeta
+
 
 class TooManyRequests(discord.HTTPException, metaclass=HTTPMeta(429)):
     pass
 
+
 class InternalServerError(discord.HTTPException, metaclass=HTTPMeta(500)):
     pass
 
-async def retry(call: Callable[[], Awaitable[T]], delay: float = 1, attempts: Optional[int] = None,
-    exceptions: Tuple[Type[Exception], ...] = (TooManyRequests, InternalServerError, discord.RateLimited)) -> T:
+
+async def retry(
+    call: Callable[[], Awaitable[T]],
+    delay: float = 1,
+    attempts: Optional[int] = None,
+    exceptions: Tuple[Type[Exception], ...] = (TooManyRequests, InternalServerError, discord.RateLimited),
+) -> T:
     attempt = 0
     while True:
         attempt += 1

@@ -19,8 +19,10 @@ import plugins
 import util.db.kv
 from util.discord import DurationConverter, PlainItem, UserError, chunk_messages, format
 
+
 registry = sqlalchemy.orm.registry()
 sessionmaker = async_sessionmaker(util.db.engine, expire_on_commit=False)
+
 
 @registry.mapped
 class Reminder:
@@ -35,47 +37,66 @@ class Reminder:
     content: Mapped[str] = mapped_column(TEXT, nullable=False)
 
     if TYPE_CHECKING:
-        def __init__(self, *, user_id: int, guild_id: int, channel_id: int, message_id: int, time: datetime,
-            content: str) -> None: ...
+
+        def __init__(
+            self, *, user_id: int, guild_id: int, channel_id: int, message_id: int, time: datetime, content: str
+        ) -> None:
+            ...
+
 
 logger = logging.getLogger(__name__)
+
 
 def format_msg(guild_id: int, channel_id: int, msg_id: int) -> str:
     return "https://discord.com/channels/{}/{}/{}".format(guild_id, channel_id, msg_id)
 
+
 def format_reminder(reminder: Reminder) -> str:
     msg = format_msg(reminder.guild_id, reminder.channel_id, reminder.message_id)
     timestamp = int(reminder.time.replace(tzinfo=timezone.utc).timestamp())
-    if reminder.content == "": return "{} for <t:{}:F>".format(msg, timestamp)
+    if reminder.content == "":
+        return "{} for <t:{}:F>".format(msg, timestamp)
     return format("{!i} ({}) for <t:{}:F>", reminder.content, msg, timestamp)
+
 
 def format_text_reminder(reminder: Reminder) -> str:
     msg = format_msg(reminder.guild_id, reminder.channel_id, reminder.message_id)
     time = reminder.time.replace(tzinfo=timezone.utc)
-    if reminder.content == "": return '{} for {}'.format(msg, time)
+    if reminder.content == "":
+        return "{} for {}".format(msg, time)
     return '"""{}""" ({}) for {}'.format(reminder.content, msg, time)
+
 
 async def send_reminder(reminder: Reminder) -> None:
     guild = client.get_guild(reminder.guild_id)
     if guild is None:
-        logger.info("Reminder {} for user {} silently removed (guild no longer exists)".format(
-            reminder.id, reminder.user_id))
+        logger.info(
+            "Reminder {} for user {} silently removed (guild no longer exists)".format(reminder.id, reminder.user_id)
+        )
         return
     channel = await guild.fetch_channel(reminder.channel_id)
     if not isinstance(channel, (TextChannel, Thread)):
-        logger.info("Reminder {} for user {} silently removed (channel no longer exists)".format(
-            reminder.id, reminder.user_id))
+        logger.info(
+            "Reminder {} for user {} silently removed (channel no longer exists)".format(reminder.id, reminder.user_id)
+        )
         return
     try:
         creation_time = discord.utils.snowflake_time(reminder.message_id).replace(tzinfo=timezone.utc)
-        await channel.send(format("{!m} asked to be reminded <t:{}:R>: {}",
-                reminder.user_id, int(creation_time.timestamp()), reminder.content)[:2000],
-            reference = MessageReference(message_id=reminder.message_id,
-                channel_id=reminder.channel_id, fail_if_not_exists=False),
-            allowed_mentions=AllowedMentions(everyone=False, users=[Object(reminder.user_id)], roles=False))
+        await channel.send(
+            format(
+                "{!m} asked to be reminded <t:{}:R>: {}",
+                reminder.user_id,
+                int(creation_time.timestamp()),
+                reminder.content,
+            )[:2000],
+            reference=MessageReference(
+                message_id=reminder.message_id, channel_id=reminder.channel_id, fail_if_not_exists=False
+            ),
+            allowed_mentions=AllowedMentions(everyone=False, users=[Object(reminder.user_id)], roles=False),
+        )
     except discord.Forbidden:
-        logger.info("Reminder {} for user {} silently removed (permission error)".format(
-            reminder.id, reminder.user_id))
+        logger.info("Reminder {} for user {} silently removed (permission error)".format(reminder.id, reminder.user_id))
+
 
 @task(name="Reminder expiry task", every=86400, exc_backoff_base=60)
 async def expiry_task() -> None:
@@ -96,24 +117,32 @@ async def expiry_task() -> None:
         expiry_task.run_coalesced(delay.total_seconds())
         logger.debug("Waiting for next reminder to expire in {}".format(delay))
 
+
 @plugins.init
 async def init() -> None:
     await util.db.init(util.db.get_ddl(registry.metadata.create_all))
 
     async with sessionmaker() as session:
         conf = await util.db.kv.load(__name__)
-        for user_id, in conf:
+        for (user_id,) in conf:
             for reminder in cast(List[Dict[str, Any]], conf[user_id]):
-                session.add(Reminder(
-                    user_id=int(user_id), guild_id=reminder["guild"], channel_id=reminder["channel"],
-                    message_id=reminder["msg"], time=datetime.fromtimestamp(reminder["time"]),
-                    content=reminder["contents"]))
+                session.add(
+                    Reminder(
+                        user_id=int(user_id),
+                        guild_id=reminder["guild"],
+                        channel_id=reminder["channel"],
+                        message_id=reminder["msg"],
+                        time=datetime.fromtimestamp(reminder["time"]),
+                        content=reminder["contents"],
+                    )
+                )
         await session.commit()
         for user_id in [user_id for user_id, in conf]:
             conf[user_id] = None
         await conf
 
     expiry_task.run_coalesced(0)
+
 
 @plugin_command
 @cleanup
@@ -125,15 +154,23 @@ async def remindme_command(ctx: Context, interval: DurationConverter, *, text: O
         raise UserError("Only usable in a server")
 
     async with sessionmaker() as session:
-        reminder = Reminder(user_id=ctx.author.id, guild_id=ctx.guild.id, channel_id=ctx.channel.id,
-            message_id=ctx.message.id, time=datetime.utcnow() + interval, content=text or "")
+        reminder = Reminder(
+            user_id=ctx.author.id,
+            guild_id=ctx.guild.id,
+            channel_id=ctx.channel.id,
+            message_id=ctx.message.id,
+            time=datetime.utcnow() + interval,
+            content=text or "",
+        )
         session.add(reminder)
         await session.commit()
 
     expiry_task.run_coalesced(0)
 
-    await ctx.send("Created reminder {}".format(format_reminder(reminder))[:2000],
-        allowed_mentions=AllowedMentions.none())
+    await ctx.send(
+        "Created reminder {}".format(format_reminder(reminder))[:2000], allowed_mentions=AllowedMentions.none()
+    )
+
 
 @plugin_command
 @cleanup
@@ -151,6 +188,7 @@ async def reminder_command(ctx: Context) -> None:
     for content, _ in chunk_messages(items):
         await ctx.send(content, allowed_mentions=AllowedMentions.none())
 
+
 @reminder_command.command("remove")
 @privileged
 async def reminder_remove(ctx: Context, id: int) -> None:
@@ -159,8 +197,9 @@ async def reminder_remove(ctx: Context, id: int) -> None:
         if reminder := await session.get(Reminder, id):
             await session.delete(reminder)
             await session.commit()
-            await ctx.send("Removed reminder {}".format(format_reminder(reminder))[:2000],
-                allowed_mentions=AllowedMentions.none())
+            await ctx.send(
+                "Removed reminder {}".format(format_reminder(reminder))[:2000], allowed_mentions=AllowedMentions.none()
+            )
 
             expiry_task.run_coalesced(0)
         else:

@@ -8,8 +8,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import yaml
 
 import bot.acl
-from bot.acl import (ACL, ACLCheck, ActionPermissions, CommandPermissions, EvalResult, MessageableChannel, evaluate_acl,
-    evaluate_acl_meta, live_actions, privileged, register_action)
+from bot.acl import (
+    ACL,
+    ACLCheck,
+    ActionPermissions,
+    CommandPermissions,
+    EvalResult,
+    MessageableChannel,
+    evaluate_acl,
+    evaluate_acl_meta,
+    live_actions,
+    privileged,
+    register_action,
+)
 import bot.autoload
 from bot.client import client
 import bot.commands
@@ -20,6 +31,7 @@ from plugins.bot_manager import PluginConverter
 import util.db
 import util.db.kv
 from util.discord import CodeBlock, Inline, Typing, UserError, format
+
 
 @plugin_command
 @cleanup
@@ -53,9 +65,9 @@ async def sql_command(ctx: Context, args: Greedy[Union[CodeBlock, Inline, str]])
         def output_len(output: List[str]) -> int:
             return sum(len(row) + 1 for row in output)
 
-        total_len = sum(4 + output_len(output) + 4
-            if isinstance(output, list) else len(output) + 1
-            for output in outputs)
+        total_len = sum(
+            4 + output_len(output) + 4 if isinstance(output, list) else len(output) + 1 for output in outputs
+        )
 
         while total_len > 2000 and any(data_outputs):
             lst = max(data_outputs, key=output_len)
@@ -67,8 +79,9 @@ async def sql_command(ctx: Context, args: Greedy[Union[CodeBlock, Inline, str]])
                 total_len += 4
             total_len -= len(removed) + 1
 
-        text = "\n".join(format("{!b}", "\n".join(output))
-            if isinstance(output, list) else output for output in outputs)[:2000]
+        text = "\n".join(
+            format("{!b}", "\n".join(output)) if isinstance(output, list) else output for output in outputs
+        )[:2000]
 
         reply = await ctx.send(text)
 
@@ -88,6 +101,7 @@ async def sql_command(ctx: Context, args: Greedy[Union[CodeBlock, Inline, str]])
         else:
             await tx.rollback()
 
+
 @plugin_config_command
 @command("prefix")
 async def config_prefix(ctx: Context, prefix: Optional[str]) -> None:
@@ -101,12 +115,14 @@ async def config_prefix(ctx: Context, prefix: Optional[str]) -> None:
             await session.commit()
             await ctx.send("\u2705")
 
+
 @plugin_command
 @cleanup
 @group("acl")
 @privileged
 async def acl_command(ctx: Context) -> None:
     """Manage Access Control Lists, their mapping to commands and actions."""
+
 
 @acl_command.command("list")
 @privileged
@@ -130,6 +146,7 @@ async def acl_list(ctx: Context) -> None:
         output += "\nUnused: {}".format(", ".join(format("{!i}", name) for name in acls if name not in used))
     await ctx.send(output)
 
+
 @acl_command.command("show")
 @privileged
 async def acl_show(ctx: Context, acl: str) -> None:
@@ -140,7 +157,9 @@ async def acl_show(ctx: Context, acl: str) -> None:
 
     await ctx.send(format("{!b:yaml}", yaml.dump(data.data)))
 
+
 acl_override = register_action("acl_override")
+
 
 @acl_command.command("set")
 @privileged
@@ -170,6 +189,7 @@ async def acl_set(ctx: Context, acl: str, formula: CodeBlock) -> None:
 
     await ctx.send("\u2705")
 
+
 @acl_command.command("commands")
 @privileged
 async def acl_commands(ctx: Context) -> None:
@@ -184,9 +204,13 @@ async def acl_commands(ctx: Context) -> None:
             acls[cmd.acl].add(cmd.name)
             seen.add(cmd.name)
     output = "\n".join(
-        format("- {} require the {!i} ACL",
-            ", ".join(format("{!i}", prefix + command) for command in sorted(commands)), acl)
-        for acl, commands in acls.items())
+        format(
+            "- {} require the {!i} ACL",
+            ", ".join(format("{!i}", prefix + command) for command in sorted(commands)),
+            acl,
+        )
+        for acl, commands in acls.items()
+    )
 
     used: Set[str] = set()
     for cmd in client.walk_commands():
@@ -196,6 +220,7 @@ async def acl_commands(ctx: Context) -> None:
         output += "\n- Inaccessible: " + ", ".join(format("{!i}", prefix + command) for command in used - seen)
 
     await ctx.send(output or "No commands found")
+
 
 @acl_command.command("command")
 @privileged
@@ -219,7 +244,8 @@ async def acl_command_cmd(ctx: Context, command: str, acl: Optional[str]) -> Non
         else:
             reason = format("you do not match the meta-ACL {!i} of the new ACL", meta)
         prompt = await ctx.send(
-            "\u26A0 You will not be able to edit this command anymore, as {}, continue?".format(reason))
+            "\u26A0 You will not be able to edit this command anymore, as {}, continue?".format(reason)
+        )
         if await get_reaction(prompt, ctx.author, {"\u274C": False, "\u2705": True}, timeout=60) != True:
             return
 
@@ -239,6 +265,7 @@ async def acl_command_cmd(ctx: Context, command: str, acl: Optional[str]) -> Non
 
     await ctx.send("\u2705")
 
+
 @acl_command.command("actions")
 @privileged
 async def acl_actions(ctx: Context) -> None:
@@ -253,13 +280,15 @@ async def acl_actions(ctx: Context) -> None:
             seen.add(action.name)
     output = "\n".join(
         format("- {} require the {!i} ACL", ", ".join(format("{!i}", action) for action in actions), acl)
-            for acl, actions in acls.items())
+        for acl, actions in acls.items()
+    )
 
     used = {action for action, uses in live_actions.items() if uses}
     if len(used - seen):
         output += "\nInaccessible: " + ", ".join(format("{!i}", action) for action in used - seen)
 
     await ctx.send(output or "No actions registered")
+
 
 @acl_command.command("action")
 @privileged
@@ -283,7 +312,8 @@ async def acl_action(ctx: Context, action: str, acl: Optional[str]) -> None:
         else:
             reason = format("you do not match the meta-ACL {!i} of the new ACL", meta)
         prompt = await ctx.send(
-            "\u26A0 You will not be able to edit this action anymore, as {}, continue?".format(reason))
+            "\u26A0 You will not be able to edit this action anymore, as {}, continue?".format(reason)
+        )
         if await get_reaction(prompt, ctx.author, {"\u274C": False, "\u2705": True}, timeout=60) != True:
             return
 
@@ -303,6 +333,7 @@ async def acl_action(ctx: Context, action: str, acl: Optional[str]) -> None:
 
     await ctx.send("\u2705")
 
+
 @acl_command.command("metas")
 @privileged
 async def acl_metas(ctx: Context) -> None:
@@ -315,8 +346,10 @@ async def acl_metas(ctx: Context) -> None:
                 acls[acl.meta].add(acl.name)
     output = "\n".join(
         format("- {} require the {!i} ACL to be edited", ", ".join(format("{!i}", acl) for acl in acls), meta)
-            for meta, acls in acls.items())
+        for meta, acls in acls.items()
+    )
     await ctx.send(output or "No meta-ACLs assigned")
+
 
 @acl_command.command("meta")
 @privileged
@@ -342,8 +375,7 @@ async def acl_meta(ctx: Context, acl: str, meta: Optional[str]) -> None:
             reason = "the meta is to be removed and you do not match the `acl_override` action"
         else:
             reason = format("you do not match the new meta-ACL {!i}", meta)
-        prompt = await ctx.send(
-            "\u26A0 You will not be able to edit this ACL anymore, as {}, continue?".format(reason))
+        prompt = await ctx.send("\u26A0 You will not be able to edit this ACL anymore, as {}, continue?".format(reason))
         if await get_reaction(prompt, ctx.author, {"\u274C": False, "\u2705": True}, timeout=60) != True:
             return
 
@@ -356,6 +388,7 @@ async def acl_meta(ctx: Context, acl: str, meta: Optional[str]) -> None:
 
     await ctx.send("\u2705")
 
+
 @plugin_config_command
 @group("autoload", invoke_without_command=True)
 async def config_autoload(ctx: Context) -> None:
@@ -365,8 +398,13 @@ async def config_autoload(ctx: Context) -> None:
         for plugin in (await session.execute(stmt)).scalars():
             order[plugin.order].append(plugin.name)
 
-    await ctx.send("\n".join("- {}: {}".format(i, ", ".join(format("{!i}", plugin) for plugin in plugins))
-        for i, plugins in order.items()))
+    await ctx.send(
+        "\n".join(
+            "- {}: {}".format(i, ", ".join(format("{!i}", plugin) for plugin in plugins))
+            for i, plugins in order.items()
+        )
+    )
+
 
 @config_autoload.command("add")
 async def config_autoload_add(ctx: Context, plugin: PluginConverter, order: int) -> None:
@@ -374,6 +412,7 @@ async def config_autoload_add(ctx: Context, plugin: PluginConverter, order: int)
         session.add(bot.autoload.AutoloadedPlugin(name=plugin, order=order))
         await session.commit()
         await ctx.send("\u2705")
+
 
 @config_autoload.command("remove")
 async def config_autoload_remove(ctx: Context, plugin: PluginConverter) -> None:

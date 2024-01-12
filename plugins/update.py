@@ -15,8 +15,10 @@ import plugins
 import util.db.kv
 from util.discord import CodeItem, Typing, chunk_messages, format
 
+
 registry = sqlalchemy.orm.registry()
 sessionmaker = async_sessionmaker(util.db.engine)
+
 
 @registry.mapped
 class GitDirectory:
@@ -26,7 +28,10 @@ class GitDirectory:
     directory: Mapped[str] = mapped_column(TEXT, nullable=False)
 
     if TYPE_CHECKING:
-        def __init__(self, *, name: str, directory: str) -> None: ...
+
+        def __init__(self, *, name: str, directory: str) -> None:
+            ...
+
 
 @plugins.init
 async def init() -> None:
@@ -53,8 +58,15 @@ async def update_command(ctx: Context, bot_directory: Optional[str]) -> None:
             if conf := await session.get(GitDirectory, bot_directory):
                 cwd = conf.directory
 
-    git_pull = await asyncio.create_subprocess_exec("git", "pull", "--ff-only", "--recurse-submodules", cwd=cwd,
-        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
+    git_pull = await asyncio.create_subprocess_exec(
+        "git",
+        "pull",
+        "--ff-only",
+        "--recurse-submodules",
+        cwd=cwd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+    )
 
     async with Typing(ctx):
         try:
@@ -66,14 +78,19 @@ async def update_command(ctx: Context, bot_directory: Optional[str]) -> None:
     for content, files in chunk_messages((CodeItem(output, filename="update.txt"),)):
         await ctx.send(content, files=files)
 
+
 @plugin_config_command
 @group("update", invoke_without_command=True)
 async def config(ctx: Context) -> None:
     async with sessionmaker() as session:
         stmt = select(GitDirectory)
-        await ctx.send("\n".join(format("- {!i}: {!i}", conf.name, conf.directory)
-            for conf in (await session.execute(stmt)).scalars())
-            or "No repositories registered")
+        await ctx.send(
+            "\n".join(
+                format("- {!i}: {!i}", conf.name, conf.directory) for conf in (await session.execute(stmt)).scalars()
+            )
+            or "No repositories registered"
+        )
+
 
 @config.command("add")
 async def config_add(ctx: Context, name: str, directory: str) -> None:
@@ -81,6 +98,7 @@ async def config_add(ctx: Context, name: str, directory: str) -> None:
         session.add(GitDirectory(name=name, directory=directory))
         await session.commit()
         await ctx.send("\u2705")
+
 
 @config.command("remove")
 async def config_remove(ctx: Context, name: str) -> None:

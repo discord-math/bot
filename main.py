@@ -1,6 +1,7 @@
 import logging
 
-import log_setup # type: ignore
+import log_setup  # type: ignore
+
 
 logger: logging.Logger = logging.getLogger(__name__)
 

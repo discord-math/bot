@@ -28,7 +28,9 @@ import plugins.log
 import plugins.tickets
 from util.discord import PlainItem, chunk_messages, format
 
+
 logger = logging.getLogger(__name__)
+
 
 @total_ordering
 class InfixType(enum.Enum):
@@ -39,17 +41,19 @@ class InfixType(enum.Enum):
     def __lt__(self, other: InfixType) -> bool:
         return self.value < other.value
 
+
 InfixRank = Union[
-    Tuple[Literal[InfixType.EXACT]],
-    Tuple[Literal[InfixType.PREFIX], int],
-    Tuple[Literal[InfixType.INFIX], int]]
+    Tuple[Literal[InfixType.EXACT]], Tuple[Literal[InfixType.PREFIX], int], Tuple[Literal[InfixType.INFIX], int]
+]
 
 T_co = TypeVar("T_co", covariant=True)
+
 
 @dataclass(order=True)
 class InfixCandidate(Generic[T_co]):
     rank: InfixRank
     match: T_co = field(compare=False)
+
 
 class IdTrie:
     trie: datrie.Trie
@@ -65,13 +69,17 @@ class IdTrie:
         self.trie.pop(str(value), None)
 
     def lookup(self, input: str) -> Iterable[InfixCandidate[int]]:
-        return sorted(InfixCandidate((InfixType.EXACT,) if input == str(value) else
-            (InfixType.PREFIX, len(key) - len(input)), value)
-            for key, value in self.trie.items(input))
+        return sorted(
+            InfixCandidate(
+                (InfixType.EXACT,) if input == str(value) else (InfixType.PREFIX, len(key) - len(input)), value
+            )
+            for key, value in self.trie.items(input)
+        )
+
 
 class InfixTrie:
     # Most common characters to appear in nicknames and usernames
-    common_chars = (" #.0123456789_abcdefghijklmnopqrstuvwxyz")
+    common_chars = " #.0123456789_abcdefghijklmnopqrstuvwxyz"
     assert len(common_chars) <= 254
     uncommon_re = re.compile("[^" + re.escape(common_chars) + "]")
 
@@ -80,7 +88,7 @@ class InfixTrie:
     lock: threading.Lock
 
     @classmethod
-    def make_trie(cls) -> datrie.Trie: # type: ignore
+    def make_trie(cls) -> datrie.Trie:  # type: ignore
         return datrie.Trie("\n" + cls.common_chars)
 
     def __init__(self):
@@ -88,12 +96,11 @@ class InfixTrie:
         self.uncommon = defaultdict(dict)
         self.lock = threading.Lock()
 
-    def common_key_iter(self, key: str) -> Iterator[Tuple[datrie.Trie, str]]: # type: ignore
+    def common_key_iter(self, key: str) -> Iterator[Tuple[datrie.Trie, str]]:  # type: ignore
         common_key = re.sub(self.uncommon_re, "\n", key)
         for i in range(len(common_key)):
             if common_key[i] != "\n":
                 yield self.tries[i], common_key[i:]
-
 
     def insert(self, key: str, value: int) -> None:
         key = key.lower()
@@ -125,8 +132,10 @@ class InfixTrie:
         with self.lock:
             uncommon: Dict[int, str]
             try:
-                uncommon = min((d for ch in re.findall(self.uncommon_re, input)
-                    if (d := self.uncommon.get(ch)) is not None), key=len)
+                uncommon = min(
+                    (d for ch in re.findall(self.uncommon_re, input) if (d := self.uncommon.get(ch)) is not None),
+                    key=len,
+                )
             except ValueError:
                 uncommon = {}
 
@@ -156,23 +165,29 @@ class InfixTrie:
                 yield InfixCandidate((InfixType.INFIX, i), [])
                 yield from sorted(infix_iter(i))
 
-            for candidate in heapq.merge(sorted(uncommon_iter()), sorted(prefix_iter()),
-                *(prefix_iter_sorted(i) for i in range(1, max(self.tries) + 1))):
+            for candidate in heapq.merge(
+                sorted(uncommon_iter()),
+                sorted(prefix_iter()),
+                *(prefix_iter_sorted(i) for i in range(1, max(self.tries) + 1)),
+            ):
                 if isinstance(candidate.match, int):
-                    yield candidate # type:ignore
+                    yield candidate  # type:ignore
                 else:
                     for value in candidate.match:
                         yield InfixCandidate(candidate.rank, value)
+
 
 id_trie: IdTrie = IdTrie()
 username_trie: InfixTrie = InfixTrie()
 displayname_trie: InfixTrie = InfixTrie()
 nickname_trie: InfixTrie = InfixTrie()
 
+
 @plugins.finalizer
 def deallocate_tries() -> None:
     global id_trie, username_trie, displayname_trie, nickname_trie
     del id_trie, username_trie, displayname_trie, nickname_trie
+
 
 @total_ordering
 class MatchType(enum.Enum):
@@ -190,6 +205,7 @@ class MatchType(enum.Enum):
     def __lt__(self, other: MatchType) -> bool:
         return self.value < other.value
 
+
 @total_ordering
 class NickOrUser(enum.Enum):
     USER = 0
@@ -198,6 +214,7 @@ class NickOrUser(enum.Enum):
     def __lt__(self, other: MatchType) -> bool:
         return self.value < other.value
 
+
 ServerStatus = int
 MatchRank = Union[
     Tuple[Literal[MatchType.EXACT_ID]],
@@ -205,12 +222,15 @@ MatchRank = Union[
     Tuple[Literal[MatchType.PREFIX, MatchType.INFIX], int, NickOrUser, ServerStatus],
     Tuple[Literal[MatchType.EXACT_RECENT_USER, MatchType.EXACT_RECENT_NICK], ServerStatus],
     Tuple[Literal[MatchType.PREFIX_RECENT, MatchType.INFIX_RECENT], int, NickOrUser, ServerStatus],
-    Tuple[Literal[MatchType.PREFIX_ID], ServerStatus, int]]
+    Tuple[Literal[MatchType.PREFIX_ID], ServerStatus, int],
+]
 
 Recent = Tuple[int, str, NickOrUser, bool]
 
+
 def rank_server_status(m: Optional[Member]) -> ServerStatus:
     return -len(m.roles) if m else 1
+
 
 def rank_recent_match(text: str, recent: Recent, server_status: ServerStatus) -> MatchRank:
     _, match, nu, infix = recent
@@ -220,17 +240,20 @@ def rank_recent_match(text: str, recent: Recent, server_status: ServerStatus) ->
         else:
             return MatchType.EXACT_RECENT_NICK, server_status
     if infix:
-        return MatchType.INFIX_RECENT, len(match) -  len(text), nu, server_status
+        return MatchType.INFIX_RECENT, len(match) - len(text), nu, server_status
     else:
         return MatchType.PREFIX_RECENT, len(match) - len(text), nu, server_status
 
+
 def match_id(match: Union[Member, Recent]):
     return match.id if isinstance(match, Member) else match[0]
+
 
 @dataclass(order=True)
 class Candidate:
     rank: MatchRank
     match: Union[Member, Recent] = field(compare=False)
+
 
 async def select_candidates(limit: int, input: str, guild: Guild, session: AsyncSession) -> Sequence[Candidate]:
     def id_iter() -> Iterator[Candidate]:
@@ -294,34 +317,52 @@ async def select_candidates(limit: int, input: str, guild: Guild, session: Async
     candidates: List[Candidate]
 
     logger.debug("candidates: Iterating members")
-    candidates = list(itertools.islice(
-        unique_candidates(heapq.merge(id_iter(), username_iter(), displayname_iter(), nickname_iter())),
-        limit))
+    candidates = list(
+        itertools.islice(
+            unique_candidates(heapq.merge(id_iter(), username_iter(), displayname_iter(), nickname_iter())), limit
+        )
+    )
 
     if len(candidates) < limit or candidates[-1].rank[0] >= MatchType.EXACT_RECENT_USER:
         logger.debug("candidates: Iterating recent users")
-        candidates = list(itertools.islice(
-            unique_candidates(heapq.merge(candidates,
-                recent_iter(await match_recents(session, input, NickOrUser.USER, False)))),
-            limit))
+        candidates = list(
+            itertools.islice(
+                unique_candidates(
+                    heapq.merge(candidates, recent_iter(await match_recents(session, input, NickOrUser.USER, False)))
+                ),
+                limit,
+            )
+        )
 
     if len(candidates) < limit or candidates[-1].rank[0] >= MatchType.EXACT_RECENT_NICK:
         logger.debug("candidates: Iterating recent nicks")
-        candidates = list(itertools.islice(
-            unique_candidates(heapq.merge(candidates,
-                recent_iter(await match_recents(session, input, NickOrUser.NICK, False)))),
-            limit))
+        candidates = list(
+            itertools.islice(
+                unique_candidates(
+                    heapq.merge(candidates, recent_iter(await match_recents(session, input, NickOrUser.NICK, False)))
+                ),
+                limit,
+            )
+        )
 
     if len(candidates) < limit or candidates[-1].rank[0] >= MatchType.INFIX_RECENT:
         logger.debug("candidates: Iterating recent infix")
-        candidates = list(itertools.islice(
-            unique_candidates(heapq.merge(candidates,
-                recent_iter(await match_recents(session, input, NickOrUser.USER, True)),
-                recent_iter(await match_recents(session, input, NickOrUser.NICK, True)))),
-            limit))
+        candidates = list(
+            itertools.islice(
+                unique_candidates(
+                    heapq.merge(
+                        candidates,
+                        recent_iter(await match_recents(session, input, NickOrUser.USER, True)),
+                        recent_iter(await match_recents(session, input, NickOrUser.NICK, True)),
+                    )
+                ),
+                limit,
+            )
+        )
 
     logger.debug("candidates: Done")
     return candidates
+
 
 async def match_recents(session: AsyncSession, text: str, nu: NickOrUser, infix: bool) -> Sequence[Recent]:
     if nu == NickOrUser.NICK:
@@ -340,6 +381,7 @@ async def match_recents(session: AsyncSession, text: str, nu: NickOrUser, infix:
     for id, match in await session.execute(stmt):
         results.append((id, match, nu, infix))
     return results
+
 
 @command("whois")
 @default_permissions()
@@ -372,8 +414,11 @@ async def whois_command(interaction: Interaction, user: str) -> None:
         embed.add_field(name="Username", value=format("{!i}#{!i}", m.name, m.discriminator))
         if isinstance(m, Member):
             embed.add_field(name="Nickname", value=format("{!i}", m.nick) if m.nick is not None else "none")
-            embed.add_field(name="Roles", inline=False,
-                value=", ".join(format("{!M}", role) for role in m.roles if not role.is_default()) or "none")
+            embed.add_field(
+                name="Roles",
+                inline=False,
+                value=", ".join(format("{!M}", role) for role in m.roles if not role.is_default()) or "none",
+            )
         else:
             embed.add_field(name="Not on server", value="\u200B")
         if isinstance(m, Member):
@@ -390,15 +435,18 @@ async def whois_command(interaction: Interaction, user: str) -> None:
         tickets = await plugins.tickets.visible_tickets(session, id)
 
     async with plugins.log.sessionmaker() as session:
-        stmt = (select(plugins.log.SavedMessage)
+        stmt = (
+            select(plugins.log.SavedMessage)
             .where(plugins.log.SavedMessage.author_id == id)
             .order_by(plugins.log.SavedMessage.id.desc())
-            .limit(15))
+            .limit(15)
+        )
         msgs = reversed(list((await session.execute(stmt)).scalars()))
         stmt = select(plugins.log.SavedUser).where(plugins.log.SavedUser.id == id)
         users = list((await session.execute(stmt)).scalars())
         stmt = select(plugins.log.SavedNick.nick).where(
-            plugins.log.SavedNick.id == id, plugins.log.SavedNick.nick != None)
+            plugins.log.SavedNick.id == id, plugins.log.SavedNick.nick != None
+        )
         nicks = list((await session.execute(stmt)).scalars())
 
     def item_gen() -> Iterator[PlainItem]:
@@ -409,8 +457,15 @@ async def whois_command(interaction: Interaction, user: str) -> None:
             else:
                 yield PlainItem(", ")
             first = False
-            yield PlainItem(format("[#{}]({}): {} ({})", ticket.id, ticket.jump_link,
-                ticket.describe(target=False, mod=False, dm=False), ticket.status_line))
+            yield PlainItem(
+                format(
+                    "[#{}]({}): {} ({})",
+                    ticket.id,
+                    ticket.jump_link,
+                    ticket.describe(target=False, mod=False, dm=False),
+                    ticket.status_line,
+                )
+            )
         first = True
         for msg in msgs:
             if first:
@@ -421,8 +476,16 @@ async def whois_command(interaction: Interaction, user: str) -> None:
             created_at = int(snowflake_time(msg.id).timestamp())
             content = msg.content.decode("utf8")
             link = client.get_partial_messageable(msg.channel_id).get_partial_message(msg.id).jump_url
-            yield PlainItem(format("{!c} <t:{}:R> [{!i}{}]({})", msg.channel_id, created_at, content[:100],
-                "..." if len(content) > 100 else "", link))
+            yield PlainItem(
+                format(
+                    "{!c} <t:{}:R> [{!i}{}]({})",
+                    msg.channel_id,
+                    created_at,
+                    content[:100],
+                    "..." if len(content) > 100 else "",
+                    link,
+                )
+            )
         first = True
         seen = set()
         if m:
@@ -453,11 +516,13 @@ async def whois_command(interaction: Interaction, user: str) -> None:
     for content, _ in chunk_messages(item_gen()):
         await interaction.followup.send(content, suppress_embeds=True, ephemeral=True)
 
+
 def format_server_status(server_status: ServerStatus) -> str:
     if server_status == 1:
         return "not on server"
     else:
         return "{} roles".format(-server_status)
+
 
 def format_match(rank: MatchRank, match: Union[Member, Recent], guild: Guild) -> str:
     if rank[0] == MatchType.EXACT_ID:
@@ -492,10 +557,12 @@ def format_match(rank: MatchRank, match: Union[Member, Recent], guild: Guild) ->
         sstat = format_server_status(server_status)
         if match.nick is not None:
             return "{} \uFF5C {}#{} \uFF5C {} \uFF5C {} \uFF5C ({}) [{}]".format(
-                match.id, match.name, match.discriminator, match.display_name, match.nick, sstat, mtype)
+                match.id, match.name, match.discriminator, match.display_name, match.nick, sstat, mtype
+            )
         else:
             return "{} \uFF5C {}#{} \uFF5C {} \uFF5C ({}) [{}]".format(
-                match.id, match.name, match.discriminator, match.display_name, sstat, mtype)
+                match.id, match.name, match.discriminator, match.display_name, sstat, mtype
+            )
     else:
         id, aka, _, _ = match
         if (m := guild.get_member(id)) is not None:
@@ -504,15 +571,18 @@ def format_match(rank: MatchRank, match: Union[Member, Recent], guild: Guild) ->
             sstat = format_server_status(server_status)
             if m.nick is not None:
                 return "{} \uFF5C {}#{} \uFF5C {} \uFF5C aka: {} \uFF5C ({}) [{}]".format(
-                    id, m.name, m.discriminator, m.nick, aka, sstat, mtype)
+                    id, m.name, m.discriminator, m.nick, aka, sstat, mtype
+                )
             else:
                 return "{} \uFF5C {}#{} \uFF5C aka: {} \uFF5C ({}) [{}]".format(
-                    id, m.name, m.discriminator, aka, sstat, mtype)
+                    id, m.name, m.discriminator, aka, sstat, mtype
+                )
         else:
             if server_status is None:
                 server_status = rank_server_status(None)
             sstat = format_server_status(server_status)
             return "{} ??? \uFF5C aka: {} \uFF5C ({}) [{}]".format(id, aka, sstat, mtype)
+
 
 @whois_command.autocomplete("user")
 async def whois_autocomplete(interaction: Interaction, input: str) -> List[Choice[str]]:
@@ -522,16 +592,21 @@ async def whois_autocomplete(interaction: Interaction, input: str) -> List[Choic
         results = []
     else:
         async with plugins.log.sessionmaker() as session:
-            results = [Choice(name=format_match(c.rank, c.match, guild), value=str(match_id(c.match)))
-                for c in await select_candidates(25, input, guild, session)]
+            results = [
+                Choice(name=format_match(c.rank, c.match, guild), value=str(match_id(c.match)))
+                for c in await select_candidates(25, input, guild, session)
+            ]
     logger.debug("End autocomplete")
     return results
 
+
 filling_event: threading.Event = threading.Event()
+
 
 @cog
 class Whois(Cog):
     """Maintain username cache"""
+
     async def cog_load(self) -> None:
         await self.on_ready()
 
@@ -546,7 +621,14 @@ class Whois(Cog):
         displayname_trie = InfixTrie()
         nickname_trie = InfixTrie()
 
-        def fill_trie(event: threading.Event, id_trie: IdTrie, username_trie: InfixTrie, displayname_trie: InfixTrie, nickname_trie: InfixTrie, members: List[Member]) -> None:
+        def fill_trie(
+            event: threading.Event,
+            id_trie: IdTrie,
+            username_trie: InfixTrie,
+            displayname_trie: InfixTrie,
+            nickname_trie: InfixTrie,
+            members: List[Member],
+        ) -> None:
             logger.debug("Starting to fill tries")
             i = 0
             for member in members:
@@ -564,9 +646,16 @@ class Whois(Cog):
                     logger.debug("Filling tries: {}".format(i))
             logger.debug("Done filling tries")
 
-        asyncio.get_event_loop().run_in_executor(None,
-            fill_trie, filling_event, id_trie, username_trie, displayname_trie, nickname_trie,
-            list(client.get_all_members()))
+        asyncio.get_event_loop().run_in_executor(
+            None,
+            fill_trie,
+            filling_event,
+            id_trie,
+            username_trie,
+            displayname_trie,
+            nickname_trie,
+            list(client.get_all_members()),
+        )
 
     @Cog.listener()
     async def on_member_join(self, member: Member) -> None:

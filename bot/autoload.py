@@ -15,7 +15,9 @@ import plugins
 import util.asyncio
 import util.db.kv
 
+
 registry = sqlalchemy.orm.registry()
+
 
 @registry.mapped
 class AutoloadedPlugin:
@@ -25,9 +27,13 @@ class AutoloadedPlugin:
     order: Mapped[int] = mapped_column(BigInteger, nullable=False)
 
     if TYPE_CHECKING:
-        def __init__(self, *, name: str, order: int) -> None: ...
+
+        def __init__(self, *, name: str, order: int) -> None:
+            ...
+
 
 logger: logging.Logger = logging.getLogger(__name__)
+
 
 @plugins.init
 async def init() -> None:
@@ -52,4 +58,5 @@ async def init() -> None:
                     await manager.load(plugin.name)
                 except:
                     logger.critical("Exception during autoload of {}".format(plugin.name), exc_info=True)
+
     bot.main_tasks.create_task(autoload(), name="Plugin autoload")

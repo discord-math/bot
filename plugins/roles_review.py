@@ -4,10 +4,21 @@ from typing import TYPE_CHECKING, Iterator, List, Literal, Optional, Protocol, T
 from typing_extensions import NotRequired
 
 import discord
-from discord import (AllowedMentions, ButtonStyle, Guild, Interaction, InteractionType, Member, Message, Object, Role,
-    TextChannel, TextStyle, Thread, User)
-if TYPE_CHECKING:
-    import discord.types.interactions
+from discord import (
+    AllowedMentions,
+    ButtonStyle,
+    Guild,
+    Interaction,
+    InteractionType,
+    Member,
+    Message,
+    Object,
+    Role,
+    TextChannel,
+    TextStyle,
+    Thread,
+    User,
+)
 from discord.abc import Messageable
 from discord.ui import Button, Modal, TextInput, View
 from sqlalchemy import BOOLEAN, BigInteger, ForeignKey, Integer, PrimaryKeyConstraint, delete, select
@@ -25,7 +36,13 @@ import util.db.kv
 from util.discord import PartialRoleConverter, PartialUserConverter, PlainItem, chunk_messages, format, retry
 from util.frozen_list import FrozenList
 
+
+if TYPE_CHECKING:
+    import discord.types.interactions
+
+
 logger = logging.getLogger(__name__)
+
 
 class ReviewedRole(TypedDict):
     prompt: FrozenList[str]
@@ -38,9 +55,14 @@ class ReviewedRole(TypedDict):
     pending_role: NotRequired[int]
     denied_role: NotRequired[int]
 
+
 class RolesReviewConf(Protocol):
-    def __getitem__(self, index: int) -> Optional[ReviewedRole]: ...
-    def __iter__(self) -> Iterator[Tuple[str]]: ...
+    def __getitem__(self, index: int) -> Optional[ReviewedRole]:
+        ...
+
+    def __iter__(self) -> Iterator[Tuple[str]]:
+        ...
+
 
 conf: RolesReviewConf
 
@@ -50,6 +72,7 @@ sessionmaker = async_sessionmaker(util.db.engine, future=True, expire_on_commit=
 
 action_can_vote = register_action("review_can_vote")
 action_can_veto = register_action("review_can_veto")
+
 
 @registry.mapped
 class Application:
@@ -64,8 +87,19 @@ class Application:
     decision: Mapped[Optional[bool]] = mapped_column(BOOLEAN)
 
     if TYPE_CHECKING:
-        def __init__(self, *, listing_id: int, user_id: int, role_id: int, id: Optional[int] = None,
-            voting_id: Optional[int] = None, decision: Optional[bool] = None) -> None: ...
+
+        def __init__(
+            self,
+            *,
+            listing_id: int,
+            user_id: int,
+            role_id: int,
+            id: Optional[int] = None,
+            voting_id: Optional[int] = None,
+            decision: Optional[bool] = None,
+        ) -> None:
+            ...
+
 
 @registry.mapped
 class Vote:
@@ -79,15 +113,17 @@ class Vote:
     __table_args__ = (PrimaryKeyConstraint(application_id, voter_id, veto), {"schema": "roles_review"})
 
     if TYPE_CHECKING:
-        def __init__(self, *, application_id: int, voter_id: int, vote: bool, veto: bool) -> None: ...
+
+        def __init__(self, *, application_id: int, voter_id: int, vote: bool, veto: bool) -> None:
+            ...
+
 
 @plugins.init
 async def init() -> None:
     global conf
     conf = cast(RolesReviewConf, await util.db.kv.load(__name__))
-    await util.db.init(util.db.get_ddl(
-        CreateSchema("roles_review"),
-        registry.metadata.create_all))
+    await util.db.init(util.db.get_ddl(CreateSchema("roles_review"), registry.metadata.create_all))
+
 
 class RolePromptModal(Modal):
     def __init__(self, guild: Guild, prompt_roles: List[Role], message: Optional[Message] = None) -> None:
@@ -106,8 +142,7 @@ class RolePromptModal(Modal):
                 else:
                     placeholder = None
                 prompt = prompt[:45]
-                input = TextInput(label=prompt, style=TextStyle.paragraph, max_length=600,
-                    placeholder=placeholder)
+                input = TextInput(label=prompt, style=TextStyle.paragraph, max_length=600, placeholder=placeholder)
                 self.inputs[role].append(input)
                 self.add_item(input)
 
@@ -136,17 +171,21 @@ class RolePromptModal(Modal):
         if self.message:
             await self.message.delete()
 
+
 class ApproveRoleView(View):
     def __init__(self, msg_id: int) -> None:
         super().__init__(timeout=None)
-        self.add_item(Button(style=ButtonStyle.success, label="Approve",
-            custom_id="{}:{}:Approve".format(__name__, msg_id)))
-        self.add_item(Button(style=ButtonStyle.danger, label="Deny",
-            custom_id="{}:{}:Deny".format(__name__, msg_id)))
-        self.add_item(Button(style=ButtonStyle.secondary, label="Retract",
-            custom_id="{}:{}:Retract".format(__name__, msg_id)))
-        self.add_item(Button(style=ButtonStyle.secondary, label="Veto",
-            custom_id="{}:{}:Veto".format(__name__, msg_id)))
+        self.add_item(
+            Button(style=ButtonStyle.success, label="Approve", custom_id="{}:{}:Approve".format(__name__, msg_id))
+        )
+        self.add_item(Button(style=ButtonStyle.danger, label="Deny", custom_id="{}:{}:Deny".format(__name__, msg_id)))
+        self.add_item(
+            Button(style=ButtonStyle.secondary, label="Retract", custom_id="{}:{}:Retract".format(__name__, msg_id))
+        )
+        self.add_item(
+            Button(style=ButtonStyle.secondary, label="Veto", custom_id="{}:{}:Veto".format(__name__, msg_id))
+        )
+
 
 def voting_decision(app_id: int, review: ReviewedRole, votes: List[Vote]) -> Optional[bool]:
     logger.debug("Calculating votes for {}".format(app_id))
@@ -169,6 +208,7 @@ def voting_decision(app_id: int, review: ReviewedRole, votes: List[Vote]) -> Opt
     logger.debug("Vote on {} undecided".format(app_id))
     return None
 
+
 async def cast_vote(interaction: Interaction, msg_id: int, dir: Optional[bool], veto: Optional[str] = None) -> None:
     assert interaction.message
     assert interaction.guild
@@ -187,8 +227,16 @@ async def cast_vote(interaction: Interaction, msg_id: int, dir: Optional[bool], 
         channel = interaction.guild.get_channel(review["review_channel"])
         assert isinstance(channel, Messageable)
 
-        logger.debug(format("Vote {!r} from {!m} for {!m} {!M} veto={!r}", dir, interaction.user, app.user_id,
-            app.role_id, bool(veto)))
+        logger.debug(
+            format(
+                "Vote {!r} from {!m} for {!m} {!M} veto={!r}",
+                dir,
+                interaction.user,
+                app.user_id,
+                app.role_id,
+                bool(veto),
+            )
+        )
 
         if app.decision is not None:
             await interaction.response.send_message("This application is already resolved.", ephemeral=True)
@@ -199,8 +247,9 @@ async def cast_vote(interaction: Interaction, msg_id: int, dir: Optional[bool], 
 
         if veto is None:
             if not (can_vote or can_veto):
-                await interaction.response.send_message("You are not allowed to vote on this application.",
-                    ephemeral=True)
+                await interaction.response.send_message(
+                    "You are not allowed to vote on this application.", ephemeral=True
+                )
                 return
         else:
             if not can_veto:
@@ -243,15 +292,20 @@ async def cast_vote(interaction: Interaction, msg_id: int, dir: Optional[bool], 
 
         voting_id = interaction.message.id
         thread = interaction.channel
+
         async def update_messages():
             voting = await thread.fetch_message(voting_id)
-            await voting.edit(content=format("{}\n{!m}: {}", voting.content, interaction.user, comment),
+            await voting.edit(
+                content=format("{}\n{!m}: {}", voting.content, interaction.user, comment),
                 view=ApproveRoleView(msg_id) if decision is None else None,
-                allowed_mentions=AllowedMentions.none())
+                allowed_mentions=AllowedMentions.none(),
+            )
             if decision is not None:
                 listing = await channel.fetch_message(app.listing_id)
-                await listing.edit(content=listing.content + "\nDecision: " + ("\u2705" if decision else "\u274C"),
-                    allowed_mentions=AllowedMentions.none())
+                await listing.edit(
+                    content=listing.content + "\nDecision: " + ("\u2705" if decision else "\u274C"),
+                    allowed_mentions=AllowedMentions.none(),
+                )
 
         try:
             await retry(update_messages, attempts=10)
@@ -262,14 +316,15 @@ async def cast_vote(interaction: Interaction, msg_id: int, dir: Optional[bool], 
 
             if decision is not None and (user := interaction.guild.get_member(app.user_id)) is not None:
                 if "pending_role" in review:
-                    if (p_role := interaction.guild.get_role(review["pending_role"])):
+                    if p_role := interaction.guild.get_role(review["pending_role"]):
                         await retry(lambda: user.remove_roles(p_role, reason=format("Granted {!m}", app.role_id)))
                 if decision == True:
                     if (role := interaction.guild.get_role(app.role_id)) is not None:
                         await retry(lambda: user.add_roles(role, reason="By vote"))
                 elif "denied_role" in review:
-                    if (d_role := interaction.guild.get_role(review["denied_role"])):
+                    if d_role := interaction.guild.get_role(review["denied_role"]):
                         await retry(lambda: user.add_roles(d_role, reason=format("Denied {!m}", app.role_id)))
+
 
 class VetoModal(Modal):
     reason = TextInput(style=TextStyle.paragraph, required=False, label="Reason for the veto")
@@ -283,18 +338,25 @@ class VetoModal(Modal):
         super().__init__(title="Veto", timeout=600)
 
     async def on_submit(self, interaction: Interaction) -> None:
-        #if self.decision.values == ["Approve"]:
+        # if self.decision.values == ["Approve"]:
         if str(self.decision)[:1].upper() == "Y":
             await cast_vote(interaction, self.msg_id, True, veto=str(self.reason))
-        #elif self.decision.values == ["Deny"]:
+        # elif self.decision.values == ["Deny"]:
         elif str(self.decision)[:1].upper() == "N":
             await cast_vote(interaction, self.msg_id, False, veto=str(self.reason))
+
 
 class PromptRoleView(View):
     def __init__(self, guild_id: int, role_id: int) -> None:
         super().__init__(timeout=None)
-        self.add_item(Button(style=ButtonStyle.success, label="Get started",
-            custom_id="{}:{}:Prompt:{}".format(__name__, guild_id, role_id)))
+        self.add_item(
+            Button(
+                style=ButtonStyle.success,
+                label="Get started",
+                custom_id="{}:{}:Prompt:{}".format(__name__, guild_id, role_id),
+            )
+        )
+
 
 async def prompt_role(interaction: Interaction, guild_id: int, role_id: int, message: Message) -> None:
     assert (guild := interaction.client.get_guild(guild_id))
@@ -306,6 +368,7 @@ async def prompt_role(interaction: Interaction, guild_id: int, role_id: int, mes
         await message.delete()
     else:
         await interaction.response.send_modal(RolePromptModal(guild, [role], message))
+
 
 @cog
 class RolesReviewCog(Cog):
@@ -347,7 +410,7 @@ class RolesReviewCog(Cog):
     @Cog.listener()
     async def on_member_update(self, before: Member, after: Member) -> None:
         for pending_role in set(after.roles) - set(before.roles):
-            for role_id, in conf:
+            for (role_id,) in conf:
                 role_id = int(role_id)
                 review = conf[role_id]
                 assert review
@@ -377,11 +440,13 @@ class RolesReviewCog(Cog):
             if whose == "any":
                 stmt = select(Application).where(Application.decision == None).order_by(Application.listing_id)
             else:
-                stmt = (select(Application)
-                        .outerjoin(Vote, (Application.id == Vote.application_id) & (Vote.voter_id == ctx.author.id))
-                        .where(Vote.application_id == None)
-                        .where(Application.decision == None)
-                        .order_by(Application.listing_id))
+                stmt = (
+                    select(Application)
+                    .outerjoin(Vote, (Application.id == Vote.application_id) & (Vote.voter_id == ctx.author.id))
+                    .where(Vote.application_id == None)
+                    .where(Application.decision == None)
+                    .order_by(Application.listing_id)
+                )
 
             apps = (await session.execute(stmt)).scalars()
 
@@ -393,8 +458,7 @@ class RolesReviewCog(Cog):
                     if conf[app.role_id] is None:
                         yield PlainItem("{} (?)".format(app.listing_id))
                         continue
-                    chan = ctx.bot.get_partial_messageable(app.listing_id,
-                        guild_id=ctx.guild.id if ctx.guild else None)
+                    chan = ctx.bot.get_partial_messageable(app.listing_id, guild_id=ctx.guild.id if ctx.guild else None)
                     msg = chan.get_partial_message(app.voting_id)
                     yield PlainItem("{}\n".format(msg.jump_url))
 
@@ -411,9 +475,11 @@ class RolesReviewCog(Cog):
         review = conf[role.id]
         assert review
         async with sessionmaker() as session:
-            stmt = (delete(Application)
+            stmt = (
+                delete(Application)
                 .where(Application.user_id == user.id, Application.role_id == role.id)
-                .returning(Application.listing_id, Application.voting_id))
+                .returning(Application.listing_id, Application.voting_id)
+            )
             seen = False
             chan = ctx.bot.get_partial_messageable(review["review_channel"])
             for listing_id, voting_id in await session.execute(stmt):
@@ -436,18 +502,26 @@ class RolesReviewCog(Cog):
 
             if seen:
                 await session.commit()
-                await ctx.send(format("Reset {!m}'s application status for {!M}.", user, role),
-                    allowed_mentions=AllowedMentions.none())
+                await ctx.send(
+                    format("Reset {!m}'s application status for {!M}.", user, role),
+                    allowed_mentions=AllowedMentions.none(),
+                )
             else:
-                await ctx.send(format("{!m} has no resolved applications for {!M}.", user, role),
-                    allowed_mentions=AllowedMentions.none())
+                await ctx.send(
+                    format("{!m} has no resolved applications for {!M}.", user, role),
+                    allowed_mentions=AllowedMentions.none(),
+                )
+
 
 class ApplicationStatus(enum.Enum):
     APPROVED = 0
     PENDING = 1
     DENIED = 2
 
-async def check_applications(member: Union[User, Member], role: Role, session: AsyncSession) -> Optional[ApplicationStatus]:
+
+async def check_applications(
+    member: Union[User, Member], role: Role, session: AsyncSession
+) -> Optional[ApplicationStatus]:
     """
     If the user wants the role, depending on whether they have previous applications:
     - the role can be just given to them, returning APPROVED,
@@ -455,9 +529,7 @@ async def check_applications(member: Union[User, Member], role: Role, session: A
     - we can deny it, returning DENIED,
     - if they had no previous applications, we can direct them to answer the questions, returning None
     """
-    stmt = (select(Application.decision)
-        .where(Application.user_id == member.id, Application.role_id == role.id)
-        .limit(1))
+    stmt = select(Application.decision).where(Application.user_id == member.id, Application.role_id == role.id).limit(1)
     for decision in (await session.execute(stmt)).scalars():
         logger.debug(format("Found old application {!m} {!M} with decision={!r}", member, role, decision))
         if decision is None:
@@ -476,6 +548,7 @@ async def pre_apply(member: Union[User, Member], role: Role) -> Optional[Applica
         pre = await check_applications(member, role, session)
         logger.debug(format("Pre-application {!m} {!M}: {!r}", member, role, pre))
         return pre
+
 
 async def apply(member: Member, role: Role, inputs: List[Tuple[str, str]]) -> Optional[ApplicationStatus]:
     """
@@ -505,12 +578,20 @@ async def apply(member: Member, role: Role, inputs: List[Tuple[str, str]]) -> Op
             thread = None
             voting = None
             try:
-                listing = await channel.send(format("{!m} ({}) requested {!M}:\n\n{}", member, member.display_name,
-                        role, "\n\n".join("**{}**: {}".format(question, answer) for question, answer in inputs)),
-                    allowed_mentions=AllowedMentions.none())
+                listing = await channel.send(
+                    format(
+                        "{!m} ({}) requested {!M}:\n\n{}",
+                        member,
+                        member.display_name,
+                        role,
+                        "\n\n".join("**{}**: {}".format(question, answer) for question, answer in inputs),
+                    ),
+                    allowed_mentions=AllowedMentions.none(),
+                )
                 thread = await listing.create_thread(name=member.display_name)
-                voting = await thread.send("Votes:", view=ApproveRoleView(listing.id),
-                    allowed_mentions=AllowedMentions.none())
+                voting = await thread.send(
+                    "Votes:", view=ApproveRoleView(listing.id), allowed_mentions=AllowedMentions.none()
+                )
                 app = Application(listing_id=listing.id, voting_id=voting.id, user_id=member.id, role_id=role.id)
                 session.add(app)
                 await session.commit()

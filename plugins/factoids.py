@@ -21,13 +21,16 @@ import util.db
 import util.db.kv
 from util.discord import CodeBlock, Inline, InvocationError, Quoted, UserError, format
 
+
 registry: sqlalchemy.orm.registry = sqlalchemy.orm.registry()
 
 sessionmaker = async_sessionmaker(util.db.engine, future=True)
 
+
 class Flags(TypedDict):
     mentions: NotRequired[bool]
     acl: NotRequired[str]
+
 
 @registry.mapped
 class Factoid:
@@ -44,9 +47,21 @@ class Factoid:
     flags: Mapped[Optional[Flags]] = mapped_column(JSONB)
 
     if TYPE_CHECKING:
-        def __init__(self, *, author_id: int, created_at: datetime, uses: int, id: Optional[int] = ...,
-            message_text: Optional[str] = ..., embed_data: Optional[Mapping[str, object]] = ...,
-            used_at: Optional[datetime] = ..., flags: Optional[Mapping[str, object]] = ...) -> None: ...
+
+        def __init__(
+            self,
+            *,
+            author_id: int,
+            created_at: datetime,
+            uses: int,
+            id: Optional[int] = ...,
+            message_text: Optional[str] = ...,
+            embed_data: Optional[Mapping[str, object]] = ...,
+            used_at: Optional[datetime] = ...,
+            flags: Optional[Mapping[str, object]] = ...,
+        ) -> None:
+            ...
+
 
 @registry.mapped
 class Alias:
@@ -63,49 +78,90 @@ class Alias:
     factoid: Mapped[Factoid] = relationship(Factoid, lazy="joined")
 
     if TYPE_CHECKING:
+
         @overload
-        def __init__(self, *, name: str, author_id: int, created_at: datetime, uses: int,
-            factoid: Factoid, used_at: Optional[datetime] = ...) -> None: ...
+        def __init__(
+            self,
+            *,
+            name: str,
+            author_id: int,
+            created_at: datetime,
+            uses: int,
+            factoid: Factoid,
+            used_at: Optional[datetime] = ...,
+        ) -> None:
+            ...
+
         @overload
-        def __init__(self, *, name: str, author_id: int, created_at: datetime, uses: int,
-            id: int, used_at: Optional[datetime] = ...) -> None: ...
-        def __init__(self, *, name: str, author_id: int, created_at: datetime, uses: int,
-            factoid: Optional[Factoid] = ..., id: Optional[int] = ..., used_at: Optional[datetime] = ...
-            ) -> None: ...
+        def __init__(
+            self,
+            *,
+            name: str,
+            author_id: int,
+            created_at: datetime,
+            uses: int,
+            id: int,
+            used_at: Optional[datetime] = ...,
+        ) -> None:
+            ...
+
+        def __init__(
+            self,
+            *,
+            name: str,
+            author_id: int,
+            created_at: datetime,
+            uses: int,
+            factoid: Optional[Factoid] = ...,
+            id: Optional[int] = ...,
+            used_at: Optional[datetime] = ...,
+        ) -> None:
+            ...
+
 
 class FactoidsConf(Protocol):
     prefix: str
+
 
 conf: FactoidsConf
 
 use_tags = register_action("use_tags")
 manage_tag_flags = register_action("manage_tag_flags")
 
+
 @plugins.init
 async def init() -> None:
     global conf
     conf = cast(FactoidsConf, await util.db.kv.load(__name__))
-    await util.db.init(util.db.get_ddl(
-        CreateSchema("factoids"),
-        registry.metadata.create_all))
+    await util.db.init(util.db.get_ddl(CreateSchema("factoids"), registry.metadata.create_all))
+
 
 @cog
 class Factoids(Cog):
     """Manage factoids."""
+
     @Cog.listener()
     async def on_message(self, msg: Message) -> None:
-        if msg.author.bot: return
-        if not isinstance(msg.channel, (GuildChannel, Thread)): return
-        if not msg.content.startswith(conf.prefix): return
-        if use_tags.evaluate(msg.author, msg.channel) != EvalResult.TRUE: return
-        text = " ".join(msg.content[len(conf.prefix):].split()).lower()
-        if not len(text): return
+        if msg.author.bot:
+            return
+        if not isinstance(msg.channel, (GuildChannel, Thread)):
+            return
+        if not msg.content.startswith(conf.prefix):
+            return
+        if use_tags.evaluate(msg.author, msg.channel) != EvalResult.TRUE:
+            return
+        text = " ".join(msg.content[len(conf.prefix) :].split()).lower()
+        if not len(text):
+            return
         async with sessionmaker() as session:
-            stmt = (select(Alias)
+            stmt = (
+                select(Alias)
                 .where(Alias.name == func.substring(text, 1, func.length(Alias.name)))
                 .order_by(func.length(Alias.name).desc())
-                .limit(1))
-            if (alias := (await session.execute(stmt)).scalar()) is None: return
+                .limit(1)
+            )
+            if (alias := (await session.execute(stmt)).scalar()) is None:
+                return
 
             mentions = AllowedMentions.none()
             if (flags := alias.factoid.flags) is not None:
@@ -116,22 +172,23 @@ class Factoids(Cog):
 
             embed = Embed.from_dict(alias.factoid.embed_data) if alias.factoid.embed_data is not None else None
             if msg.reference is not None and msg.reference.message_id is not None:
-                reference = MessageReference(guild_id=msg.reference.guild_id,
-                    channel_id=msg.reference.channel_id, message_id=msg.reference.message_id,
-                    fail_if_not_exists=False)
+                reference = MessageReference(
+                    guild_id=msg.reference.guild_id,
+                    channel_id=msg.reference.channel_id,
+                    message_id=msg.reference.message_id,
+                    fail_if_not_exists=False,
+                )
                 if embed is not None:
-                    await msg.channel.send(alias.factoid.message_text, embed=embed, reference=reference,
-                        allowed_mentions=mentions)
+                    await msg.channel.send(
+                        alias.factoid.message_text, embed=embed, reference=reference, allowed_mentions=mentions
+                    )
                 else:
-                    await msg.channel.send(alias.factoid.message_text, reference=reference,
-                        allowed_mentions=mentions)
+                    await msg.channel.send(alias.factoid.message_text, reference=reference, allowed_mentions=mentions)
             else:
                 if embed is not None:
-                    await msg.channel.send(alias.factoid.message_text, embed=embed,
-                        allowed_mentions=mentions)
+                    await msg.channel.send(alias.factoid.message_text, embed=embed, allowed_mentions=mentions)
                 else:
-                    await msg.channel.send(alias.factoid.message_text,
-                        allowed_mentions=mentions)
+                    await msg.channel.send(alias.factoid.message_text, allowed_mentions=mentions)
 
             alias.factoid.uses += 1
             alias.factoid.used_at = datetime.utcnow()
@@ -156,19 +213,24 @@ class Factoids(Cog):
                 raise UserError(format("The factoid {!i} already exists", conf.prefix + name))
 
             content = await prompt_contents(ctx)
-            if not content: return
+            if not content:
+                return
 
-            session.add(Alias(
-                name=name,
-                author_id=ctx.author.id,
-                created_at=datetime.utcnow(),
-                uses=0,
-                factoid=Factoid(
-                    message_text=content if isinstance(content, str) else None,
-                    embed_data=content.to_dict() if not isinstance(content, str) else None,
+            session.add(
+                Alias(
+                    name=name,
                     author_id=ctx.author.id,
                     created_at=datetime.utcnow(),
-                    uses=0)))
+                    uses=0,
+                    factoid=Factoid(
+                        message_text=content if isinstance(content, str) else None,
+                        embed_data=content.to_dict() if not isinstance(content, str) else None,
+                        author_id=ctx.author.id,
+                        created_at=datetime.utcnow(),
+                        uses=0,
+                    ),
+                )
+            )
             await session.commit()
         await ctx.send(format("Factoid created, use with {!i}", conf.prefix + name))
 
@@ -183,17 +245,11 @@ class Factoids(Cog):
         newname = " ".join(newname.split()).lower()
         async with sessionmaker() as session:
             if await session.get(Alias, newname, options=(raiseload(Alias.factoid),)) is not None:
-                raise UserError(
-                    format("The factoid {!i} already exists", conf.prefix + newname))
+                raise UserError(format("The factoid {!i} already exists", conf.prefix + newname))
             if (alias := await session.get(Alias, name, options=(raiseload(Alias.factoid),))) is None:
                 raise UserError(format("The factoid {!i} does not exist", conf.prefix + name))
 
-            session.add(Alias(
-                name=newname,
-                author_id=ctx.author.id,
-                created_at=datetime.utcnow(),
-                uses=0,
-                id=alias.id))
+            session.add(Alias(name=newname, author_id=ctx.author.id, created_at=datetime.utcnow(), uses=0, id=alias.id))
             await session.commit()
         await ctx.send(format("Aliased {!i} to {!i}", conf.prefix + newname, conf.prefix + name))
 
@@ -210,11 +266,11 @@ class Factoids(Cog):
                 raise UserError(format("The factoid {!i} does not exist", conf.prefix + name))
 
             if alias.factoid.flags is not None and manage_tag_flags.evaluate(*evaluate_ctx(ctx)) != EvalResult.TRUE:
-                raise UserError(format(
-                    "This factoid can only be edited by admins because it has special behaviors"))
+                raise UserError(format("This factoid can only be edited by admins because it has special behaviors"))
 
             content = await prompt_contents(ctx)
-            if not content: return
+            if not content:
+                return
 
             alias.factoid.message_text = content if isinstance(content, str) else None
             alias.factoid.embed_data = content.to_dict() if not isinstance(content, str) else None
@@ -272,14 +328,19 @@ class Factoids(Cog):
             used_at = None
             if alias.factoid.used_at is not None:
                 used_at = int(alias.factoid.used_at.replace(tzinfo=timezone.utc).timestamp())
-            await ctx.send(format(
+            await ctx.send(
+                format(
                     "Created by {!m} on <t:{}:F> (<t:{}:R>). Used {} times{}.{}\nAliases: {}",
-                    alias.factoid.author_id, created_at, created_at, alias.factoid.uses,
+                    alias.factoid.author_id,
+                    created_at,
+                    created_at,
+                    alias.factoid.uses,
                     "" if used_at is None else ", last on <t:{}:F> (<t:{}:R>)".format(used_at, used_at),
                     "" if alias.factoid.flags is None else " Has flags.",
-                    ", ".join(format("{!i} ({} uses)",
-                        conf.prefix + alias.name, alias.uses) for alias in aliases)),
-                allowed_mentions=AllowedMentions.none())
+                    ", ".join(format("{!i} ({} uses)", conf.prefix + alias.name, alias.uses) for alias in aliases),
+                ),
+                allowed_mentions=AllowedMentions.none(),
+            )
 
     @privileged
     @tag_command.command("top")
@@ -287,23 +348,28 @@ class Factoids(Cog):
         """Show most used factoids."""
         async with sessionmaker() as session:
             aliases = aliased(Alias)
-            stmt = (select(Alias.name, Factoid.uses)
+            stmt = (
+                select(Alias.name, Factoid.uses)
                 .join(Alias.factoid)
-                .where(Alias.name == (select(aliases.name)
-                    .where(aliases.id == Factoid.id)
-                    .order_by(aliases.uses.desc())
-                    .limit(1)
-                    .scalar_subquery()))
+                .where(
+                    Alias.name
+                    == (
+                        select(aliases.name)
+                        .where(aliases.id == Factoid.id)
+                        .order_by(aliases.uses.desc())
+                        .limit(1)
+                        .scalar_subquery()
+                    )
+                )
                 .order_by(Factoid.uses.desc())
-                .limit(20))
+                .limit(20)
+            )
             results = list(await session.execute(stmt))
-            await ctx.send("\n".join(format("{!i}: {} uses", conf.prefix + name, uses)
-                for name, uses in results))
+            await ctx.send("\n".join(format("{!i}: {} uses", conf.prefix + name, uses) for name, uses in results))
 
     @privileged
     @tag_command.command("flags")
-    async def tag_flags(self, ctx: Context, name: str,
-        flags: Optional[Union[CodeBlock, Inline, Quoted]]) -> None:
+    async def tag_flags(self, ctx: Context, name: str, flags: Optional[Union[CodeBlock, Inline, Quoted]]) -> None:
         """
         Configure admin-only flags for a factoid. The flags are a JSON dictionary with the following keys:
         - "mentions": a boolean, if true, makes the factoid invocation ping the roles and users it involves
@@ -321,10 +387,12 @@ class Factoids(Cog):
                 await session.commit()
                 await ctx.send("\u2705")
 
+
 async def prompt_contents(ctx: Context) -> Optional[Union[str, Embed]]:
     prompt = await ctx.send("Please enter the factoid contents:")
     response = await get_input(prompt, ctx.author, {"\u274C": None}, timeout=300)
-    if response is None: return None
+    if response is None:
+        return None
 
     try:
         embed_data = json.loads(response.content)
@@ -344,6 +412,7 @@ async def prompt_contents(ctx: Context) -> Optional[Union[str, Embed]]:
             return None
         return embed
     return response.content
+
 
 def validate_name(name: str) -> str:
     name = " ".join(name.split()).lower()

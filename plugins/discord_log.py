@@ -19,8 +19,10 @@ import plugins
 import util.db.kv
 from util.discord import CodeItem, PartialTextChannelConverter, chunk_messages, format
 
+
 registry = sqlalchemy.orm.registry()
 sessionmaker = async_sessionmaker(util.db.engine, expire_on_commit=False)
+
 
 @registry.mapped
 class GlobalConfig:
@@ -29,10 +31,14 @@ class GlobalConfig:
     channel_id: Mapped[Optional[int]] = mapped_column(BigInteger)
 
     if TYPE_CHECKING:
-        def __init__(self, *, id: int = ..., channel_id: Optional[int] = ...) -> None: ...
+
+        def __init__(self, *, id: int = ..., channel_id: Optional[int] = ...) -> None:
+            ...
+
 
 conf: GlobalConfig
 logger: logging.Logger = logging.getLogger(__name__)
+
 
 class DiscordHandler(logging.Handler):
     __slots__ = "queue", "lock"
@@ -41,7 +47,7 @@ class DiscordHandler(logging.Handler):
 
     def __init__(self, level: int = logging.NOTSET):
         self.queue = []
-        self.thread_lock = Lock() # just in case
+        self.thread_lock = Lock()  # just in case
         return super().__init__(level)
 
     def queue_pop(self) -> Optional[str]:
@@ -52,6 +58,7 @@ class DiscordHandler(logging.Handler):
 
     async def log_discord(self, chan_id: int, client: Client) -> None:
         try:
+
             def fill_items() -> Iterator[CodeItem]:
                 while (text := self.queue_pop()) is not None:
                     yield CodeItem(text, language="py", filename="log.txt")
@@ -95,6 +102,7 @@ class DiscordHandler(logging.Handler):
                 self.queue.append(text)
                 asyncio.create_task(self.log_discord(conf.channel_id, client), name="Logging to Discord")
 
+
 @plugins.init
 async def init() -> None:
     global conf
@@ -113,7 +121,9 @@ async def init() -> None:
 
     def finalizer() -> None:
         logging.getLogger().removeHandler(handler)
+
     plugins.finalizer(finalizer)
+
 
 @plugin_config_command
 @command("syslog")

@@ -9,8 +9,19 @@ from typing import TYPE_CHECKING, Any, Optional, Set, TypeVar
 import discord
 from discord import AllowedMentions, Message, PartialMessage
 import discord.ext.commands
-from discord.ext.commands import (BadUnionArgument, Bot, CheckFailure, Cog, Command, CommandError, CommandInvokeError,
-    CommandNotFound, NoPrivateMessage, PrivateMessageOnly, UserInputError)
+from discord.ext.commands import (
+    BadUnionArgument,
+    Bot,
+    CheckFailure,
+    Cog,
+    Command,
+    CommandError,
+    CommandInvokeError,
+    CommandNotFound,
+    NoPrivateMessage,
+    PrivateMessageOnly,
+    UserInputError,
+)
 from sqlalchemy import TEXT, BigInteger, Computed
 from sqlalchemy.ext.asyncio import AsyncSession
 import sqlalchemy.orm
@@ -22,7 +33,9 @@ import plugins
 import util.db.kv
 from util.discord import format
 
+
 registry = sqlalchemy.orm.registry()
+
 
 @registry.mapped
 class GlobalConfig:
@@ -31,10 +44,14 @@ class GlobalConfig:
     prefix: Mapped[str] = mapped_column(TEXT, nullable=False)
 
     if TYPE_CHECKING:
-        def __init__(self, *, prefix: str, id: int = ...) -> None: ...
+
+        def __init__(self, *, prefix: str, id: int = ...) -> None:
+            ...
+
 
 logger: logging.Logger = logging.getLogger(__name__)
 prefix: str
+
 
 @plugins.init
 async def init() -> None:
@@ -50,18 +67,27 @@ async def init() -> None:
 
         prefix = client.command_prefix = conf.prefix
 
+
 @plugins.finalizer
 def cleanup_prefix() -> None:
     client.command_prefix = ()
 
+
 Context = discord.ext.commands.Context[Bot]
+
 
 @cog
 class Commands(Cog):
     @Cog.listener()
     async def on_command(self, ctx: Context) -> None:
-        logger.info(format("Command {!r} from {!m} in {!c}",
-            ctx.command and ctx.command.qualified_name, ctx.author.id, ctx.channel.id))
+        logger.info(
+            format(
+                "Command {!r} from {!m} in {!c}",
+                ctx.command and ctx.command.qualified_name,
+                ctx.author.id,
+                ctx.channel.id,
+            )
+        )
 
     @Cog.listener()
     async def on_command_error(self, ctx: Context, exc: Exception) -> None:
@@ -72,17 +98,22 @@ class Commands(Cog):
                 return
             elif isinstance(exc, UserInputError):
                 if isinstance(exc, BadUnionArgument):
+
                     def conv_name(conv: type) -> str:
                         try:
                             return conv.__name__
                         except AttributeError:
-                            if hasattr(conv, '__origin__'):
+                            if hasattr(conv, "__origin__"):
                                 return repr(conv)
                             return conv.__class__.__name__
 
-                    exc_str = "Could not interpret \"{}\" as:\n{}".format(exc.param.name,
-                        "\n".join("- {}: {}".format(conv_name(conv), sub_exc)
-                            for conv, sub_exc in zip(exc.converters, exc.errors)))
+                    exc_str = 'Could not interpret "{}" as:\n{}'.format(
+                        exc.param.name,
+                        "\n".join(
+                            "- {}: {}".format(conv_name(conv), sub_exc)
+                            for conv, sub_exc in zip(exc.converters, exc.errors)
+                        ),
+                    )
                 else:
                     exc_str = str(exc)
                 message = "Error: {}".format(exc_str)
@@ -91,23 +122,39 @@ class Commands(Cog):
                         return
                     if ctx.invoked_with is not None and ctx.invoked_parents is not None:
                         usage = " ".join(
-                            s for s in ctx.invoked_parents + [ctx.invoked_with, ctx.command.signature] if s)
+                            s for s in ctx.invoked_parents + [ctx.invoked_with, ctx.command.signature] if s
+                        )
                     else:
                         usage = " ".join(s for s in [ctx.command.qualified_name, ctx.command.signature] if s)
                     message += format("\nUsage: {!i}", usage)
                 await ctx.send(message, allowed_mentions=AllowedMentions.none())
                 return
             elif isinstance(exc, CommandInvokeError):
-                logger.error(format("Error in command {} {!r} {!r} from {!m} in {!c}",
-                    ctx.command and ctx.command.qualified_name, tuple(ctx.args), ctx.kwargs,
-                    ctx.author.id, ctx.channel.id), exc_info=exc.__cause__)
+                logger.error(
+                    format(
+                        "Error in command {} {!r} {!r} from {!m} in {!c}",
+                        ctx.command and ctx.command.qualified_name,
+                        tuple(ctx.args),
+                        ctx.kwargs,
+                        ctx.author.id,
+                        ctx.channel.id,
+                    ),
+                    exc_info=exc.__cause__,
+                )
                 return
             elif isinstance(exc, CommandError):
                 await ctx.send("Error: {}".format(str(exc)), allowed_mentions=AllowedMentions.none())
                 return
             else:
-                logger.error(format("Unknown exception in command {} {!r} {!r} from {!m} in {!c}",
-                    ctx.command and ctx.command.qualified_name, tuple(ctx.args), ctx.kwargs), exc_info=exc)
+                logger.error(
+                    format(
+                        "Unknown exception in command {} {!r} {!r} from {!m} in {!c}",
+                        ctx.command and ctx.command.qualified_name,
+                        tuple(ctx.args),
+                        ctx.kwargs,
+                    ),
+                    exc_info=exc,
+                )
                 return
         finally:
             await finalize_cleanup(ctx)
@@ -116,7 +163,9 @@ class Commands(Cog):
     async def on_message(self, msg: Message) -> None:
         await client.process_commands(msg)
 
+
 CommandT = TypeVar("CommandT", bound=Command[Any, Any, Any])
+
 
 def plugin_command(cmd: CommandT) -> CommandT:
     """
@@ -127,15 +176,19 @@ def plugin_command(cmd: CommandT) -> CommandT:
     plugins.finalizer(lambda: client.remove_command(cmd.name))
     return cmd
 
+
 def suppress_usage(cmd: CommandT) -> CommandT:
     """This decorator on a command suppresses the usage instructions if the command is invoked incorrectly."""
-    cmd.suppress_usage = True # type: ignore
+    cmd.suppress_usage = True  # type: ignore
     return cmd
 
-BotT = TypeVar('BotT', bound=Bot, covariant=True)
+
+BotT = TypeVar("BotT", bound=Bot, covariant=True)
+
 
 class CleanupContext(discord.ext.commands.Context[BotT]):
     cleanup: "CleanupReference"
+
 
 class CleanupReference:
     __slots__ = "messages", "task"
@@ -146,9 +199,12 @@ class CleanupReference:
         self.messages = set()
         chan_id = ctx.channel.id
         msg_id = ctx.message.id
+
         async def cleanup_task() -> None:
-            await ctx.bot.wait_for("raw_message_delete",
-                check=lambda m: m.channel_id == chan_id and m.message_id == msg_id)
+            await ctx.bot.wait_for(
+                "raw_message_delete", check=lambda m: m.channel_id == chan_id and m.message_id == msg_id
+            )
+
         self.task = asyncio.create_task(cleanup_task(), name="Cleanup task for {}-{}".format(chan_id, msg_id))
 
     def __del__(self) -> None:
@@ -177,37 +233,46 @@ class CleanupReference:
             self.task.cancel()
             self.task = None
 
+
 def init_cleanup(ctx: CleanupContext[BotT]) -> None:
     if not hasattr(ctx, "cleanup"):
         ref = CleanupReference(ctx)
         ctx.cleanup = ref
 
         old_send = ctx.send
+
         async def send(*args: Any, **kwargs: Any) -> Message:
             msg = await old_send(*args, **kwargs)
             ref.add(msg)
             return msg
+
         ctx.send = send
+
 
 async def finalize_cleanup(ctx: object) -> None:
     if (ref := getattr(ctx, "cleanup", None)) is not None:
         await ref.finalize()
+
 
 def add_cleanup(ctx: object, msg: Message) -> None:
     """Mark a message as "output" of a cleanup command."""
     if (ref := getattr(ctx, "cleanup", None)) is not None:
         ref.add(msg)
 
+
 def cleanup(cmd: CommandT) -> CommandT:
     """Make the command watch out for the deletion of the invoking message, and in that case, delete all output."""
     old_invoke = cmd.invoke
+
     async def invoke(ctx: CleanupContext[BotT]) -> None:
         init_cleanup(ctx)
         await old_invoke(ctx)
         await finalize_cleanup(ctx)
-    cmd.invoke = invoke # type: ignore
+
+    cmd.invoke = invoke  # type: ignore
 
     old_on_error = getattr(cmd, "on_error", None)
+
     async def on_error(*args: Any) -> None:
         if len(args) == 3:
             _, ctx, _ = args
@@ -216,11 +281,14 @@ def cleanup(cmd: CommandT) -> CommandT:
         init_cleanup(ctx)
         if old_on_error is not None:
             await old_on_error(*args)
+
     cmd.on_error = on_error
 
     old_ensure_assignment_on_copy = cmd._ensure_assignment_on_copy
+
     def ensure_assignment_on_copy(other: CommandT) -> CommandT:
         return cleanup(old_ensure_assignment_on_copy(other))
+
     cmd._ensure_assignment_on_copy = ensure_assignment_on_copy
 
     return cmd

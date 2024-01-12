@@ -1,0 +1,32 @@
+name: lint
+
+on: [push, pull_request]
+
+jobs:
+  pyright:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v1
+    - name: checkout submodules
+      run: git submodule update --init --recursive
+    - uses: actions/setup-python@v1
+      with:
+        python-version: 3.9
+    - name: pip
+      run: pip install aiohttp aiohttp-session types-requests types-PyYAML asyncpg sqlalchemy datrie pyright
+    - run: pyright
+  format:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v1
+    - name: checkout submodules
+      run: git submodule update --init --recursive
+    - uses: actions/setup-python@v1
+      with:
+        python-version: 3.9
+    - name: pip
+      run: pip install black==23.12 isort
+    - name: black
+      run: black --check .
+    - name: isort
+      run: isort --check .

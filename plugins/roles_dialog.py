@@ -11,20 +11,27 @@ import util.db.kv
 from util.discord import retry
 from util.frozen_list import FrozenList
 
+
 class RolesDialogConf(Protocol):
     roles: FrozenList[FrozenList[Union[int, str]]]
-    def __getitem__(self, index: Tuple[int, Literal["desc"]]) -> Optional[str]: ...
+
+    def __getitem__(self, index: Tuple[int, Literal["desc"]]) -> Optional[str]:
+        ...
+
 
 conf: RolesDialogConf
+
 
 @plugins.init
 async def init() -> None:
     global conf
     conf = cast(RolesDialogConf, await util.db.kv.load(__name__))
 
+
 class RoleSelect(Select["RolesView"]):
-    def __init__(self, boolean: bool, role_items: Iterable[Union[int, str]], member: Member, row: Optional[int] = None
-        ) -> None:
+    def __init__(
+        self, boolean: bool, role_items: Iterable[Union[int, str]], member: Member, row: Optional[int] = None
+    ) -> None:
         self.roles = {}
         index = 0
         options = []
@@ -32,8 +39,14 @@ class RoleSelect(Select["RolesView"]):
         for item in role_items:
             if isinstance(item, int):
                 if (role := member.guild.get_role(item)) is not None:
-                    options.append(SelectOption(label=role.name, value=str(index),
-                        description=(conf[role.id, "desc"] or "")[:100], default=role in member.roles))
+                    options.append(
+                        SelectOption(
+                            label=role.name,
+                            value=str(index),
+                            description=(conf[role.id, "desc"] or "")[:100],
+                            default=role in member.roles,
+                        )
+                    )
                     self.roles[str(index)] = role
                     index += 1
             else:
@@ -42,15 +55,18 @@ class RoleSelect(Select["RolesView"]):
             for option in options:
                 option.default = False
 
-        super().__init__(placeholder="Select roles..." if boolean else "Select a role...",
+        super().__init__(
+            placeholder="Select roles..." if boolean else "Select a role...",
             min_values=0 if boolean else 1,
             max_values=len(options) if boolean else 1,
-            options=options)
+            options=options,
+        )
 
     async def callback(self, interaction: Interaction) -> None:
         if not isinstance(interaction.user, Member):
-            await interaction.response.send_message("This can only be done in a server.", ephemeral=True,
-                delete_after=60)
+            await interaction.response.send_message(
+                "This can only be done in a server.", ephemeral=True, delete_after=60
+            )
             return
         member = interaction.user
 
@@ -84,7 +100,9 @@ class RoleSelect(Select["RolesView"]):
 
         if not prompt_roles:
             await interaction.followup.send(
-                "\u2705 Updated roles." if add_roles or remove_roles else "Roles not changed.", ephemeral=True)
+                "\u2705 Updated roles." if add_roles or remove_roles else "Roles not changed.", ephemeral=True
+            )
+
 
 class RolesView(View):
     def __init__(self, member: Member) -> None:
@@ -102,30 +120,35 @@ class RolesView(View):
         if booleans:
             self.add_item(RoleSelect(True, booleans, member))
 
+
 async def send_roles_view(interaction: Interaction) -> None:
     if not isinstance(interaction.user, Member):
         await interaction.response.send_message("This can only be done in a server.", ephemeral=True, delete_after=60)
         return
     await interaction.response.send_message("Select your roles:", view=RolesView(interaction.user), ephemeral=True)
 
+
 class ManageRolesButton(Button["ManageRolesView"]):
     def __init__(self) -> None:
-        super().__init__(style=ButtonStyle.primary, label="Manage roles",
-            custom_id=__name__ + ":" + "manage")
+        super().__init__(style=ButtonStyle.primary, label="Manage roles", custom_id=__name__ + ":" + "manage")
 
     async def callback(self, interaction: Interaction) -> None:
         await send_roles_view(interaction)
+
 
 class ManageRolesView(View):
     def __init__(self) -> None:
         super().__init__(timeout=None)
         self.add_item(ManageRolesButton())
 
+
 persistent_view(ManageRolesView())
+
 
 @command("roles", description="Manage self-assigned roles.")
 async def roles_command(interaction: Interaction) -> None:
     await send_roles_view(interaction)
+
 
 async def setup(target: Messageable) -> None:
     await target.send(view=ManageRolesView())
