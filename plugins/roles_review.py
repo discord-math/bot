@@ -1,7 +1,6 @@
 import enum
 import logging
-from typing import TYPE_CHECKING, Iterator, List, Literal, Optional, Protocol, Tuple, TypedDict, Union, cast
-from typing_extensions import NotRequired
+from typing import TYPE_CHECKING, Any, Dict, Iterator, List, Literal, Optional, Set, Tuple, Union, cast
 
 import discord
 from discord import (
@@ -20,8 +19,9 @@ from discord import (
     User,
 )
 from discord.abc import Messageable
+from discord.ext.commands import group
 from discord.ui import Button, Modal, TextInput, View
-from sqlalchemy import BOOLEAN, BigInteger, ForeignKey, Integer, PrimaryKeyConstraint, delete, select
+from sqlalchemy import ARRAY, BOOLEAN, TEXT, BigInteger, ForeignKey, Integer, PrimaryKeyConstraint, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 import sqlalchemy.orm
 from sqlalchemy.orm import Mapped, mapped_column
@@ -30,11 +30,23 @@ from sqlalchemy.schema import CreateSchema
 from bot.acl import EvalResult, evaluate_interaction, privileged, register_action
 from bot.cogs import Cog, cog, command
 from bot.commands import Context, cleanup
+from bot.config import plugin_config_command
 import plugins
 import util.db
 import util.db.kv
-from util.discord import PartialRoleConverter, PartialUserConverter, PlainItem, chunk_messages, format, retry
-from util.frozen_list import FrozenList
+from util.discord import (
+    CodeBlock,
+    Inline,
+    PartialChannelConverter,
+    PartialRoleConverter,
+    PartialUserConverter,
+    PlainItem,
+    Quoted,
+    UserError,
+    chunk_messages,
+    format,
+    retry,
+)
 
 
 if TYPE_CHECKING:
@@ -43,35 +55,42 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-
-class ReviewedRole(TypedDict):
-    prompt: FrozenList[str]
-    invitation: str
-    review_channel: int
-    review_role: NotRequired[int]
-    veto_role: NotRequired[int]
-    upvote_limit: int
-    downvote_limit: int
-    pending_role: NotRequired[int]
-    denied_role: NotRequired[int]
-
-
-class RolesReviewConf(Protocol):
-    def __getitem__(self, index: int) -> Optional[ReviewedRole]:
-        ...
-
-    def __iter__(self) -> Iterator[Tuple[str]]:
-        ...
-
-
-conf: RolesReviewConf
-
 registry: sqlalchemy.orm.registry = sqlalchemy.orm.registry()
-
-sessionmaker = async_sessionmaker(util.db.engine, future=True, expire_on_commit=False)
+sessionmaker = async_sessionmaker(util.db.engine, expire_on_commit=False)
 
 action_can_vote = register_action("review_can_vote")
 action_can_veto = register_action("review_can_veto")
+
+
+@registry.mapped
+class ReviewedRole:
+    __tablename__ = "roles"
+    __table_args__ = {"schema": "roles_review"}
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    review_channel_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    upvote_limit: Mapped[int] = mapped_column(Integer, nullable=False)
+    downvote_limit: Mapped[int] = mapped_column(Integer, nullable=False)
+    pending_role_id: Mapped[Optional[int]] = mapped_column(BigInteger)
+    denied_role_id: Mapped[Optional[int]] = mapped_column(BigInteger)
+    prompt: Mapped[List[str]] = mapped_column(ARRAY(TEXT), nullable=False)
+    invitation: Mapped[str] = mapped_column(TEXT, nullable=False)
+
+    if TYPE_CHECKING:
+
+        def __init__(
+            self,
+            *,
+            id: int,
+            review_channel_id: int,
+            upvote_limit: int,
+            downvote_limit: int,
+            prompt: List[str],
+            invitation: str,
+            pending_role_id: Optional[int] = ...,
+            denied_role_id: Optional[int] = ...,
+        ) -> None:
+            ...
 
 
 @registry.mapped
@@ -118,24 +137,54 @@ class Vote:
             ...
 
 
+reviewed_roles: Set[int]
+pending_roles: Set[int]
+
+
 @plugins.init
 async def init() -> None:
-    global conf
-    conf = cast(RolesReviewConf, await util.db.kv.load(__name__))
+    global reviewed_roles, pending_roles
     await util.db.init(util.db.get_ddl(CreateSchema("roles_review"), registry.metadata.create_all))
+
+    async with sessionmaker() as session:
+        conf = await util.db.kv.load(__name__)
+        for (role_id_str,) in conf:
+            role_id = int(role_id_str)
+            obj = cast(Dict[str, Any], conf[role_id])
+            session.add(
+                ReviewedRole(
+                    id=role_id,
+                    review_channel_id=obj["review_channel"],
+                    upvote_limit=obj["upvote_limit"],
+                    downvote_limit=obj["downvote_limit"],
+                    pending_role_id=obj.get("pending_role"),
+                    denied_role_id=obj.get("denied_role"),
+                    prompt=list(obj["prompt"]),
+                    invitation=obj["invitation"],
+                )
+            )
+        await session.commit()
+        for role_id_str in [role_id_str for role_id_str, in conf]:
+            conf[role_id_str] = None
+        await conf
+
+        stmt = select(ReviewedRole.id)
+        reviewed_roles = set((await session.execute(stmt)).scalars())
+        stmt = select(ReviewedRole.pending_role_id).where(ReviewedRole.pending_role_id != None)
+        pending_roles = cast(Set[int], set((await session.execute(stmt)).scalars()))
 
 
 class RolePromptModal(Modal):
-    def __init__(self, guild: Guild, prompt_roles: List[Role], message: Optional[Message] = None) -> None:
+    def __init__(
+        self, guild: Guild, prompt_roles: List[Tuple[Role, ReviewedRole]], message: Optional[Message] = None
+    ) -> None:
         super().__init__(title="Additional information", timeout=1200)
         self.guild = guild
         self.message = message
         self.inputs = {}
-        for role in prompt_roles:
+        for role, review in prompt_roles:
             self.inputs[role] = []
-            if (review := conf[role.id]) is None:
-                continue
-            for prompt in review["prompt"]:
+            for prompt in review.prompt:
                 if "\n" in prompt:
                     prompt, placeholder = prompt.split("\n", 1)
                     placeholder = placeholder[:100]
@@ -199,10 +248,10 @@ def voting_decision(app_id: int, review: ReviewedRole, votes: List[Vote]) -> Opt
             up_total += 1
         else:
             down_total += 1
-        if up_total >= review["upvote_limit"]:
+        if up_total >= review.upvote_limit:
             logger.debug(format("Vote on {} decided by reaching {} upvotes", app_id, up_total))
             return True
-        elif down_total >= review["downvote_limit"]:
+        elif down_total >= review.downvote_limit:
             logger.debug(format("Vote on {} decided by reaching {} downvotes", app_id, down_total))
             return False
     logger.debug("Vote on {} undecided".format(app_id))
@@ -221,10 +270,10 @@ async def cast_vote(interaction: Interaction, msg_id: int, dir: Optional[bool], 
         if app is None:
             await interaction.response.send_message("No such application.", ephemeral=True)
             return
-        review = conf[app.role_id]
+        review = await session.get(ReviewedRole, app.role_id)
         assert review
 
-        channel = interaction.guild.get_channel(review["review_channel"])
+        channel = interaction.guild.get_channel(review.review_channel_id)
         assert isinstance(channel, Messageable)
 
         logger.debug(
@@ -315,14 +364,14 @@ async def cast_vote(interaction: Interaction, msg_id: int, dir: Optional[bool], 
                 await session.commit()
 
             if decision is not None and (user := interaction.guild.get_member(app.user_id)) is not None:
-                if "pending_role" in review:
-                    if p_role := interaction.guild.get_role(review["pending_role"]):
+                if review.pending_role_id is not None:
+                    if p_role := interaction.guild.get_role(review.pending_role_id):
                         await retry(lambda: user.remove_roles(p_role, reason=format("Granted {!m}", app.role_id)))
                 if decision == True:
                     if (role := interaction.guild.get_role(app.role_id)) is not None:
                         await retry(lambda: user.add_roles(role, reason="By vote"))
-                elif "denied_role" in review:
-                    if d_role := interaction.guild.get_role(review["denied_role"]):
+                elif review.denied_role_id is not None:
+                    if d_role := interaction.guild.get_role(review.denied_role_id):
                         await retry(lambda: user.add_roles(d_role, reason=format("Denied {!m}", app.role_id)))
 
 
@@ -362,12 +411,16 @@ async def prompt_role(interaction: Interaction, guild_id: int, role_id: int, mes
     assert (guild := interaction.client.get_guild(guild_id))
     assert (role := guild.get_role(role_id))
 
+    async with sessionmaker() as session:
+        review = await session.get(ReviewedRole, role_id)
+        assert review
+
     pre = await pre_apply(interaction.user, role)
     if pre is not None:
         await interaction.response.send_message("You have already applied for this role.", ephemeral=True)
         await message.delete()
     else:
-        await interaction.response.send_modal(RolePromptModal(guild, [role], message))
+        await interaction.response.send_modal(RolePromptModal(guild, [(role, review)], message))
 
 
 @cog
@@ -409,27 +462,26 @@ class RolesReviewCog(Cog):
 
     @Cog.listener()
     async def on_member_update(self, before: Member, after: Member) -> None:
-        for pending_role in set(after.roles) - set(before.roles):
-            for (role_id,) in conf:
-                role_id = int(role_id)
-                review = conf[role_id]
-                assert review
-                if "pending_role" in review and review["pending_role"] == pending_role.id:
-                    role = after.guild.get_role(role_id)
-                    assert role
-                    pre = await pre_apply(after, role)
-                    if pre == ApplicationStatus.APPROVED:
-                        await after.remove_roles(pending_role)
-                        await after.add_roles(role)
-                    elif pre == ApplicationStatus.DENIED:
-                        if "denied_role" in review:
-                            await after.add_roles(Object(review["denied_role"]))
-                        await after.remove_roles(pending_role)
-                    elif pre is None:
-                        try:
-                            await after.send(review["invitation"], view=PromptRoleView(after.guild.id, role_id))
-                        except discord.Forbidden:
-                            pass
+        async with sessionmaker() as session:
+            for pending_role in set(after.roles) - set(before.roles):
+                if pending_role.id in pending_roles:
+                    stmt = select(ReviewedRole).where(ReviewedRole.pending_role_id == pending_role.id)
+                    for review in (await session.execute(stmt)).scalars():
+                        role = after.guild.get_role(review.id)
+                        assert role
+                        pre = await pre_apply(after, role)
+                        if pre == ApplicationStatus.APPROVED:
+                            await after.remove_roles(pending_role)
+                            await after.add_roles(role)
+                        elif pre == ApplicationStatus.DENIED:
+                            if review.denied_role_id is not None:
+                                await after.add_roles(Object(review.denied_role_id))
+                            await after.remove_roles(pending_role)
+                        elif pre is None:
+                            try:
+                                await after.send(review.invitation, view=PromptRoleView(after.guild.id, review.id))
+                            except discord.Forbidden:
+                                pass
 
     @cleanup
     @command("review_queue")
@@ -455,9 +507,6 @@ class RolesReviewCog(Cog):
                 for app in apps:
                     if app.voting_id is None:
                         continue
-                    if conf[app.role_id] is None:
-                        yield PlainItem("{} (?)".format(app.listing_id))
-                        continue
                     chan = ctx.bot.get_partial_messageable(app.listing_id, guild_id=ctx.guild.id if ctx.guild else None)
                     msg = chan.get_partial_message(app.voting_id)
                     yield PlainItem("{}\n".format(msg.jump_url))
@@ -472,16 +521,17 @@ class RolesReviewCog(Cog):
         """
         If a user's application for a particular role has been denied, this command will allow them to apply again.
         """
-        review = conf[role.id]
-        assert review
         async with sessionmaker() as session:
+            review = await session.get(ReviewedRole, role.id)
+            assert review
+
             stmt = (
                 delete(Application)
                 .where(Application.user_id == user.id, Application.role_id == role.id)
                 .returning(Application.listing_id, Application.voting_id)
             )
             seen = False
-            chan = ctx.bot.get_partial_messageable(review["review_channel"])
+            chan = ctx.bot.get_partial_messageable(review.review_channel_id)
             for listing_id, voting_id in await session.execute(stmt):
                 seen = True
                 try:
@@ -542,7 +592,7 @@ async def check_applications(
 
 
 async def pre_apply(member: Union[User, Member], role: Role) -> Optional[ApplicationStatus]:
-    if conf[role.id] is None:
+    if role.id not in reviewed_roles:
         return ApplicationStatus.APPROVED
     async with sessionmaker() as session:
         pre = await check_applications(member, role, session)
@@ -557,11 +607,12 @@ async def apply(member: Member, role: Role, inputs: List[Tuple[str, str]]) -> Op
     - we can deny it, returning FALSE or PENDING,
     - we can submit it for review, returning None.
     """
-    if (review := conf[role.id]) is None:
-        logger.debug(format("Application from {!m} for a non-reviewed role {!M}", member, role))
-        await retry(lambda: member.add_roles(role, reason="Application for non-reviewed role"))
-        return ApplicationStatus.APPROVED
     async with sessionmaker() as session:
+        if role.id not in reviewed_roles or (review := await session.get(ReviewedRole, role.id)) is None:
+            logger.debug(format("Application from {!m} for a non-reviewed role {!M}", member, role))
+            await retry(lambda: member.add_roles(role, reason="Application for non-reviewed role"))
+            return ApplicationStatus.APPROVED
+
         pre = await check_applications(member, role, session)
         logger.debug(format("Application {!m} {!M}: {!r}", member, role, pre))
 
@@ -570,7 +621,7 @@ async def apply(member: Member, role: Role, inputs: List[Tuple[str, str]]) -> Op
         if pre is not None:
             return pre
 
-        channel = member.guild.get_channel(review["review_channel"])
+        channel = member.guild.get_channel(review.review_channel_id)
         assert isinstance(channel, TextChannel)
 
         async def post_application() -> None:
@@ -606,6 +657,130 @@ async def apply(member: Member, role: Role, inputs: List[Tuple[str, str]]) -> Op
 
         await retry(post_application)
 
-        if "pending_role" in review:
-            if (repl := member.guild.get_role(review["pending_role"])) is not None:
+        if review.pending_role_id is not None:
+            if (repl := member.guild.get_role(review.pending_role_id)) is not None:
                 await retry(lambda: member.add_roles(repl, reason="Awaiting {}".format(role.name)))
+
+
+class RoleContext(Context):
+    role_id: int
+
+
+@plugin_config_command
+@group("roles_review")
+async def config(ctx: RoleContext, role: PartialRoleConverter) -> None:
+    ctx.role_id = role.id
+
+
+@config.command("new")
+async def config_new(
+    ctx: RoleContext,
+    review_channel: PartialChannelConverter,
+    upvote_limit: int,
+    downvote_limit: int,
+    invitation: Union[CodeBlock, Inline, Quoted],
+    *prompt: Union[CodeBlock, Inline, Quoted],
+) -> None:
+    async with sessionmaker() as session:
+        session.add(
+            ReviewedRole(
+                id=ctx.role_id,
+                review_channel_id=review_channel.id,
+                upvote_limit=upvote_limit,
+                downvote_limit=downvote_limit,
+                invitation=invitation.text,
+                prompt=[q.text for q in prompt],
+            )
+        )
+        await session.commit()
+        await ctx.send("\u2705")
+
+
+async def get_review(session: AsyncSession, ctx: RoleContext) -> ReviewedRole:
+    if (review := await session.get(ReviewedRole, ctx.role_id)) is None:
+        raise UserError("No config for {}".format(ctx.role_id))
+    return review
+
+
+@config.command("review_channel")
+async def config_review_channel(ctx: RoleContext, channel: Optional[PartialChannelConverter]) -> None:
+    async with sessionmaker() as session:
+        review = await get_review(session, ctx)
+        if channel is None:
+            await ctx.send(format("{!c}", review.review_channel_id))
+        else:
+            review.review_channel_id = channel.id
+            await session.commit()
+            await ctx.send("\u2705")
+
+
+@config.command("upvote_limit")
+async def config_upvote_limit(ctx: RoleContext, limit: Optional[int]) -> None:
+    async with sessionmaker() as session:
+        review = await get_review(session, ctx)
+        if limit is None:
+            await ctx.send(str(review.upvote_limit))
+        else:
+            review.upvote_limit = limit
+            await session.commit()
+            await ctx.send("\u2705")
+
+
+@config.command("downvote_limit")
+async def config_downvote_limit(ctx: RoleContext, limit: Optional[int]) -> None:
+    async with sessionmaker() as session:
+        review = await get_review(session, ctx)
+        if limit is None:
+            await ctx.send(str(review.downvote_limit))
+        else:
+            review.downvote_limit = limit
+            await session.commit()
+            await ctx.send("\u2705")
+
+
+@config.command("invitation")
+async def config_invitation(ctx: RoleContext, text: Optional[Union[CodeBlock, Inline, Quoted]]) -> None:
+    async with sessionmaker() as session:
+        review = await get_review(session, ctx)
+        if text is None:
+            await ctx.send(format("{!b}", review.invitation))
+        else:
+            review.invitation = text.text
+            await session.commit()
+            await ctx.send("\u2705")
+
+
+@config.command("prompt")
+async def config_prompt(ctx: RoleContext, *text: Union[CodeBlock, Inline, Quoted]) -> None:
+    async with sessionmaker() as session:
+        review = await get_review(session, ctx)
+        if not text:
+            await ctx.send("\n".join(format("{!b}", prompt) for prompt in review.prompt))
+        else:
+            review.prompt = [q.text for q in text]
+            await session.commit()
+            await ctx.send("\u2705")
+
+
+@config.command("pending_role")
+async def config_pending_role(ctx: RoleContext, role: Optional[Union[Literal["None"], PartialRoleConverter]]) -> None:
+    async with sessionmaker() as session:
+        review = await get_review(session, ctx)
+        if role is None:
+            await ctx.send(format("{!M}", review.pending_role_id), allowed_mentions=AllowedMentions.none())
+        else:
+            review.pending_role_id = None if role == "None" else role.id
+            await session.commit()
+            await ctx.send("\u2705")
+
+
+@config.command("denied_role")
+async def config_denied_role(ctx: RoleContext, role: Optional[Union[Literal["None"], PartialRoleConverter]]) -> None:
+    async with sessionmaker() as session:
+        review = await get_review(session, ctx)
+        if role is None:
+            await ctx.send(format("{!M}", review.denied_role_id), allowed_mentions=AllowedMentions.none())
+        else:
+            review.denied_role_id = None if role == "None" else role.id
+            await session.commit()
+            await ctx.send("\u2705")
