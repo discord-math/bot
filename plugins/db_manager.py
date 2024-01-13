@@ -176,7 +176,7 @@ async def acl_set(ctx: Context, acl: str, formula: CodeBlock) -> None:
     except yaml.YAMLError as exc:
         raise UserError(str(exc))
     try:
-        data = ACL.parse(data).serialize()
+        data = ACL.parse_data(data).serialize()
     except ValueError as exc:
         raise UserError(str(exc))
 
