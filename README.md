@@ -317,11 +317,16 @@ Commands:
 
 ### `roles_dialog`
 
-A button and a `/roles` slash-command for managing self-assigned roles.
+A button and a `/roles` slash-command for managing self-assigned roles. Roles are self-assigned by the means of a series of dropdowns. Each dropdown lets you either choose one of the options, or a subset of the options.
 
 Config:
-- ``config plugins.roles_dialog roles `[[<role id|text>, ...], ...]` `` -- the self-assignable roles. Lists with multiple elements correspond to choosing one of the roles. A string instead of a role ID corresponds to an option that doesn't assign any role (e.g. "None of the above"). Lists with one element are grouped together and correspond to choosing any subset of the roles.
-- ``config plugins.roles_dialog <role id>,desc `"<text>"` `` -- extended description for the role.
+- `config roles_dialog` -- list dropdowns and the IDs of their options.
+- `config roles_dialog mode <index> ["choice"|"multi"]` -- configure whether the dropdown at the given index acts as a single choice or multple choice.
+- `config roles_dialog new <index>` -- create a new option in the dropdown at the given index.
+- `config roles_dialog role <id> ["None"|role]` -- configure which role the option option with the given ID assigns, if any.
+- `config roles_dialog label <id> ["None"|label]` -- configure the name of the option with the given ID, if different from the role name.
+- `config roles_dialog description <id> ["None"|description]` -- configure the description of the option with the given ID, if any.
+- `config roles_dialog remove <id>` -- remove an option with the given ID.
 
 ### `roles_review`
 
@@ -332,13 +337,14 @@ Commands:
 - `review_queue [any|mine]` -- show a list of links to unresolved applications. The argument `any` will list all unresolved applications, whereas `mine` will list only applications that the user hasn't yet voted on. Without an argument, defaults to `mine`.
 
 Config:
-- ``config plugins.roles_review <role> `{...}` `` -- attempting to self-assign the role will instead make the user go through the application process. The keys in the object are as follows:
-    - `"prompt": ["<question>[\n<placeholder>]", ...]` -- list of questions to ask an applicant.
-    - `"review_channel": <channel id>` -- channel where the applications will be posted and voted on.
-    - `"upvote_limit": <number>` -- how many upvotes are needed to accept an application.
-    - `"downvote_limit": <number>` -- how many downvotes are needed to reject an application.
-    - `"pending_role": <role id>` -- (optional) role given to the applying user while the application is pending.
-    - `"denied_role": <role id>` -- (optional) role given to the applying user if their application is denied.
+- `config roles_review <role> new <review channel> <upvote limit> <downvote limit> <invitation> <prompt...>` -- configure the given role to go through the review process.
+- `config roles_review <role> prompt [text...]` -- configure the questions used for the application. Each question should be in a separate code block.
+- `config roles_review <role> review_channel [channel]` -- configure the channel where the applications are posted.
+- `config roles_review <role> upvote_limit [limit]` -- configure how many votes it takes for an application to be approved.
+- `config roles_review <role> downvote_limit [limit]` -- configure how many votes it takes for an application to be rejected.
+- `config roles_review <role> pending_role ["None"|role]` -- configure an optional "pending" role, which is given in the interim to the applicant.
+- `config roles_review <role> denied_role ["None"|role]` -- configure an optional role that is given to the application when their application is denied.
+- `config roles_review <role> invitation [text]` -- configure the message that is sent to a user that self-assigns the pending role (via Discord UI), inviting them to fill out an application.
 
 ### `whois`
 
