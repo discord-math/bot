@@ -1,6 +1,6 @@
-from typing import TYPE_CHECKING, Iterable, List, Literal, Optional, Union, cast
+from typing import TYPE_CHECKING, Dict, Iterable, List, Literal, Optional, Tuple, Union, cast
 
-from discord import AllowedMentions, ButtonStyle, Interaction, Member, SelectOption
+from discord import AllowedMentions, ButtonStyle, Interaction, Member, Role, SelectOption
 from discord.abc import Messageable
 from discord.ext.commands import group
 from discord.ui import Button, Select, View
@@ -116,7 +116,7 @@ class RoleSelect(Select["RolesView"]):
     def __init__(
         self, boolean: bool, role_items: Iterable[SelectItem], member: Member, row: Optional[int] = None
     ) -> None:
-        self.roles = {}
+        self.roles: Dict[str, Role] = {}
         index = 0
         options = []
 
@@ -163,7 +163,7 @@ class RoleSelect(Select["RolesView"]):
                 selected_roles.add(self.roles[index])
         add_roles = set()
         remove_roles = set()
-        prompt_roles = []
+        prompt_roles: List[Tuple[Role, plugins.roles_review.ReviewedRole]] = []
         for role in self.roles.values():
             if role in member.roles and role not in selected_roles:
                 remove_roles.add(role)
@@ -171,8 +171,8 @@ class RoleSelect(Select["RolesView"]):
                 pre = await plugins.roles_review.pre_apply(member, role)
                 if pre == plugins.roles_review.ApplicationStatus.APPROVED:
                     add_roles.add(role)
-                elif pre is None:
-                    prompt_roles.append(role)
+                elif isinstance(pre, plugins.roles_review.ReviewedRole):
+                    prompt_roles.append((role, pre))
                 # TODO: tell them if False?
 
         if prompt_roles:

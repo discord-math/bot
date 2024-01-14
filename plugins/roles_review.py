@@ -571,13 +571,13 @@ class ApplicationStatus(enum.Enum):
 
 async def check_applications(
     member: Union[User, Member], role: Role, session: AsyncSession
-) -> Optional[ApplicationStatus]:
+) -> Optional[Union[ApplicationStatus, ReviewedRole]]:
     """
     If the user wants the role, depending on whether they have previous applications:
     - the role can be just given to them, returning APPROVED,
     - if they have a pending application, we can do nothing, returning PENDING
     - we can deny it, returning DENIED,
-    - if they had no previous applications, we can direct them to answer the questions, returning None
+    - if they had no previous applications, we can direct them to answer the questions, returning the ReviewedRole
     """
     stmt = select(Application.decision).where(Application.user_id == member.id, Application.role_id == role.id).limit(1)
     for decision in (await session.execute(stmt)).scalars():
@@ -588,16 +588,16 @@ async def check_applications(
             return ApplicationStatus.APPROVED
         else:
             return ApplicationStatus.DENIED
-    return None
+    return await session.get(ReviewedRole, role.id)
 
 
-async def pre_apply(member: Union[User, Member], role: Role) -> Optional[ApplicationStatus]:
+async def pre_apply(member: Union[User, Member], role: Role) -> Union[ApplicationStatus, ReviewedRole]:
     if role.id not in reviewed_roles:
         return ApplicationStatus.APPROVED
     async with sessionmaker() as session:
         pre = await check_applications(member, role, session)
         logger.debug(format("Pre-application {!m} {!M}: {!r}", member, role, pre))
-        return pre
+        return ApplicationStatus.APPROVED if pre is None else pre
 
 
 async def apply(member: Member, role: Role, inputs: List[Tuple[str, str]]) -> Optional[ApplicationStatus]:
@@ -608,7 +608,7 @@ async def apply(member: Member, role: Role, inputs: List[Tuple[str, str]]) -> Op
     - we can submit it for review, returning None.
     """
     async with sessionmaker() as session:
-        if role.id not in reviewed_roles or (review := await session.get(ReviewedRole, role.id)) is None:
+        if role.id not in reviewed_roles:
             logger.debug(format("Application from {!m} for a non-reviewed role {!M}", member, role))
             await retry(lambda: member.add_roles(role, reason="Application for non-reviewed role"))
             return ApplicationStatus.APPROVED
@@ -616,10 +616,18 @@ async def apply(member: Member, role: Role, inputs: List[Tuple[str, str]]) -> Op
         pre = await check_applications(member, role, session)
         logger.debug(format("Application {!m} {!M}: {!r}", member, role, pre))
 
+        if pre is None:
+            logger.debug(format("Application from {!m} for a non-reviewed role {!M}", member, role))
+            await retry(lambda: member.add_roles(role, reason="Application for non-reviewed role"))
+            return ApplicationStatus.APPROVED
+
         if pre == ApplicationStatus.APPROVED:
             await retry(lambda: member.add_roles(role, reason="Previously approved"))
-        if pre is not None:
+
+        if isinstance(pre, ApplicationStatus):
             return pre
+
+        review = pre
 
         channel = member.guild.get_channel(review.review_channel_id)
         assert isinstance(channel, TextChannel)
