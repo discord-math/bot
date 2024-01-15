@@ -1,7 +1,7 @@
 
 # Mathematics Server Discord Bot
 
-This is the open source repository for the utility bot that manages various kinds of things on the Mathematics Discord server. With that purpose in mind, feel free to contribute to this repository. If you'd like to run this bot on your own server, that's fine too, but don't expect support.
+This is the open source repository for the utility bot that manages various kinds of things on the Mathematics Discord server. With that purpose in mind, see `CONTRIBUTING.md` if you want to contribute to the bot. If you'd like to run this bot on your own server, that's fine too, but don't expect support.
 
 ## Plugins
 
