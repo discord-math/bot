@@ -434,10 +434,8 @@ async def config_submit_token(ctx: Context, submit_token: Optional[str]) -> None
 async def config_shortener(ctx: Context) -> None:
     async with sessionmaker() as session:
         stmt = select(ResolvedDomain)
-        await ctx.send(
-            ", ".join(format("{!i}", domain.domain) for domain in (await session.execute(stmt)).scalars())
-            or "No shorteners registered"
-        )
+        domains = (await session.execute(stmt)).scalars()
+        await ctx.send(", ".join(format("{!i}", domain.domain) for domain in domains) or "No shorteners registered")
 
 
 @config_shortener.command("add")

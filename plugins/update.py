@@ -84,10 +84,9 @@ async def update_command(ctx: Context, bot_directory: Optional[str]) -> None:
 async def config(ctx: Context) -> None:
     async with sessionmaker() as session:
         stmt = select(GitDirectory)
+        dirs = (await session.execute(stmt)).scalars()
         await ctx.send(
-            "\n".join(
-                format("- {!i}: {!i}", conf.name, conf.directory) for conf in (await session.execute(stmt)).scalars()
-            )
+            "\n".join(format("- {!i}: {!i}", conf.name, conf.directory) for conf in dirs)
             or "No repositories registered"
         )
 

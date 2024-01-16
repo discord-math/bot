@@ -89,11 +89,9 @@ class KeepVanity(Cog):
 async def config(ctx: Context) -> None:
     async with sessionmaker() as session:
         stmt = select(GuildConfig)
+        configs = (await session.execute(stmt)).scalars()
         await ctx.send(
-            "\n".join(
-                format("- {!c}: {!i}", conf.guild_id, conf.vanity) for conf in (await session.execute(stmt)).scalars()
-            )
-            or "No servers registered"
+            "\n".join(format("- {!c}: {!i}", conf.guild_id, conf.vanity) for conf in configs) or "No servers registered"
         )
 
 

@@ -246,10 +246,9 @@ class RoleReactions(Cog):
         """List role react messages."""
         async with sessionmaker() as session:
             stmt = select(ReactionMessage).options(raiseload(ReactionMessage.reactions))
+            messages = (await session.execute(stmt)).scalars()
             await ctx.send(
-                "Role reactions exist on:\n{}".format(
-                    "\n".join(obj.reference().jump_url for obj in (await session.execute(stmt)).scalars())
-                )
+                "Role reactions exist on:\n{}".format("\n".join(obj.reference().jump_url for obj in messages))
             )
 
     @rolereact_command.command("show")
