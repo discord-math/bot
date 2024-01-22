@@ -270,7 +270,7 @@ class CategoryACL(ACLExpr):
     def evaluate(
         self, user: Optional[Union[Member, User]], channel: Optional[MessageableChannel], nested: Set[str]
     ) -> EvalResult:
-        if isinstance(channel, GuildChannel):
+        if isinstance(channel, (GuildChannel, Thread)):
             if (channel.category.id if channel.category else None) == self.category:
                 return EvalResult.TRUE
             else:
