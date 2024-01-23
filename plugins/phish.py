@@ -91,6 +91,7 @@ class AllowedDomain:
 
 
 conf: GlobalConfig
+conf_set = asyncio.Event()
 resolve_domains: Set[str] = set()
 domains: Set[str] = set()
 local_blocklist: Set[str] = set()
@@ -133,6 +134,7 @@ async def submit_link(link: str, reason: str) -> str:
 @task(name="Phishing websocket task", every=0, exc_backoff_base=2)
 async def websocket_task() -> None:
     global domains, local_blocklist, local_allowlist
+    await conf_set.wait()
     if conf.api_url is None:
         await asyncio.sleep(600)
         return
@@ -362,6 +364,8 @@ async def init() -> None:
             await session.execute(stmt)
             local_blocklist -= unblocked
             await session.commit()
+
+        conf_set.set()
 
 
 @plugin_config_command
