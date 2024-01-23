@@ -331,8 +331,6 @@ async def init() -> None:
                         action_duration=action_duration,
                     )
                 )
-            for role_id in cast(List[int], conf.exempt_roles):
-                session.add(ExemptRole(role_id=role_id))
             await session.commit()
             conf.index = None
             await conf
