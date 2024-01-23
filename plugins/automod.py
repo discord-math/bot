@@ -3,17 +3,7 @@ from datetime import datetime, timedelta
 import enum
 import logging
 import re
-from typing import (
-    TYPE_CHECKING,
-    Dict,
-    Iterable,
-    List,
-    Literal,
-    Optional,
-    Set,
-    Union,
-    cast,
-)
+from typing import TYPE_CHECKING, Dict, Iterable, List, Literal, Optional, Set, Union, cast
 
 import discord
 from discord import AllowedMentions, Guild, Member, Message
