@@ -657,6 +657,12 @@ class PartialCategoryChannelConverter(GuildChannel):
         return await PCConv.partial_convert(ctx, arg, CategoryChannel)
 
 
+class PartialForumChannelConverter(GuildChannel):
+    @classmethod
+    async def convert(cls, ctx: Context[Bot], arg: str) -> Snowflake:
+        return await PCConv.partial_convert(ctx, arg, ForumChannel)
+
+
 class ChannelConverter(GuildChannel):
     @classmethod
     async def convert(cls, ctx: Context[Bot], arg: str) -> GuildChannel:
