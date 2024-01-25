@@ -210,8 +210,6 @@ async def approx_archival_ts(channel: Union[TextChannel, VoiceChannel]) -> Optio
     if channel.id in last_archival_times:
         return last_archival_times[channel.id] + timedelta(milliseconds=1)
     async for thread in channel.archived_threads(limit=None):
-        if thread.archive_timestamp is None:
-            continue
         ts = last_archival_times.get(channel.id)
         if ts is None or ts < thread.archive_timestamp:
             ts = thread.archive_timestamp

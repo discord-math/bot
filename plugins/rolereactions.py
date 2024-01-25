@@ -103,8 +103,6 @@ async def init() -> None:
 
 async def find_message(channel_id: int, msg_id: int) -> Optional[Message]:
     channel = client.get_partial_messageable(channel_id)
-    if channel is None:
-        return None
     try:
         return await channel.fetch_message(msg_id)
     except (discord.NotFound, discord.Forbidden):
@@ -157,8 +155,6 @@ async def get_payload_role(session: AsyncSession, guild: Guild, payload: RawReac
     if payload.emoji.id is not None:
         emoji = str(payload.emoji.id)
     else:
-        if payload.emoji.name is None:
-            return None
         emoji = payload.emoji.name
     if obj := await session.get(Reaction, (payload.message_id, emoji)):
         return Object(obj.role_id)

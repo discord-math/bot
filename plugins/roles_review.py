@@ -416,7 +416,7 @@ async def prompt_role(interaction: Interaction, guild_id: int, role_id: int, mes
         assert review
 
     pre = await pre_apply(interaction.user, role)
-    if pre is not None:
+    if isinstance(pre, ApplicationStatus):
         await interaction.response.send_message("You have already applied for this role.", ephemeral=True)
         await message.delete()
     else:
@@ -477,9 +477,9 @@ class RolesReviewCog(Cog):
                             if review.denied_role_id is not None:
                                 await after.add_roles(Object(review.denied_role_id))
                             await after.remove_roles(pending_role)
-                        elif pre is None:
+                        elif isinstance(pre, ReviewedRole):
                             try:
-                                await after.send(review.invitation, view=PromptRoleView(after.guild.id, review.id))
+                                await after.send(pre.invitation, view=PromptRoleView(after.guild.id, pre.id))
                             except discord.Forbidden:
                                 pass
 

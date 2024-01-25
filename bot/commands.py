@@ -120,7 +120,7 @@ class Commands(Cog):
                 if ctx.command is not None:
                     if getattr(ctx.command, "suppress_usage", False):
                         return
-                    if ctx.invoked_with is not None and ctx.invoked_parents is not None:
+                    if ctx.invoked_with is not None:
                         usage = " ".join(
                             s for s in ctx.invoked_parents + [ctx.invoked_with, ctx.command.signature] if s
                         )
