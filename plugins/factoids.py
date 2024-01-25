@@ -1,11 +1,11 @@
 from datetime import datetime, timezone
 import json
-from typing import TYPE_CHECKING, Mapping, Optional, Protocol, TypedDict, Union, cast, overload
+from typing import TYPE_CHECKING, Literal, Mapping, Optional, TypedDict, Union, cast, overload
 from typing_extensions import NotRequired
 
 from discord import AllowedMentions, Embed, Message, MessageReference, Thread
 from discord.abc import GuildChannel
-from sqlalchemy import TEXT, TIMESTAMP, BigInteger, ForeignKey, Integer, delete, func, select
+from sqlalchemy import TEXT, TIMESTAMP, BigInteger, Computed, ForeignKey, Integer, delete, func, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import async_sessionmaker
 import sqlalchemy.orm
@@ -15,6 +15,7 @@ from sqlalchemy.schema import CreateSchema
 from bot.acl import EvalResult, evaluate_acl, evaluate_ctx, privileged, register_action
 from bot.cogs import Cog, cog, group
 from bot.commands import Context, cleanup
+from bot.config import plugin_config_command
 from bot.reactions import get_input, get_reaction
 import plugins
 import util.db
@@ -24,7 +25,21 @@ from util.discord import CodeBlock, Inline, InvocationError, Quoted, UserError, 
 
 registry: sqlalchemy.orm.registry = sqlalchemy.orm.registry()
 
-sessionmaker = async_sessionmaker(util.db.engine, future=True)
+sessionmaker = async_sessionmaker(util.db.engine, expire_on_commit=False)
+
+
+@registry.mapped
+class GlobalConfig:
+    __tablename__ = "config"
+    __table_args__ = {"schema": "factoids"}
+
+    id: Mapped[int] = mapped_column(BigInteger, Computed("0"), primary_key=True)
+    prefix: Mapped[Optional[str]] = mapped_column(TEXT)
+
+    if TYPE_CHECKING:
+
+        def __init__(self, *, id: int = ..., prefix: Optional[str] = ...) -> None:
+            ...
 
 
 class Flags(TypedDict):
@@ -119,11 +134,7 @@ class Alias:
             ...
 
 
-class FactoidsConf(Protocol):
-    prefix: str
-
-
-conf: FactoidsConf
+prefix: Optional[str]
 
 use_tags = register_action("use_tags")
 manage_tag_flags = register_action("manage_tag_flags")
@@ -131,9 +142,17 @@ manage_tag_flags = register_action("manage_tag_flags")
 
 @plugins.init
 async def init() -> None:
-    global conf
-    conf = cast(FactoidsConf, await util.db.kv.load(__name__))
+    global prefix
     await util.db.init(util.db.get_ddl(CreateSchema("factoids"), registry.metadata.create_all))
+
+    async with sessionmaker() as session:
+        conf = await session.get(GlobalConfig, 0)
+        if not conf:
+            conf = GlobalConfig(prefix=cast(Optional[str], (await util.db.kv.load(__name__)).prefix))
+            session.add(conf)
+            await session.commit()
+
+        prefix = conf.prefix
 
 
 @cog
@@ -146,11 +165,11 @@ class Factoids(Cog):
             return
         if not isinstance(msg.channel, (GuildChannel, Thread)):
             return
-        if not msg.content.startswith(conf.prefix):
+        if prefix is None or not msg.content.startswith(prefix):
             return
         if use_tags.evaluate(msg.author, msg.channel) != EvalResult.TRUE:
             return
-        text = " ".join(msg.content[len(conf.prefix) :].split()).lower()
+        text = " ".join(msg.content[len(prefix) :].split()).lower()
         if not len(text):
             return
         async with sessionmaker() as session:
@@ -207,10 +226,11 @@ class Factoids(Cog):
     @tag_command.command("add")
     async def tag_add(self, ctx: Context, *, name: str) -> None:
         """Add a factoid. You will be prompted to enter the contents as a separate message."""
+        assert prefix is not None
         name = validate_name(name)
         async with sessionmaker() as session:
             if await session.get(Alias, name, options=(raiseload(Alias.factoid),)) is not None:
-                raise UserError(format("The factoid {!i} already exists", conf.prefix + name))
+                raise UserError(format("The factoid {!i} already exists", prefix + name))
 
             content = await prompt_contents(ctx)
             if not content:
@@ -232,7 +252,7 @@ class Factoids(Cog):
                 )
             )
             await session.commit()
-        await ctx.send(format("Factoid created, use with {!i}", conf.prefix + name))
+        await ctx.send(format("Factoid created, use with {!i}", prefix + name))
 
     @privileged
     @tag_command.command("alias")
@@ -241,17 +261,18 @@ class Factoids(Cog):
         Alias a factoid. Both names will lead to the same output.
         If the original factoid contains spaces, it would need to be quoted.
         """
+        assert prefix is not None
         name = validate_name(name)
         newname = " ".join(newname.split()).lower()
         async with sessionmaker() as session:
             if await session.get(Alias, newname, options=(raiseload(Alias.factoid),)) is not None:
-                raise UserError(format("The factoid {!i} already exists", conf.prefix + newname))
+                raise UserError(format("The factoid {!i} already exists", prefix + newname))
             if (alias := await session.get(Alias, name, options=(raiseload(Alias.factoid),))) is None:
-                raise UserError(format("The factoid {!i} does not exist", conf.prefix + name))
+                raise UserError(format("The factoid {!i} does not exist", prefix + name))
 
             session.add(Alias(name=newname, author_id=ctx.author.id, created_at=datetime.utcnow(), uses=0, id=alias.id))
             await session.commit()
-        await ctx.send(format("Aliased {!i} to {!i}", conf.prefix + newname, conf.prefix + name))
+        await ctx.send(format("Aliased {!i} to {!i}", prefix + newname, prefix + name))
 
     @privileged
     @tag_command.command("edit")
@@ -260,10 +281,11 @@ class Factoids(Cog):
         Edit a factoid (and all factoids aliased to it).
         You will be prompted to enter the contents as a separate message.
         """
+        assert prefix is not None
         name = validate_name(name)
         async with sessionmaker() as session:
             if (alias := await session.get(Alias, name)) is None:
-                raise UserError(format("The factoid {!i} does not exist", conf.prefix + name))
+                raise UserError(format("The factoid {!i} does not exist", prefix + name))
 
             if alias.factoid.flags is not None and manage_tag_flags.evaluate(*evaluate_ctx(ctx)) != EvalResult.TRUE:
                 raise UserError(format("This factoid can only be edited by admins because it has special behaviors"))
@@ -276,7 +298,7 @@ class Factoids(Cog):
             alias.factoid.embed_data = content.to_dict() if not isinstance(content, str) else None
             alias.factoid.author_id = ctx.author.id
             await session.commit()
-        await ctx.send(format("Factoid updated, use with {!i}", conf.prefix + name))
+        await ctx.send(format("Factoid updated, use with {!i}", prefix + name))
 
     @privileged
     @tag_command.command("unalias")
@@ -284,10 +306,11 @@ class Factoids(Cog):
         """
         Remove an alias for a factoid. The last name for a factoid cannot be removed (use delete instead).
         """
+        assert prefix is not None
         name = validate_name(name)
         async with sessionmaker() as session:
             if (alias := await session.get(Alias, name)) is None:
-                raise UserError(format("The factoid {!i} does not exist", conf.prefix + name))
+                raise UserError(format("The factoid {!i} does not exist", prefix + name))
             stmt = select(1).where(Alias.id == alias.id, Alias.name != alias.name).limit(1)
             if not (await session.execute(stmt)).scalar():
                 raise UserError("Cannot remove the last alias")
@@ -300,10 +323,11 @@ class Factoids(Cog):
     @tag_command.command("delete")
     async def tag_delete(self, ctx: Context, *, name: str) -> None:
         """Delete a factoid and all its aliases."""
+        assert prefix is not None
         name = validate_name(name)
         async with sessionmaker() as session:
             if (alias := await session.get(Alias, name)) is None:
-                raise UserError(format("The factoid {!i} does not exist", conf.prefix + name))
+                raise UserError(format("The factoid {!i} does not exist", prefix + name))
 
             stmt = delete(Alias).where(Alias.id == alias.id)
             await session.execute(stmt)
@@ -316,10 +340,11 @@ class Factoids(Cog):
     @tag_command.command("info")
     async def tag_info(self, ctx: Context, *, name: str) -> None:
         """Show information about a factoid."""
+        assert prefix is not None
         name = validate_name(name)
         async with sessionmaker() as session:
             if (alias := await session.get(Alias, name)) is None:
-                raise UserError(format("The factoid {!i} does not exist", conf.prefix + name))
+                raise UserError(format("The factoid {!i} does not exist", prefix + name))
 
             stmt = select(Alias).where(Alias.id == alias.id).order_by(Alias.uses.desc())
             aliases = (await session.execute(stmt)).scalars()
@@ -337,7 +362,7 @@ class Factoids(Cog):
                     alias.factoid.uses,
                     "" if used_at is None else ", last on <t:{}:F> (<t:{}:R>)".format(used_at, used_at),
                     "" if alias.factoid.flags is None else " Has flags.",
-                    ", ".join(format("{!i} ({} uses)", conf.prefix + alias.name, alias.uses) for alias in aliases),
+                    ", ".join(format("{!i} ({} uses)", prefix + alias.name, alias.uses) for alias in aliases),
                 ),
                 allowed_mentions=AllowedMentions.none(),
             )
@@ -365,7 +390,7 @@ class Factoids(Cog):
                 .limit(20)
             )
             results = list(await session.execute(stmt))
-            await ctx.send("\n".join(format("{!i}: {} uses", conf.prefix + name, uses) for name, uses in results))
+            await ctx.send("\n".join(format("{!i}: {} uses", prefix + name, uses) for name, uses in results))
 
     @privileged
     @tag_command.command("flags")
@@ -375,10 +400,11 @@ class Factoids(Cog):
         - "mentions": a boolean, if true, makes the factoid invocation ping the roles and users it involves
         - "acl": a string referring to an ACL (configurable with `acl`) required to use the factoid
         """
+        assert prefix is not None
         name = validate_name(name)
         async with sessionmaker() as session:
             if (alias := await session.get(Alias, name)) is None:
-                raise UserError(format("The factoid {!i} does not exist", conf.prefix + name))
+                raise UserError(format("The factoid {!i} does not exist", prefix + name))
 
             if flags is None:
                 await ctx.send(format("{!i}", json.dumps(alias.factoid.flags)))
@@ -420,3 +446,22 @@ def validate_name(name: str) -> str:
         raise InvocationError("Factoid name must be nonempty")
     else:
         return name
+
+
+@plugin_config_command
+@group("factoids")
+async def config(ctx: Context) -> None:
+    pass
+
+
+@config.command("prefix")
+async def config_prefix(ctx: Context, prefix: Optional[Union[Literal["None"], CodeBlock, Inline, Quoted]]) -> None:
+    async with sessionmaker() as session:
+        conf = await session.get(GlobalConfig, 0)
+        assert conf
+        if prefix is None:
+            await ctx.send(format("{!i}", conf.prefix))
+        else:
+            conf.prefix = None if prefix == "None" else prefix.text
+            await session.commit()
+            await ctx.send("\u2705")
