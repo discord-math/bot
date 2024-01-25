@@ -161,9 +161,6 @@ Commands:
 - `automod exempt add <role>` -- add a role to be exempt from punishment.
 - `automod exempt remove <role>` -- make a role not exempt from punishment.
 
-Config:
-- ``config plugins.automod mute_role <role id>`` -- which role to assign for the "mute" action.
-
 ### `phish`
 
 As part of automod, maintain a list of known phishing domains.
@@ -198,21 +195,27 @@ Commands:
 - `unsolved` -- mark a forum post as unsolved.
 
 Config:
-- ``config plugins.clopen channels `[<channel id>, ...]` `` -- the list of channels in rotation.
-- ``config plugins.clopen available_category <category id>`` -- where "available" channels are placed.
-- ``config plugins.clopen used_category <category id>`` -- where "occupied" channels are placed.
-- ``config plugins.clopen hidden_category <category id>`` -- where "hidden" channels are placed.
-- ``config plugins.clopen owner_timeout <timeout>`` -- how long (in seconds, initially) since the last message by the owner before the owner is prompted about closure, and how long until the channel is automatically closed if there was no response.
-- ``config plugins.clopen timeout <timeout>`` -- how long (in seconds) since the last message by anyone else before the owner is prompted about closure.
-- ``config plugins.clopen min_avail <number>`` -- how many channels minimum should be "available". If not enough channels are available, channels may be unhidden, or new channels may be created.
-- ``config plugins.clopen max_avail <number>`` -- how many channels maximum should be "available". If too many channels are available, some may be hidden.
-- ``config plugins.clopen max_channels <number>`` -- do not create channels past this point.
-- ``config plugins.clopen limit <number>`` -- limit on how many channels can be occupied by a person at once.
-- ``config plugins.clopen limit_role <role id>`` -- role that is assigned when the limit is reached.
-- ``config plugins.clopen forum <channel id>`` -- id of the forum channel.
-- ``config plugins.clopen pinned_posts [<thread id>, ...]`` -- list of thread ids in which posts should be cleaned up.
-- ``config plugins.clopen solved_tag <tag id>`` -- the tag for solved posts.
-- ``config plugins.clopen unsolved_tag <tag id>`` -- the tag for unsolved posts.
+- `config clopen <server> channels` -- list the channels that are considered part of the system.
+- `config clopen <server> available [category]` -- configure where the "available" channels are placed.
+- `config clopen <server> used [category]` -- configure where the "occupied" channels are placed.
+- `config clopen <server> hidden [category]` -- configure where the "hidden" channels are placed.
+- `config clopen <server> owner_timeout [duration]` -- configure how long (initially) since the last message by the owner before the owner is prompted about closure, and how long until the channel is automatically closed if there was no response.
+- `config clopen <server> timeout [duration]` -- configure how long since the last message by anyone else before the owner is prompted about closure.
+- `config clopen <server> min_avail [number]` -- configure how many channels minimum should be "available". If not enough channels are available, channels may be unhidden, or new channels may be created.
+- `config clopen <server> max_avail [number]` -- configure how many channels maximum should be "available". If too many channels are available, some may be hidden.
+- `config clopen <server> max_channels [number]` -- configure the max number of channels that can be created. This number should not exceed 50, as is is impossible to place more than 50 channels in a category.
+- `config clopen <server> limit [number]` -- configure the limit on how many channels can be occupied by a person at once.
+- `config clopen <server> limit_role [role]` -- configure the role that is assigned when the limit is reached. This role should prevent the user from posting in the "available" category.
+
+- `config clopen <server> forum [forum]` -- configure the forum channel.
+- `config clopen <server> solved_tag [tag_id]` -- configure the tag for solved posts.
+- `config clopen <server> unsolved_tag [tag_id]` -- configure the tag for unsolved posts.
+- `config clopen <server> pinned` -- list posts in which messages should be cleaned up.
+- `config clopen <server> pinned add <post_id>` -- add a pinned post.
+- `config clopen <server> pinned remove <post_id>` -- remove a pinned post.
+
+- `config clopen <server> new <available_category> <used_category> <hidden_category> <limit_role> <forum> <solved_tag_id> <unsolved_tag_id>` -- initially configure the system for on a server.
+- `config clopen <server> channels add <channel>` -- register a channel to be used with the system.
 
 ### `factoids`
 
@@ -236,7 +239,7 @@ Commands:
 - `tag flags <name>` -- show flags on the given factoid.
 
 Config:
-- ``config plugins.factoids prefix `"<prefix>"` `` -- prefix for recalling factoids, could be distrinct from the bot prefix.
+- `config factoids prefix ["None"|prefix]` -- configure the prefix for recalling factoids, could be distrinct from the bot prefix.
 
 ### `rolereactions`
 
