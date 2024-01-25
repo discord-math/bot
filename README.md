@@ -131,7 +131,9 @@ Config:
 Remember members' roles when they leave the guild and rejoin.
 
 Config:
-- ``config plugins.persistence roles `[<role id>, ...]` `` -- list of roles to remember.
+- `config persistence` -- list roles to remember.
+- `config persistence add <role>` -- add a role.
+- `config persistence remove <role>` -- remove a role.
 
 ### `modmail`
 
