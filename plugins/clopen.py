@@ -55,6 +55,7 @@ from util.discord import (
     PartialForumChannelConverter,
     PartialGuildConverter,
     PartialRoleConverter,
+    PartialTextChannelConverter,
     PlainItem,
     Typing,
     UserError,
@@ -1092,8 +1093,9 @@ async def config_new(
         await ctx.send("\u2705")
 
 
-async def get_conf(session: AsyncSession, ctx: GuildContext) -> GuildConfig:
-    if (conf := await session.get(GuildConfig, ctx.guild_id, options=(raiseload(GuildConfig.channels),))) is None:
+async def get_conf(session: AsyncSession, ctx: GuildContext, load_channels: bool = False) -> GuildConfig:
+    options = None if load_channels else (raiseload(GuildConfig.channels),)
+    if (conf := await session.get(GuildConfig, ctx.guild_id, options=options)) is None:
         raise UserError("No config for {}".format(ctx.guild_id))
     return conf
 
@@ -1277,3 +1279,32 @@ async def config_unsolved_tag(ctx: GuildContext, tag_id: Optional[int]) -> None:
             conf.unsolved_tag_id = tag_id
             await session.commit()
             await ctx.send("\u2705")
+
+
+@config.group("channels", invoke_without_command=True)
+async def config_channels(ctx: GuildContext) -> None:
+    async with sessionmaker() as session:
+        conf = await get_conf(session, ctx, load_channels=True)
+        await ctx.send(
+            "\n".join(
+                format("{!c}", channel.id) for channel in sorted(conf.channels, key=lambda channel: channel.index)
+            )
+            or "No channels registered"
+        )
+
+
+@config_channels.command("add")
+async def config_channels_add(ctx: GuildContext, channel: PartialTextChannelConverter) -> None:
+    async with sessionmaker() as session:
+        conf = await get_conf(session, ctx, load_channels=True)
+        session.add(
+            Channel(
+                guild_id=conf.guild_id,
+                id=channel.id,
+                index=len(conf.channels),
+                state=ChannelState.HIDDEN,
+                extension=1,
+            )
+        )
+        await session.commit()
+        await ctx.send("\u2705")
