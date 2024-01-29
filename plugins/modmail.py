@@ -44,7 +44,6 @@ from util.discord import (
     retry,
 )
 
-
 registry = sqlalchemy.orm.registry()
 sessionmaker = async_sessionmaker(util.db.engine, expire_on_commit=False)
 
@@ -59,7 +58,6 @@ class ModmailMessage:
     staff_message_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
 
     if TYPE_CHECKING:
-
         def __init__(self, *, dm_channel_id: int, dm_message_id: int, staff_message_id: int) -> None:
             ...
 
@@ -74,7 +72,6 @@ class ModmailThread:
     last_used: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False)
 
     if TYPE_CHECKING:
-
         def __init__(self, *, user_id: int, thread_first_message_id: int, last_used: datetime) -> None:
             ...
 
@@ -91,9 +88,8 @@ class GuildConfig:
     thread_expiry: Mapped[timedelta] = mapped_column(INTERVAL, nullable=False)
 
     if TYPE_CHECKING:
-
         def __init__(
-            self, *, guild_id: int, token: str, channel_id: int, role_id: int, thread_expiry: timedelta
+                self, *, guild_id: int, token: str, channel_id: int, role_id: int, thread_expiry: timedelta
         ) -> None:
             ...
 
@@ -170,18 +166,19 @@ class ModMailClient(Client):
             thread_id = await update_thread(self.conf, msg.author.id)
 
             items = [
-                PlainItem(
-                    format(
-                        "**From {}#{}** {} {!m} on {}:\n\n",
-                        msg.author.name,
-                        msg.author.discriminator,
-                        msg.author.id,
-                        msg.author,
-                        msg.created_at,
-                    )
-                ),
                 PlainItem(msg.content),
             ]
+
+            header = (discord.Embed(
+                title=format("Modmail from {}#{}", msg.author.name, msg.author.discriminator),
+                timestamp=msg.created_at
+            ).add_field(
+                name="From",
+                value=format("{!m}", msg.author)).add_field(
+                name="ID",
+                value=msg.author.id)
+            )
+
             footer = "".join("\n**Attachment:** {} {}".format(att.filename, att.url) for att in msg.attachments)
             if thread_id is None:
                 footer += format("\n{!m}", role)
@@ -193,17 +190,18 @@ class ModMailClient(Client):
             reference = None
             if thread_id is not None:
                 reference = MessageReference(message_id=thread_id, channel_id=channel.id, fail_if_not_exists=False)
+
             copy_first = None
+
+            header_copy = await retry(
+                lambda: channel.send(embed=header, allowed_mentions=mentions, reference=reference), attempts=10
+            )
+
+            await add_modmail(msg, header_copy)
+
             for content, _ in chunk_messages(items):
-                if reference is not None and copy_first is None:
-                    copy = await retry(
-                        lambda: channel.send(content, allowed_mentions=mentions, reference=reference), attempts=10
-                    )
-                else:
-                    copy = await retry(lambda: channel.send(content, allowed_mentions=mentions), attempts=10)
+                copy = await retry(lambda: channel.send(content, allowed_mentions=mentions), attempts=10)
                 await add_modmail(msg, copy)
-                if copy_first is None:
-                    copy_first = copy
 
             if thread_id is None and copy_first is not None:
                 await retry(lambda: create_thread(msg.author.id, copy_first.id), attempts=10)
@@ -317,11 +315,11 @@ async def config(ctx: GuildContext, server: PartialGuildConverter) -> None:
 
 @config.command("new")
 async def config_new(
-    ctx: GuildContext,
-    token: str,
-    channel: PartialChannelConverter,
-    role: PartialRoleConverter,
-    thread_expiry: DurationConverter,
+        ctx: GuildContext,
+        token: str,
+        channel: PartialChannelConverter,
+        role: PartialRoleConverter,
+        thread_expiry: DurationConverter,
 ) -> None:
     async with sessionmaker() as session:
         session.add(
