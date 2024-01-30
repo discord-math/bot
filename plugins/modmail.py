@@ -194,8 +194,6 @@ class ModMailClient(Client):
             if thread_id is not None:
                 reference = MessageReference(message_id=thread_id, channel_id=channel.id, fail_if_not_exists=False)
 
-            copy_first = None
-
             if reference is not None:
                 header_copy = await retry(
                     lambda: channel.send(embed=header, allowed_mentions=mentions, reference=reference), attempts=10
@@ -209,8 +207,8 @@ class ModMailClient(Client):
                 copy = await retry(lambda: channel.send(content, allowed_mentions=mentions), attempts=10)
                 await add_modmail(msg, copy)
 
-            if thread_id is None and copy_first is not None:
-                await retry(lambda: create_thread(msg.author.id, copy_first.id), attempts=10)
+            if thread_id is None:
+                await retry(lambda: create_thread(msg.author.id, header_copy.id), attempts=10)
 
             await msg.add_reaction("\u2709")
 
