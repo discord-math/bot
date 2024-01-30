@@ -59,7 +59,8 @@ class ModmailMessage:
 
     if TYPE_CHECKING:
 
-        def __init__(self, *, dm_channel_id: int, dm_message_id: int, staff_message_id: int) -> None: ...
+        def __init__(self, *, dm_channel_id: int, dm_message_id: int, staff_message_id: int) -> None:
+            ...
 
 
 @registry.mapped
@@ -73,7 +74,8 @@ class ModmailThread:
 
     if TYPE_CHECKING:
 
-        def __init__(self, *, user_id: int, thread_first_message_id: int, last_used: datetime) -> None: ...
+        def __init__(self, *, user_id: int, thread_first_message_id: int, last_used: datetime) -> None:
+            ...
 
 
 @registry.mapped
@@ -91,7 +93,8 @@ class GuildConfig:
 
         def __init__(
             self, *, guild_id: int, token: str, channel_id: int, role_id: int, thread_expiry: timedelta
-        ) -> None: ...
+        ) -> None:
+            ...
 
 
 logger: logging.Logger = logging.getLogger(__name__)
