@@ -44,6 +44,7 @@ from util.discord import (
     retry,
 )
 
+
 registry = sqlalchemy.orm.registry()
 sessionmaker = async_sessionmaker(util.db.engine, expire_on_commit=False)
 
