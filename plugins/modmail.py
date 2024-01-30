@@ -207,7 +207,7 @@ class ModMailClient(Client):
                 copy = await retry(lambda: channel.send(content, allowed_mentions=mentions), attempts=10)
                 await add_modmail(msg, copy)
 
-            if thread_id is None:
+            if thread_id is None and header_copy is not None:
                 await retry(lambda: create_thread(msg.author.id, header_copy.id), attempts=10)
 
             await msg.add_reaction("\u2709")
