@@ -196,9 +196,12 @@ class ModMailClient(Client):
 
             copy_first = None
 
-            header_copy = await retry(
-                lambda: channel.send(embed=header, allowed_mentions=mentions, reference=reference), attempts=10
-            )
+            if reference is not None:
+                header_copy = await retry(
+                    lambda: channel.send(embed=header, allowed_mentions=mentions, reference=reference), attempts=10
+                )
+            else:
+                header_copy = await retry(lambda: channel.send(embed=header, allowed_mentions=mentions), attempts=10)
 
             await add_modmail(msg, header_copy)
 
