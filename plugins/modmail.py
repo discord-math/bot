@@ -58,8 +58,8 @@ class ModmailMessage:
     staff_message_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
 
     if TYPE_CHECKING:
-        def __init__(self, *, dm_channel_id: int, dm_message_id: int, staff_message_id: int) -> None:
-            ...
+
+        def __init__(self, *, dm_channel_id: int, dm_message_id: int, staff_message_id: int) -> None: ...
 
 
 @registry.mapped
@@ -72,8 +72,8 @@ class ModmailThread:
     last_used: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False)
 
     if TYPE_CHECKING:
-        def __init__(self, *, user_id: int, thread_first_message_id: int, last_used: datetime) -> None:
-            ...
+
+        def __init__(self, *, user_id: int, thread_first_message_id: int, last_used: datetime) -> None: ...
 
 
 @registry.mapped
@@ -88,10 +88,10 @@ class GuildConfig:
     thread_expiry: Mapped[timedelta] = mapped_column(INTERVAL, nullable=False)
 
     if TYPE_CHECKING:
+
         def __init__(
-                self, *, guild_id: int, token: str, channel_id: int, role_id: int, thread_expiry: timedelta
-        ) -> None:
-            ...
+            self, *, guild_id: int, token: str, channel_id: int, role_id: int, thread_expiry: timedelta
+        ) -> None: ...
 
 
 logger: logging.Logger = logging.getLogger(__name__)
@@ -169,14 +169,13 @@ class ModMailClient(Client):
                 PlainItem(msg.content),
             ]
 
-            header = (discord.Embed(
-                title=format("Modmail from {}#{}", msg.author.name, msg.author.discriminator),
-                timestamp=msg.created_at
-            ).add_field(
-                name="From",
-                value=format("{!m}", msg.author)).add_field(
-                name="ID",
-                value=msg.author.id)
+            header = (
+                discord.Embed(
+                    title=format("Modmail from {}#{}", msg.author.name, msg.author.discriminator),
+                    timestamp=msg.created_at,
+                )
+                .add_field(name="From", value=format("{!m}", msg.author))
+                .add_field(name="ID", value=msg.author.id)
             )
 
             footer = "".join("\n**Attachment:** {} {}".format(att.filename, att.url) for att in msg.attachments)
@@ -315,11 +314,11 @@ async def config(ctx: GuildContext, server: PartialGuildConverter) -> None:
 
 @config.command("new")
 async def config_new(
-        ctx: GuildContext,
-        token: str,
-        channel: PartialChannelConverter,
-        role: PartialRoleConverter,
-        thread_expiry: DurationConverter,
+    ctx: GuildContext,
+    token: str,
+    channel: PartialChannelConverter,
+    role: PartialRoleConverter,
+    thread_expiry: DurationConverter,
 ) -> None:
     async with sessionmaker() as session:
         session.add(
