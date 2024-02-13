@@ -169,18 +169,7 @@ class ModMailClient(Client):
                 return
             thread_id = await update_thread(self.conf, msg.author.id)
 
-            items = [
-                PlainItem(msg.content),
-            ]
-
-            header = (
-                discord.Embed(
-                    title=format("Modmail from {}#{}", msg.author.name, msg.author.discriminator),
-                    timestamp=msg.created_at,
-                )
-                .add_field(name="From", value=format("{!m}", msg.author))
-                .add_field(name="ID", value=msg.author.id)
-            )
+            items = [PlainItem(msg.content)]
 
             footer = "".join("\n**Attachment:** {} {}".format(att.filename, att.url) for att in msg.attachments)
             if thread_id is None:
@@ -194,21 +183,28 @@ class ModMailClient(Client):
             if thread_id is not None:
                 reference = MessageReference(message_id=thread_id, channel_id=channel.id, fail_if_not_exists=False)
 
+            embed = (
+                discord.Embed(
+                    title=format("Modmail from {}#{}", msg.author.name, msg.author.discriminator),
+                    timestamp=msg.created_at,
+                )
+                .add_field(name="From", value=format("{!m}", msg.author))
+                .add_field(name="ID", value=msg.author.id)
+            )
             if reference is not None:
-                header_copy = await retry(
-                    lambda: channel.send(embed=header, allowed_mentions=mentions, reference=reference), attempts=10
+                header = await retry(
+                    lambda: channel.send(embed=embed, allowed_mentions=mentions, reference=reference), attempts=10
                 )
             else:
-                header_copy = await retry(lambda: channel.send(embed=header, allowed_mentions=mentions), attempts=10)
-
-            await add_modmail(msg, header_copy)
+                header = await retry(lambda: channel.send(embed=embed, allowed_mentions=mentions), attempts=10)
+            await add_modmail(msg, header)
 
             for content, _ in chunk_messages(items):
                 copy = await retry(lambda: channel.send(content, allowed_mentions=mentions), attempts=10)
                 await add_modmail(msg, copy)
 
-            if thread_id is None and header_copy is not None:
-                await retry(lambda: create_thread(msg.author.id, header_copy.id), attempts=10)
+            if thread_id is None:
+                await create_thread(msg.author.id, header.id)
 
             await msg.add_reaction("\u2709")
 
