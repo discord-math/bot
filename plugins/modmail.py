@@ -169,19 +169,8 @@ class ModMailClient(Client):
                 return
             thread_id = await update_thread(self.conf, msg.author.id)
 
-            items = [
-                PlainItem(
-                    format(
-                        "**From {}#{}** {} {!m} on {}:\n\n",
-                        msg.author.name,
-                        msg.author.discriminator,
-                        msg.author.id,
-                        msg.author,
-                        msg.created_at,
-                    )
-                ),
-                PlainItem(msg.content),
-            ]
+            items = [PlainItem(msg.content)]
+
             footer = "".join("\n**Attachment:** {} {}".format(att.filename, att.url) for att in msg.attachments)
             if thread_id is None:
                 footer += format("\n{!m}", role)
@@ -193,20 +182,29 @@ class ModMailClient(Client):
             reference = None
             if thread_id is not None:
                 reference = MessageReference(message_id=thread_id, channel_id=channel.id, fail_if_not_exists=False)
-            copy_first = None
-            for content, _ in chunk_messages(items):
-                if reference is not None and copy_first is None:
-                    copy = await retry(
-                        lambda: channel.send(content, allowed_mentions=mentions, reference=reference), attempts=10
-                    )
-                else:
-                    copy = await retry(lambda: channel.send(content, allowed_mentions=mentions), attempts=10)
-                await add_modmail(msg, copy)
-                if copy_first is None:
-                    copy_first = copy
 
-            if thread_id is None and copy_first is not None:
-                await retry(lambda: create_thread(msg.author.id, copy_first.id), attempts=10)
+            embed = (
+                discord.Embed(
+                    title=format("Modmail from {}#{}", msg.author.name, msg.author.discriminator),
+                    timestamp=msg.created_at,
+                )
+                .add_field(name="From", value=format("{!m}", msg.author))
+                .add_field(name="ID", value=msg.author.id)
+            )
+            if reference is not None:
+                header = await retry(
+                    lambda: channel.send(embed=embed, allowed_mentions=mentions, reference=reference), attempts=10
+                )
+            else:
+                header = await retry(lambda: channel.send(embed=embed, allowed_mentions=mentions), attempts=10)
+            await add_modmail(msg, header)
+
+            for content, _ in chunk_messages(items):
+                copy = await retry(lambda: channel.send(content, allowed_mentions=mentions), attempts=10)
+                await add_modmail(msg, copy)
+
+            if thread_id is None:
+                await create_thread(msg.author.id, header.id)
 
             await msg.add_reaction("\u2709")
 
