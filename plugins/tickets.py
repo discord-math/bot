@@ -479,6 +479,7 @@ class Ticket:
             timestamp=self.created_at,
             color=color,
         )
+        embed.add_field(name="User", value=self.targetid)
         embed.add_field(name="Moderator", value=format("{!m}", self.modid))
 
         if self.can_revert:
