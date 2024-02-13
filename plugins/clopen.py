@@ -426,8 +426,8 @@ async def occupy(session: AsyncSession, channel: Channel, msg_id: int, author: U
     channel.op_id = msg_id
     channel.extension = 1
     channel.expiry = datetime.utcnow() + channel.guild.owner_timeout
-    await enact_occupied(conf, chan, author, op_id=msg_id, old_op_id=old_op_id)
     await session.commit()
+    await enact_occupied(conf, chan, author, op_id=msg_id, old_op_id=old_op_id)
     scheduler_task.run_coalesced(0)
 
 
