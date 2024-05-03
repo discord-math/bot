@@ -215,7 +215,7 @@ class Channel:
     extension: Mapped[int] = mapped_column(BigInteger, nullable=False)
     # When to transition to the respective next state
     expiry: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP)
-    creatation_date: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP)
+    creation_date: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP)
 
 
     guild: Mapped[GuildConfig] = relationship(GuildConfig, lazy="joined")
@@ -267,7 +267,7 @@ async def scheduler_task() -> None:
             for channel in config.channels:
                 async with channel_locks[channel.id]:
                     if channel.state == ChannelState.USED and channel.expiry is not None:
-                        if channel.creatation_date is not None and ( datetime.utcnow() - channel.creatation_date).total_seconds > 259200: #three days
+                        if channel.creation_date is not None and ( datetime.utcnow() - channel.creation_date).total_seconds > 259200: #three days
                             await close(session, channel, "Closed due to exceeding three hours")
                         if channel.expiry < datetime.utcnow():
                             await make_pending(session, channel)
@@ -430,7 +430,7 @@ async def occupy(session: AsyncSession, channel: Channel, msg_id: int, author: U
     channel.op_id = msg_id
     channel.extension = 1
     channel.expiry = datetime.utcnow() + channel.guild.owner_timeout
-    channel.creatation_date = datetime.utcnow()
+    channel.creation_date = datetime.utcnow()
     await session.commit()
     await enact_occupied(conf, chan, author, op_id=msg_id, old_op_id=old_op_id)
     scheduler_task.run_coalesced(0)
