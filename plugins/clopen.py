@@ -268,7 +268,7 @@ async def scheduler_task() -> None:
                 async with channel_locks[channel.id]:
                     if channel.state == ChannelState.USED and channel.expiry is not None:
                         if channel.creation_date is not None and ( datetime.utcnow() - channel.creation_date).total_seconds > 259200: #three days
-                            await close(session, channel, "Closed due to exceeding three hours")
+                            await close(session, channel, "Closed due to exceeding three days")
                             continue
                         if channel.expiry < datetime.utcnow():
                             await make_pending(session, channel)
