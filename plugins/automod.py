@@ -273,7 +273,7 @@ async def process_messages(msgs: Iterable[Message]) -> None:
                     if any(role.id in exempt_roles for role in msg.author.roles):
                         continue
                 if (rule := active_rules.get(index)) is not None:
-                    reason = "Automatic action: message matches pattern {}".format(index)
+                    reason = format("Automatic action: message matches pattern {}: {!i}", index, msg.content.decode("utf8"))
                     duration = rule.action_duration
 
                     if rule.action == ActionType.DELETE:
