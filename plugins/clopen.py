@@ -125,6 +125,10 @@ def prompt_message(mention: int) -> str:
     return format("{!m} Has your question been resolved?", mention)
 
 
+def timeout_cap_reached_message(mention: int) -> str:
+    return format("{!m} Channel closed due to maximum timeout reached!", mention)
+
+
 registry = sqlalchemy.orm.registry()
 sessionmaker = async_sessionmaker(util.db.engine, expire_on_commit=False)
 logger = logging.getLogger(__name__)
@@ -143,6 +147,8 @@ class GuildConfig:
     timeout: Mapped[timedelta] = mapped_column(INTERVAL, nullable=False)
     # How long initially until the channel becomes pending for closure after the owner talks
     owner_timeout: Mapped[timedelta] = mapped_column(INTERVAL, nullable=False)
+    # The maximum duration that a channel keeps open
+    timeout_cap: Mapped[timedelta] = mapped_column(INTERVAL, nullable=False)
     # Acceptable minimum number of channels in the available category at any time
     min_avail: Mapped[int] = mapped_column(BigInteger, nullable=False)
     # Acceptable maximum number of channels in the available category at any time
@@ -174,6 +180,7 @@ class GuildConfig:
             hidden_category_id: int,
             timeout: timedelta,
             owner_timeout: timedelta,
+            timeout_cap: timedelta,
             min_avail: int,
             max_avail: int,
             max_channels: int,
@@ -215,6 +222,8 @@ class Channel:
     extension: Mapped[int] = mapped_column(BigInteger, nullable=False)
     # When to transition to the respective next state
     expiry: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP)
+    # The maximum amount of time a channel can be kept open
+    max_expiry: Mapped[Optional[datetime]] = mapped_column(TIMESTAMP)
 
     guild: Mapped[GuildConfig] = relationship(GuildConfig, lazy="joined")
 
@@ -232,6 +241,7 @@ class Channel:
             prompt_id: Optional[int] = ...,
             op_id: Optional[int] = ...,
             expiry: Optional[datetime] = ...,
+            max_expiry: Optional[datetime] = ...,
         ) -> None:
             ...
 
@@ -265,7 +275,9 @@ async def scheduler_task() -> None:
             for channel in config.channels:
                 async with channel_locks[channel.id]:
                     if channel.state == ChannelState.USED and channel.expiry is not None:
-                        if channel.expiry < datetime.utcnow():
+                        if channel.max_expiry < datetime.utcnow():
+                            await close(session, channel, timeout_cap_reached_message(channel.owner_id), reopen=False)
+                        elif channel.expiry < datetime.utcnow():
                             await make_pending(session, channel)
                         elif min_next is None or channel.expiry < min_next:
                             min_next = channel.expiry
@@ -275,7 +287,9 @@ async def scheduler_task() -> None:
                         elif min_next is None or channel.expiry < min_next:
                             min_next = channel.expiry
                     elif channel.state == ChannelState.CLOSED:
-                        if channel.expiry is None or channel.expiry < datetime.utcnow():
+                        if channel.max_expiry < datetime.utcnow():
+                            await make_hidden(session, channel)
+                        elif channel.expiry is None or channel.expiry < datetime.utcnow():
                             if (
                                 sum(channel.state == ChannelState.AVAILABLE for channel in config.channels)
                                 >= config.max_avail
@@ -310,6 +324,7 @@ async def init() -> None:
                 hidden_category_id=cast(int, conf.hidden_category),
                 timeout=timedelta(seconds=cast(int, conf.timeout)),
                 owner_timeout=timedelta(seconds=cast(int, conf.owner_timeout)),
+                timeout_cap=timedelta(seconds=cast(int, conf.timeout_cap)),
                 min_avail=cast(int, conf.min_avail),
                 max_avail=cast(int, conf.max_avail),
                 max_channels=cast(int, conf.max_channels),
@@ -426,6 +441,7 @@ async def occupy(session: AsyncSession, channel: Channel, msg_id: int, author: U
     channel.op_id = msg_id
     channel.extension = 1
     channel.expiry = datetime.utcnow() + channel.guild.owner_timeout
+    channel.max_expiry = datetime.utcnow() + channel.guild.timeout_cap
     await session.commit()
     await enact_occupied(conf, chan, author, op_id=msg_id, old_op_id=old_op_id)
     scheduler_task.run_coalesced(0)
@@ -1078,6 +1094,7 @@ async def config_new(
                 hidden_category_id=hidden_category.id,
                 timeout=timedelta(seconds=60),
                 owner_timeout=timedelta(seconds=60),
+                timeout_cap=timedelta(days=3),
                 min_avail=1,
                 max_avail=1,
                 max_channels=0,
@@ -1156,6 +1173,18 @@ async def config_owner_timeout(ctx: GuildContext, duration: Optional[DurationCon
             await ctx.send(str(conf.owner_timeout))
         else:
             conf.owner_timeout = duration
+            await session.commit()
+            await ctx.send("\u2705")
+
+
+@config.command("timeout_cap")
+async def config_owner_timeout(ctx: GuildContext, duration: Optional[DurationConverter]) -> None:
+    async with sessionmaker() as session:
+        conf = await get_conf(session, ctx)
+        if duration is None:
+            await ctx.send(str(conf.timeout_cap))
+        else:
+            conf.timeout_cap = duration
             await session.commit()
             await ctx.send("\u2705")
 
