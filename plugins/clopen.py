@@ -274,19 +274,31 @@ async def scheduler_task() -> None:
         for config in configs:
             for channel in config.channels:
                 async with channel_locks[channel.id]:
-                    if channel.state == ChannelState.USED and channel.expiry is not None:
+                    if (
+                        channel.state == ChannelState.USED
+                        and channel.expiry is not None
+                        and channel.max_expiry is not None
+                    ):
                         if channel.max_expiry < datetime.utcnow():
+                            assert channel.owner_id is not None
                             await close(session, channel, timeout_cap_reached_message(channel.owner_id), reopen=False)
                         elif channel.expiry < datetime.utcnow():
                             await make_pending(session, channel)
                         elif min_next is None or channel.expiry < min_next:
                             min_next = channel.expiry
-                    elif channel.state == ChannelState.PENDING and channel.expiry is not None:
+                    elif (
+                        channel.state == ChannelState.PENDING
+                        and channel.expiry is not None
+                        and channel.max_expiry is not None
+                    ):
+                        if channel.max_expiry < datetime.utcnow():
+                            assert channel.owner_id is not None
+                            await close(session, channel, timeout_cap_reached_message(channel.owner_id), reopen=False)
                         if channel.expiry < datetime.utcnow():
                             await close(session, channel, "Closed due to timeout")
                         elif min_next is None or channel.expiry < min_next:
                             min_next = channel.expiry
-                    elif channel.state == ChannelState.CLOSED:
+                    elif channel.state == ChannelState.CLOSED and channel.max_expiry is not None:
                         if channel.max_expiry < datetime.utcnow():
                             await make_hidden(session, channel)
                         elif channel.expiry is None or channel.expiry < datetime.utcnow():
@@ -338,6 +350,7 @@ async def init() -> None:
             session.add(guild)
             for i, id in enumerate(cast(List[int], conf.channels), start=1):
                 expiry = cast(Optional[float], conf[id, "expiry"])
+                max_expiry = cast(Optional[float], conf[id, "max_expiry"])
                 session.add(
                     Channel(
                         guild_id=guild_id,
@@ -349,6 +362,7 @@ async def init() -> None:
                         prompt_id=cast(Optional[int], conf[id, "prompt_id"]),
                         op_id=cast(Optional[int], conf[id, "op_id"]),
                         expiry=datetime.utcfromtimestamp(expiry) if expiry is not None else None,
+                        max_expiry=datetime.utcfromtimestamp(max_expiry) if max_expiry is not None else None
                     )
                 )
             await session.commit()
@@ -1178,7 +1192,7 @@ async def config_owner_timeout(ctx: GuildContext, duration: Optional[DurationCon
 
 
 @config.command("timeout_cap")
-async def config_owner_timeout(ctx: GuildContext, duration: Optional[DurationConverter]) -> None:
+async def config_timeout_cap(ctx: GuildContext, duration: Optional[DurationConverter]) -> None:
     async with sessionmaker() as session:
         conf = await get_conf(session, ctx)
         if duration is None:
