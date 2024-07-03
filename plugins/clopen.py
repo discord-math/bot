@@ -125,10 +125,6 @@ def prompt_message(mention: int) -> str:
     return format("{!m} Has your question been resolved?", mention)
 
 
-def timeout_cap_reached_message(mention: int) -> str:
-    return format("{!m} Channel closed due to maximum timeout reached!", mention)
-
-
 registry = sqlalchemy.orm.registry()
 sessionmaker = async_sessionmaker(util.db.engine, expire_on_commit=False)
 logger = logging.getLogger(__name__)
@@ -280,8 +276,7 @@ async def scheduler_task() -> None:
                         and channel.max_expiry is not None
                     ):
                         if channel.max_expiry < datetime.utcnow():
-                            assert channel.owner_id is not None
-                            await close(session, channel, timeout_cap_reached_message(channel.owner_id), reopen=False)
+                            await timeout_cap_close_procedure(session, channel)
                         elif channel.expiry < datetime.utcnow():
                             await make_pending(session, channel)
                         elif min_next is None or channel.expiry < min_next:
@@ -292,9 +287,8 @@ async def scheduler_task() -> None:
                         and channel.max_expiry is not None
                     ):
                         if channel.max_expiry < datetime.utcnow():
-                            assert channel.owner_id is not None
-                            await close(session, channel, timeout_cap_reached_message(channel.owner_id), reopen=False)
-                        if channel.expiry < datetime.utcnow():
+                            await timeout_cap_close_procedure(session, channel)
+                        elif channel.expiry < datetime.utcnow():
                             await close(session, channel, "Closed due to timeout")
                         elif min_next is None or channel.expiry < min_next:
                             min_next = channel.expiry
@@ -535,6 +529,12 @@ async def close(session: AsyncSession, channel: Channel, reason: str, *, reopen:
     await chan.send(embed=closed_embed(reason, reopen), allowed_mentions=AllowedMentions.none())
     await session.commit()
     scheduler_task.run_coalesced(0)
+
+
+async def timeout_cap_close_procedure(session: AsyncSession, channel: Channel) -> None:
+    assert channel.owner_id is not None
+    close_reason = "{!m} Channel closed due to maximum timeout reached!".format(channel.owner_id)
+    await close(session, channel, close_reason, reopen=False)
 
 
 async def make_available(session: AsyncSession, channel: Channel) -> None:
