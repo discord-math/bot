@@ -532,8 +532,11 @@ async def close(session: AsyncSession, channel: Channel, reason: str, *, reopen:
 
 
 async def timeout_cap_close_procedure(session: AsyncSession, channel: Channel) -> None:
+    assert isinstance(chan := client.get_channel(channel.id), TextChannel)
     assert channel.owner_id is not None
     close_reason = "{!m} Channel closed due to maximum timeout reached!".format(channel.owner_id)
+    # ping owner before closing
+    await chan.send("{!m}".format(channel.owner_id))
     await close(session, channel, close_reason, reopen=False)
 
 
