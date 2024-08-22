@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime
 import logging
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, cast
 
@@ -53,18 +53,9 @@ def format_msg(guild_id: int, channel_id: int, msg_id: int) -> str:
 
 def format_reminder(reminder: Reminder) -> str:
     msg = format_msg(reminder.guild_id, reminder.channel_id, reminder.message_id)
-    timestamp = int(reminder.time.replace(tzinfo=timezone.utc).timestamp())
     if reminder.content == "":
-        return "{} for <t:{}:F>".format(msg, timestamp)
-    return format("{!i} ({}) for <t:{}:F>", reminder.content, msg, timestamp)
-
-
-def format_text_reminder(reminder: Reminder) -> str:
-    msg = format_msg(reminder.guild_id, reminder.channel_id, reminder.message_id)
-    time = reminder.time.replace(tzinfo=timezone.utc)
-    if reminder.content == "":
-        return "{} for {}".format(msg, time)
-    return '"""{}""" ({}) for {}'.format(reminder.content, msg, time)
+        return "{} for {!f}".format(msg, reminder.time)
+    return format("{!i} ({}) for {!f}", reminder.content, msg, reminder.time)
 
 
 async def send_reminder(reminder: Reminder) -> None:
@@ -81,12 +72,12 @@ async def send_reminder(reminder: Reminder) -> None:
         )
         return
     try:
-        creation_time = discord.utils.snowflake_time(reminder.message_id).replace(tzinfo=timezone.utc)
+        creation_time = discord.utils.snowflake_time(reminder.message_id)
         await channel.send(
             format(
-                "{!m} asked to be reminded <t:{}:R>: {}",
+                "{!m} asked to be reminded {!R}, {}",
                 reminder.user_id,
-                int(creation_time.timestamp()),
+                creation_time,
                 reminder.content,
             )[:2000],
             reference=MessageReference(

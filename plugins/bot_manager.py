@@ -12,8 +12,13 @@ from util.discord import CodeItem, Typing, chunk_messages, format
 import util.restart
 
 
-manager = plugins.PluginManager.of(__name__)
-assert manager
+def get_current_manager():
+    manager = plugins.PluginManager.of(__name__)
+    assert manager
+    return manager
+
+
+manager = get_current_manager()
 
 
 @plugin_command

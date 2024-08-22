@@ -486,9 +486,8 @@ class Ticket:
             if self.expiry is None:
                 embed.add_field(name="Permanent", value="\u200E")
             else:
-                timestamp = int(self.expiry.replace(tzinfo=timezone.utc).timestamp())
                 embed.add_field(name="Duration", value=str(timedelta(seconds=self.duration or 0)))
-                embed.add_field(name="Expires", value="<t:{}:f>, <t:{}:R>".format(timestamp, timestamp))
+                embed.add_field(name="Expires", value=format("{!f}, {!R}", self.expiry, self.expiry))
         return embed
 
     async def publish(self) -> None:
@@ -1563,7 +1562,7 @@ async def update_unapproved_list() -> None:
             for content, _ in messages:
                 msg = await channel.send(content, allowed_mentions=AllowedMentions.none())
                 cleanup_exempt.add(msg.id)
-                conf.unapproved_list = (conf.unapproved_list or FrozenList()) + [msg.id]
+                conf.unapproved_list = (conf.unapproved_list or FrozenList()) + FrozenList([msg.id])
                 await conf
 
 
@@ -1994,8 +1993,7 @@ class Tickets(Cog):
             for history in await TicketHistory.get(session, tkt.id):
                 row = []
                 if history.last_modified_at is not None:
-                    timestamp = int(history.last_modified_at.replace(tzinfo=timezone.utc).timestamp())
-                    row.append("<t:{}:f>, <t:{}:R>".format(timestamp, timestamp))
+                    row.append(format("{!f}, {!R}", history.last_modified_at, history.last_modified_at))
                 if history.modified_by is not None:
                     row.append(format("by {!m}", history.modified_by))
                 if history.approved is not None:

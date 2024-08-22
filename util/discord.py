@@ -1,10 +1,11 @@
 """
 Some common utilities for interacting with discord.
 """
+
 from __future__ import annotations
 
 import asyncio
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from io import BytesIO
 import logging
 import math
@@ -184,11 +185,14 @@ class Formatter(string.Formatter):
         {!m} -- turn an int or a discord object into a mention (defaults to user mention, unless a Role is provided)
         {!M} -- turn an int or a discord object into role mention
         {!c} -- turn an int or a discord object into channel link
+        {!f} -- turn a datetime object into a Discord short date/time timestamp
+        {!F} -- turn a datetime object into a Discord long date/time timestamp
+        {!R} -- turn a datetime object into a Discord relative timestamp
     """
 
     __slots__ = ()
 
-    def convert_field(self, value: object, conversion: str) -> object:
+    def convert_field(self, value: object, conversion: Optional[str]) -> object:
         if conversion == "i":
             return str(Inline(str(value)))
         elif conversion == "b":
@@ -214,6 +218,15 @@ class Formatter(string.Formatter):
                 return "<@{}>".format(value.id)
             elif isinstance(value, int):
                 return "<#{}>".format(value)
+        elif conversion == "f":
+            if isinstance(value, datetime):
+                return "<t:{}:f>".format(int(value.replace(tzinfo=timezone.utc).timestamp()))
+        elif conversion == "F":
+            if isinstance(value, datetime):
+                return "<t:{}:F>".format(int(value.replace(tzinfo=timezone.utc).timestamp()))
+        elif conversion == "R":
+            if isinstance(value, datetime):
+                return "<t:{}:R>".format(int(value.replace(tzinfo=timezone.utc).timestamp()))
         return super().convert_field(value, conversion)
 
     def format_field(self, value: object, format_spec: str) -> object:
