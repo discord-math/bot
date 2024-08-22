@@ -1563,7 +1563,7 @@ async def update_unapproved_list() -> None:
             for content, _ in messages:
                 msg = await channel.send(content, allowed_mentions=AllowedMentions.none())
                 cleanup_exempt.add(msg.id)
-                conf.unapproved_list = (conf.unapproved_list or FrozenList()) + [msg.id]
+                conf.unapproved_list = (conf.unapproved_list or FrozenList()) + FrozenList([msg.id])
                 await conf
 
 

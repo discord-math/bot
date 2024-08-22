@@ -188,7 +188,7 @@ class Formatter(string.Formatter):
 
     __slots__ = ()
 
-    def convert_field(self, value: object, conversion: str) -> object:
+    def convert_field(self, value: object, conversion: Optional[str]) -> object:
         if conversion == "i":
             return str(Inline(str(value)))
         elif conversion == "b":
