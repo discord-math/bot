@@ -65,10 +65,16 @@ async def send_reminder(reminder: Reminder) -> None:
             "Reminder {} for user {} silently removed (guild no longer exists)".format(reminder.id, reminder.user_id)
         )
         return
-    channel = await guild.fetch_channel(reminder.channel_id)
-    if not isinstance(channel, (TextChannel, Thread)):
+    try:
+        channel = await guild.fetch_channel(reminder.channel_id)
+    except discord.NotFound:
         logger.info(
             "Reminder {} for user {} silently removed (channel no longer exists)".format(reminder.id, reminder.user_id)
+        )
+        return
+    if not isinstance(channel, (TextChannel, Thread)):
+        logger.info(
+            "Reminder {} for user {} silently removed (invalid channel type)".format(reminder.id, reminder.user_id)
         )
         return
     try:
