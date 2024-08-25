@@ -354,10 +354,9 @@ class Factoids(Cog):
 
             await ctx.send(
                 format(
-                    "Created by {!m} on {!f} ({!R}). Used {} times{}.{}\nAliases: {}",
+                    "Created by {!m} on {!f}. Used {} times{}.{}\nAliases: {}",
                     alias.factoid.author_id,
-                    used_at_str,
-                    used_at_str,
+                    alias.factoid.created_at,
                     alias.factoid.uses,
                     used_at_str,
                     "" if alias.factoid.flags is None else " Has flags.",
