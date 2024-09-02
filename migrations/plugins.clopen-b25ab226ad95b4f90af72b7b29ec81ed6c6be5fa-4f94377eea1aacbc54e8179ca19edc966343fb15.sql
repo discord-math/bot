@@ -1,0 +1,4 @@
+ALTER TABLE clopen.channels ADD COLUMN max_expiry TIMESTAMP;
+ALTER TABLE clopen.guilds
+ADD COLUMN timeout_cap INTERVAL NOT NULL
+DEFAULT INTERVAL '3 DAY';

@@ -203,6 +203,7 @@ Config:
 - `config clopen <server> hidden [category]` -- configure where the "hidden" channels are placed.
 - `config clopen <server> owner_timeout [duration]` -- configure how long (initially) since the last message by the owner before the owner is prompted about closure, and how long until the channel is automatically closed if there was no response.
 - `config clopen <server> timeout [duration]` -- configure how long since the last message by anyone else before the owner is prompted about closure.
+- `config clopen <server> timeout_cap [duration]` -- configure how long channels can stay open for each occupying session
 - `config clopen <server> min_avail [number]` -- configure how many channels minimum should be "available". If not enough channels are available, channels may be unhidden, or new channels may be created.
 - `config clopen <server> max_avail [number]` -- configure how many channels maximum should be "available". If too many channels are available, some may be hidden.
 - `config clopen <server> max_channels [number]` -- configure the max number of channels that can be created. This number should not exceed 50, as is is impossible to place more than 50 channels in a category.
