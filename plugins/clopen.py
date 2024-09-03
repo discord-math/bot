@@ -183,8 +183,7 @@ class GuildConfig:
             pinned_posts_ids: List[int],
             solved_tag_id: int,
             unsolved_tag_id: int,
-        ) -> None:
-            ...
+        ) -> None: ...
 
 
 class ChannelState(enum.Enum):
@@ -232,8 +231,7 @@ class Channel:
             prompt_id: Optional[int] = ...,
             op_id: Optional[int] = ...,
             expiry: Optional[datetime] = ...,
-        ) -> None:
-            ...
+        ) -> None: ...
 
 
 manage_clopen = register_action("manage_clopen")

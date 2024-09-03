@@ -28,8 +28,7 @@ class AutoloadedPlugin:
 
     if TYPE_CHECKING:
 
-        def __init__(self, *, name: str, order: int) -> None:
-            ...
+        def __init__(self, *, name: str, order: int) -> None: ...
 
 
 logger: logging.Logger = logging.getLogger(__name__)

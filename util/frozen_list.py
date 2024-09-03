@@ -46,12 +46,10 @@ class FrozenList(Generic[T]):
         self.___iter__ = __iter__
 
         @overload
-        def __getitem__(index: SupportsIndex, /) -> T:
-            ...
+        def __getitem__(index: SupportsIndex, /) -> T: ...
 
         @overload
-        def __getitem__(index: slice, /) -> FrozenList[T]:
-            ...
+        def __getitem__(index: slice, /) -> FrozenList[T]: ...
 
         def __getitem__(index: Union[SupportsIndex, slice], /) -> Union[T, FrozenList[T]]:
             if isinstance(index, slice):
@@ -137,16 +135,13 @@ class FrozenList(Generic[T]):
         self.copy = copy
 
         @overload
-        def index(value: object, /) -> int:
-            ...
+        def index(value: object, /) -> int: ...
 
         @overload
-        def index(value: object, start: SupportsIndex, /) -> int:
-            ...
+        def index(value: object, start: SupportsIndex, /) -> int: ...
 
         @overload
-        def index(value: object, start: SupportsIndex, stop: SupportsIndex, /) -> int:
-            ...
+        def index(value: object, start: SupportsIndex, stop: SupportsIndex, /) -> int: ...
 
         def index(value: object, start: Optional[SupportsIndex] = None, stop: Optional[SupportsIndex] = None, /) -> int:
             if stop is None:

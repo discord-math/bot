@@ -196,8 +196,7 @@ class TicketMod:
 
         def __init__(
             self, *, modid: int, last_read_msgid: Optional[int] = ..., scheduled_delivery: Optional[datetime] = ...
-        ) -> None:
-            ...
+        ) -> None: ...
 
     @staticmethod
     async def get(session: AsyncSession, modid: int) -> TicketMod:
@@ -736,8 +735,7 @@ class NoteTicket(Ticket):
             delivered_id: Optional[int] = ...,
             created_at: datetime = ...,
             modified_by: Optional[int] = ...,
-        ) -> None:
-            ...
+        ) -> None: ...
 
     can_revert = True
 
@@ -843,8 +841,7 @@ class KickTicket(Ticket):
             delivered_id: Optional[int] = ...,
             created_at: datetime = ...,
             modified_by: Optional[int] = ...,
-        ) -> None:
-            ...
+        ) -> None: ...
 
     can_revert = False
 
@@ -894,8 +891,7 @@ class BanTicket(Ticket):
             delivered_id: Optional[int] = ...,
             created_at: datetime = ...,
             modified_by: Optional[int] = ...,
-        ) -> None:
-            ...
+        ) -> None: ...
 
     can_revert = True
 
@@ -958,8 +954,7 @@ class VCMuteTicket(Ticket):
             delivered_id: Optional[int] = ...,
             created_at: datetime = ...,
             modified_by: Optional[int] = ...,
-        ) -> None:
-            ...
+        ) -> None: ...
 
     can_revert = True
 
@@ -1037,8 +1032,7 @@ class VCDeafenTicket(Ticket):
             delivered_id: Optional[int] = ...,
             created_at: datetime = ...,
             modified_by: Optional[int] = ...,
-        ) -> None:
-            ...
+        ) -> None: ...
 
     can_revert = True
 
@@ -1118,8 +1112,7 @@ class AddRoleTicket(Ticket):
             delivered_id: Optional[int] = ...,
             created_at: datetime = ...,
             modified_by: Optional[int] = ...,
-        ) -> None:
-            ...
+        ) -> None: ...
 
     can_revert = True
 
@@ -1203,8 +1196,7 @@ class TimeoutTicket(Ticket):
             delivered_id: Optional[int] = ...,
             created_at: datetime = ...,
             modified_by: Optional[int] = ...,
-        ) -> None:
-            ...
+        ) -> None: ...
 
     can_revert = True
 

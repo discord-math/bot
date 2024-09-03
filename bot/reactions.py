@@ -1,4 +1,5 @@
 """Utilities for waiting for Discord reactions."""
+
 from __future__ import annotations
 
 import asyncio
@@ -97,8 +98,7 @@ class ReactionMonitor(ContextManager["ReactionMonitor[T]"], Generic[T]):
         loop: Optional[asyncio.AbstractEventLoop] = None,
         timeout_each: Optional[float] = None,
         timeout_total: Optional[float] = None,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     @overload
     def __init__(
@@ -114,8 +114,7 @@ class ReactionMonitor(ContextManager["ReactionMonitor[T]"], Generic[T]):
         loop: Optional[asyncio.AbstractEventLoop] = None,
         timeout_each: Optional[float] = None,
         timeout_total: Optional[float] = None,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     @overload
     def __init__(
@@ -131,8 +130,7 @@ class ReactionMonitor(ContextManager["ReactionMonitor[T]"], Generic[T]):
         loop: Optional[asyncio.AbstractEventLoop] = None,
         timeout_each: Optional[float] = None,
         timeout_total: Optional[float] = None,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     @overload
     def __init__(
@@ -148,8 +146,7 @@ class ReactionMonitor(ContextManager["ReactionMonitor[T]"], Generic[T]):
         loop: Optional[asyncio.AbstractEventLoop] = None,
         timeout_each: Optional[float] = None,
         timeout_total: Optional[float] = None,
-    ) -> None:
-        ...
+    ) -> None: ...
 
     def __init__(
         self: ReactionMonitor[object],

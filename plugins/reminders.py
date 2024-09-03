@@ -40,8 +40,7 @@ class Reminder:
 
         def __init__(
             self, *, user_id: int, guild_id: int, channel_id: int, message_id: int, time: datetime, content: str
-        ) -> None:
-            ...
+        ) -> None: ...
 
 
 logger = logging.getLogger(__name__)

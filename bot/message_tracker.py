@@ -4,6 +4,7 @@ provided callback will be called exactly once for every message (to the best of 
 channel history to retroactively inform new subscribers about old messages, and also checking the channel history upon
 reconnecting to catch up on what we've missed.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -82,8 +83,7 @@ class Channel:
 
     if TYPE_CHECKING:
 
-        def __init__(self, *, guild_id: int, id: int, reachable: bool) -> None:
-            ...
+        def __init__(self, *, guild_id: int, id: int, reachable: bool) -> None: ...
 
 
 @registry.mapped
@@ -109,8 +109,7 @@ class ChannelState:
             subscriber: str,
             last_message_id: int,
             earliest_thread_archive_ts: Optional[datetime] = ...,
-        ) -> None:
-            ...
+        ) -> None: ...
 
 
 @registry.mapped
@@ -136,8 +135,7 @@ class ChannelRequest:
 
         def __init__(
             self, *, channel_id: int, subscriber: str, after_snowflake: int, before_snowflake: int, id: int = ...
-        ) -> None:
-            ...
+        ) -> None: ...
 
 
 @registry.mapped
@@ -170,8 +168,7 @@ class ThreadRequest:
             after_snowflake: int,
             before_snowflake: int,
             id: int = ...,
-        ) -> None:
-            ...
+        ) -> None: ...
 
 
 @plugins.init
@@ -228,12 +225,10 @@ class MessageIDList(Sequence[int]):
         self.negate = negate
 
     @overload
-    def __getitem__(self, i: int) -> int:
-        ...
+    def __getitem__(self, i: int) -> int: ...
 
     @overload
-    def __getitem__(self, i: slice) -> Sequence[int]:
-        ...
+    def __getitem__(self, i: slice) -> Sequence[int]: ...
 
     def __getitem__(self, i: object) -> object:
         assert isinstance(i, int)

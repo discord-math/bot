@@ -71,9 +71,11 @@ async def exec_command(ctx: Context, args: Greedy[Union[CodeBlock, Inline, str]]
         del tb
 
     for content, files in chunk_messages(
-        CodeItem(fp.getvalue(), language="py", filename="output{}.txt".format(i))
-        if fp.getvalue()
-        else PlainItem("\u2705")
+        (
+            CodeItem(fp.getvalue(), language="py", filename="output{}.txt".format(i))
+            if fp.getvalue()
+            else PlainItem("\u2705")
+        )
         for i, fp in enumerate(outputs, start=1)
     ):
         await ctx.send(content, files=files)

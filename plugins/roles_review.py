@@ -89,8 +89,7 @@ class ReviewedRole:
             invitation: str,
             pending_role_id: Optional[int] = ...,
             denied_role_id: Optional[int] = ...,
-        ) -> None:
-            ...
+        ) -> None: ...
 
 
 @registry.mapped
@@ -116,8 +115,7 @@ class Application:
             id: Optional[int] = None,
             voting_id: Optional[int] = None,
             decision: Optional[bool] = None,
-        ) -> None:
-            ...
+        ) -> None: ...
 
 
 @registry.mapped
@@ -133,8 +131,7 @@ class Vote:
 
     if TYPE_CHECKING:
 
-        def __init__(self, *, application_id: int, voter_id: int, vote: bool, veto: bool) -> None:
-            ...
+        def __init__(self, *, application_id: int, voter_id: int, vote: bool, veto: bool) -> None: ...
 
 
 reviewed_roles: Set[int]

@@ -80,8 +80,7 @@ class Rule:
             id: int = ...,
             action: Optional[ActionType] = ...,
             action_duration: Optional[timedelta] = ...,
-        ) -> None:
-            ...
+        ) -> None: ...
 
 
 @registry.mapped
@@ -93,8 +92,7 @@ class ExemptRole:
 
     if TYPE_CHECKING:
 
-        def __init__(self, *, role_id: int) -> None:
-            ...
+        def __init__(self, *, role_id: int) -> None: ...
 
 
 active_rules: Dict[int, Rule]
