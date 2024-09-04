@@ -109,8 +109,7 @@ class ACL:
 
     if TYPE_CHECKING:
 
-        def __init__(self, *, name: str, data: ACLData, meta: Optional[str] = ...) -> None:
-            ...
+        def __init__(self, *, name: str, data: ACLData, meta: Optional[str] = ...) -> None: ...
 
 
 @registry.mapped
@@ -123,8 +122,7 @@ class CommandPermissions:
 
     if TYPE_CHECKING:
 
-        def __init__(self, *, name: str, acl: str) -> None:
-            ...
+        def __init__(self, *, name: str, acl: str) -> None: ...
 
 
 @registry.mapped
@@ -137,8 +135,7 @@ class ActionPermissions:
 
     if TYPE_CHECKING:
 
-        def __init__(self, *, name: str, acl: str) -> None:
-            ...
+        def __init__(self, *, name: str, acl: str) -> None: ...
 
 
 acls: Dict[str, ACL]

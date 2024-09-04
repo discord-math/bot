@@ -38,8 +38,7 @@ class GlobalConfig:
 
     if TYPE_CHECKING:
 
-        def __init__(self, *, id: int = ..., prefix: Optional[str] = ...) -> None:
-            ...
+        def __init__(self, *, id: int = ..., prefix: Optional[str] = ...) -> None: ...
 
 
 class Flags(TypedDict):
@@ -74,8 +73,7 @@ class Factoid:
             embed_data: Optional[Mapping[str, object]] = ...,
             used_at: Optional[datetime] = ...,
             flags: Optional[Mapping[str, object]] = ...,
-        ) -> None:
-            ...
+        ) -> None: ...
 
 
 @registry.mapped
@@ -104,8 +102,7 @@ class Alias:
             uses: int,
             factoid: Factoid,
             used_at: Optional[datetime] = ...,
-        ) -> None:
-            ...
+        ) -> None: ...
 
         @overload
         def __init__(
@@ -117,8 +114,7 @@ class Alias:
             uses: int,
             id: int,
             used_at: Optional[datetime] = ...,
-        ) -> None:
-            ...
+        ) -> None: ...
 
         def __init__(
             self,
@@ -130,8 +126,7 @@ class Alias:
             factoid: Optional[Factoid] = ...,
             id: Optional[int] = ...,
             used_at: Optional[datetime] = ...,
-        ) -> None:
-            ...
+        ) -> None: ...
 
 
 prefix: Optional[str]

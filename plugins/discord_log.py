@@ -32,8 +32,7 @@ class GlobalConfig:
 
     if TYPE_CHECKING:
 
-        def __init__(self, *, id: int = ..., channel_id: Optional[int] = ...) -> None:
-            ...
+        def __init__(self, *, id: int = ..., channel_id: Optional[int] = ...) -> None: ...
 
 
 conf: GlobalConfig

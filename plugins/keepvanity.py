@@ -30,8 +30,7 @@ class GuildConfig:
 
     if TYPE_CHECKING:
 
-        def __init__(self, *, guild_id: int, vanity: str) -> None:
-            ...
+        def __init__(self, *, guild_id: int, vanity: str) -> None: ...
 
 
 @plugins.init

@@ -56,8 +56,7 @@ class ReactionMessage:
 
     if TYPE_CHECKING:
 
-        def __init__(self, *, id: int, guild_id: int, channel_id: int) -> None:
-            ...
+        def __init__(self, *, id: int, guild_id: int, channel_id: int) -> None: ...
 
 
 @registry.mapped
@@ -72,8 +71,7 @@ class Reaction:
 
     if TYPE_CHECKING:
 
-        def __init__(self, *, message_id: int, emoji: str, role_id: int) -> None:
-            ...
+        def __init__(self, *, message_id: int, emoji: str, role_id: int) -> None: ...
 
 
 reaction_messages: Set[int]

@@ -77,8 +77,7 @@ class SavedMessage:
 
         def __init__(
             self, *, id: int, channel_id: int, author_id: int, username: str, content: bytes, nick: Optional[str] = ...
-        ) -> None:
-            ...
+        ) -> None: ...
 
 
 @registry.mapped
@@ -96,8 +95,7 @@ class SavedFile:
 
         def __init__(
             self, *, id: int, message_id: int, filename: str, url: str, local_filename: Optional[str] = ...
-        ) -> None:
-            ...
+        ) -> None: ...
 
 
 @registry.mapped
@@ -115,8 +113,7 @@ class SavedUser:
 
         def __init__(
             self, *, id: int, set_at: datetime, username: str, discrim: str, unset_at: Optional[datetime] = ...
-        ) -> None:
-            ...
+        ) -> None: ...
 
 
 # This schema assumes single guild
@@ -134,8 +131,7 @@ class SavedNick:
 
         def __init__(
             self, *, id: int, set_at: datetime, nick: Optional[str], unset_at: Optional[datetime] = ...
-        ) -> None:
-            ...
+        ) -> None: ...
 
 
 def path_for(attm: Attachment) -> Path:

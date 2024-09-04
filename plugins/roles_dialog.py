@@ -35,8 +35,7 @@ class SelectField:
 
     if TYPE_CHECKING:
 
-        def __init__(self, index: int, boolean: bool) -> None:
-            ...
+        def __init__(self, index: int, boolean: bool) -> None: ...
 
 
 @registry.mapped
@@ -59,8 +58,7 @@ class SelectItem:
             role_id: Optional[int] = ...,
             label: Optional[str] = ...,
             description: Optional[str] = ...,
-        ) -> None:
-            ...
+        ) -> None: ...
 
 
 selects: List[SelectField]
