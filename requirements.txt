@@ -1,2 +1,2 @@
--r requirements_pyright.txt
+-r requirements_core.txt
 -r requirements_linting.txt
