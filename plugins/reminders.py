@@ -53,7 +53,7 @@ def format_msg(guild_id: int, channel_id: int, msg_id: int) -> str:
 def format_reminder(reminder: Reminder) -> str:
     msg = format_msg(reminder.guild_id, reminder.channel_id, reminder.message_id)
     if reminder.content == "":
-        return "{} for {!f}".format(msg, reminder.time)
+        return format("{} for {!f}", msg, reminder.time)
     return format("{!i} ({}) for {!f}", reminder.content, msg, reminder.time)
 
 
