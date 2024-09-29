@@ -29,8 +29,7 @@ class Override:
 
     if TYPE_CHECKING:
 
-        def __init__(self, *, retained_role_id: int, excluded_role_id: int) -> None:
-            ...
+        def __init__(self, *, retained_role_id: int, excluded_role_id: int) -> None: ...
 
 
 @plugins.init

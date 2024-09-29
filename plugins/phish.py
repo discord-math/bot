@@ -47,8 +47,7 @@ class GlobalConfig:
             identity: Optional[str] = ...,
             submit_url: Optional[str] = ...,
             submit_token: Optional[str] = ...,
-        ) -> None:
-            ...
+        ) -> None: ...
 
 
 @registry.mapped
@@ -60,8 +59,7 @@ class ResolvedDomain:
 
     if TYPE_CHECKING:
 
-        def __init__(self, *, domain: str) -> None:
-            ...
+        def __init__(self, *, domain: str) -> None: ...
 
 
 @registry.mapped
@@ -73,8 +71,7 @@ class BlockedDomain:
 
     if TYPE_CHECKING:
 
-        def __init__(self, *, domain: str) -> None:
-            ...
+        def __init__(self, *, domain: str) -> None: ...
 
 
 @registry.mapped
@@ -86,8 +83,7 @@ class AllowedDomain:
 
     if TYPE_CHECKING:
 
-        def __init__(self, domain: str) -> None:
-            ...
+        def __init__(self, domain: str) -> None: ...
 
 
 conf: GlobalConfig

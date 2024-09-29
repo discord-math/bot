@@ -29,8 +29,7 @@ class GitDirectory:
 
     if TYPE_CHECKING:
 
-        def __init__(self, *, name: str, directory: str) -> None:
-            ...
+        def __init__(self, *, name: str, directory: str) -> None: ...
 
 
 @plugins.init

@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime
 import json
 from typing import TYPE_CHECKING, Literal, Mapping, Optional, TypedDict, Union, cast, overload
 from typing_extensions import NotRequired
@@ -38,8 +38,7 @@ class GlobalConfig:
 
     if TYPE_CHECKING:
 
-        def __init__(self, *, id: int = ..., prefix: Optional[str] = ...) -> None:
-            ...
+        def __init__(self, *, id: int = ..., prefix: Optional[str] = ...) -> None: ...
 
 
 class Flags(TypedDict):
@@ -74,8 +73,7 @@ class Factoid:
             embed_data: Optional[Mapping[str, object]] = ...,
             used_at: Optional[datetime] = ...,
             flags: Optional[Mapping[str, object]] = ...,
-        ) -> None:
-            ...
+        ) -> None: ...
 
 
 @registry.mapped
@@ -104,8 +102,7 @@ class Alias:
             uses: int,
             factoid: Factoid,
             used_at: Optional[datetime] = ...,
-        ) -> None:
-            ...
+        ) -> None: ...
 
         @overload
         def __init__(
@@ -117,8 +114,7 @@ class Alias:
             uses: int,
             id: int,
             used_at: Optional[datetime] = ...,
-        ) -> None:
-            ...
+        ) -> None: ...
 
         def __init__(
             self,
@@ -130,8 +126,7 @@ class Alias:
             factoid: Optional[Factoid] = ...,
             id: Optional[int] = ...,
             used_at: Optional[datetime] = ...,
-        ) -> None:
-            ...
+        ) -> None: ...
 
 
 prefix: Optional[str]
@@ -349,18 +344,16 @@ class Factoids(Cog):
             stmt = select(Alias).where(Alias.id == alias.id).order_by(Alias.uses.desc())
             aliases = (await session.execute(stmt)).scalars()
 
-            created_at = int(alias.factoid.created_at.replace(tzinfo=timezone.utc).timestamp())
-            used_at = None
-            if alias.factoid.used_at is not None:
-                used_at = int(alias.factoid.used_at.replace(tzinfo=timezone.utc).timestamp())
+            used_at = alias.factoid.used_at
+            used_at_str = format(", last on {!f} ({!R})", used_at, used_at) if used_at is not None else ""
+
             await ctx.send(
                 format(
-                    "Created by {!m} on <t:{}:F> (<t:{}:R>). Used {} times{}.{}\nAliases: {}",
+                    "Created by {!m} on {!f}. Used {} times{}.{}\nAliases: {}",
                     alias.factoid.author_id,
-                    created_at,
-                    created_at,
+                    alias.factoid.created_at,
                     alias.factoid.uses,
-                    "" if used_at is None else ", last on <t:{}:F> (<t:{}:R>)".format(used_at, used_at),
+                    used_at_str,
                     "" if alias.factoid.flags is None else " Has flags.",
                     ", ".join(format("{!i} ({} uses)", prefix + alias.name, alias.uses) for alias in aliases),
                 ),

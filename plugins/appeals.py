@@ -70,8 +70,7 @@ class Appeal:
 
         def __init__(
             self, *, user_id: int, channel_id: int, thread_id: Optional[int], message_id: Optional[int] = ...
-        ) -> None:
-            ...
+        ) -> None: ...
 
     async def get_message(self) -> Optional[PartialMessage]:
         if self.message_id is None:

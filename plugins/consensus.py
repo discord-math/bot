@@ -80,8 +80,7 @@ class Poll:
             timeout_notified: bool,
             poll: PollType,
             options: List[str],
-        ) -> None:
-            ...
+        ) -> None: ...
 
     async def get_votes_message(self) -> Optional[PartialMessage]:
         channel_id = self.channel_id if self.thread_id is None else self.thread_id
@@ -105,8 +104,7 @@ class Concern:
 
     if TYPE_CHECKING:
 
-        def __init__(self, *, poll_id: int, author_id: int, comment: str) -> None:
-            ...
+        def __init__(self, *, poll_id: int, author_id: int, comment: str) -> None: ...
 
 
 @registry.mapped
@@ -125,8 +123,7 @@ class Vote:
 
         def __init__(
             self, *, poll_id: int, voter_id: int, choice_index: int, after_concern: Optional[int], comment: str
-        ) -> None:
-            ...
+        ) -> None: ...
 
 
 @task(name="Poll timeout task", every=86400)

@@ -32,8 +32,7 @@ class PersistedRole:
 
     if TYPE_CHECKING:
 
-        def __init__(self, *, id: int) -> None:
-            ...
+        def __init__(self, *, id: int) -> None: ...
 
 
 @registry.mapped

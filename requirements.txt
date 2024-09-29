@@ -1,7 +1,2 @@
-aiohttp
-aiohttp-session
-asyncpg
-datrie
-PyYAML
-sqlalchemy >= 2
-typing_extensions
+-r requirements_core.txt
+-r requirements_linting.txt

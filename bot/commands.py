@@ -45,8 +45,7 @@ class GlobalConfig:
 
     if TYPE_CHECKING:
 
-        def __init__(self, *, prefix: str, id: int = ...) -> None:
-            ...
+        def __init__(self, *, prefix: str, id: int = ...) -> None: ...
 
 
 logger: logging.Logger = logging.getLogger(__name__)
