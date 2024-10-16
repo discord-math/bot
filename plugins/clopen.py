@@ -369,6 +369,29 @@ def request_rename(chan: TextChannel, name: str) -> None:
     rename_tasks[chan.id] = asyncio.create_task(do_rename(chan, name))
 
 
+channel_status_icons = {
+        # Green Square
+        ChannelState.AVAILABLE : "\U0001f7e9",
+        # Red Square
+        ChannelState.USED : "\U0001f7e5",
+        ChannelState.PENDING : "\U0001f7e5",
+        # Black Square
+        ChannelState.CLOSED : "\u2b1b",
+        ChannelState.HIDDEN : "\u2b1b",
+    }
+channel_name_field_separator = "\uff5c"
+channel_base_name = "help-{}"
+
+
+def rename_channel(channel: Channel, new_state: ChannelState, username: Optional[String] = None) -> None:
+    channel_name = [channel_status_icons[new_state], channel_base_name.format(channel.index+1)]
+    if username is not None:
+        channel_name.append(username)
+    channel_name = channel_name_field_separator.join(channel_name)
+
+    request_rename(client.get_channel(channel.id), channel_name)
+
+
 async def insert_chan(conf: GuildConfig, cat_id: int, chan: TextChannel, *, beginning: bool = False) -> None:
     channels = [channel.id for channel in sorted(conf.channels, key=lambda channel: channel.index)]
     assert chan.id in channels
@@ -450,8 +473,7 @@ async def enact_occupied(
         pass
     try:
         await insert_chan(conf, conf.used_category_id, channel, beginning=True)
-        prefix = channel.name.split("\uFF5C", 1)[0]
-        request_rename(channel, prefix + "\uFF5C" + owner.display_name)
+        rename_channel(channel, ChannelState.USED, owner.display_name)
     except discord.Forbidden:
         pass
     if reached_limit:
@@ -521,8 +543,7 @@ async def make_available(session: AsyncSession, channel: Channel) -> None:
 async def enact_available(conf: GuildConfig, chan: TextChannel) -> int:
     try:
         await insert_chan(conf, conf.available_category_id, chan)
-        prefix = chan.name.split("\uFF5C", 1)[0]
-        request_rename(chan, prefix)
+        rename_channel(chan, ChannelState.AVAILABLE)
     except discord.Forbidden:
         pass
     return (await chan.send(embed=available_embed(), allowed_mentions=AllowedMentions.none())).id
@@ -545,8 +566,7 @@ async def make_hidden(session: AsyncSession, channel: Channel) -> None:
 async def enact_hidden(conf: GuildConfig, channel: TextChannel) -> None:
     try:
         await insert_chan(conf, conf.hidden_category_id, channel)
-        prefix = channel.name.split("\uFF5C", 1)[0]
-        request_rename(channel, prefix)
+        rename_channel(channel, ChannelState.HIDDEN)
     except discord.Forbidden:
         pass
 
@@ -624,9 +644,8 @@ async def reopen(session: AsyncSession, channel: Channel) -> None:
         pass
     try:
         await insert_chan(conf, conf.used_category_id, chan, beginning=True)
-        prefix = chan.name.split("\uFF5C", 1)[0]
         author = await chan.guild.fetch_member(owner_id)
-        request_rename(chan, prefix + "\uFF5C" + author.display_name)
+        rename_channel(chan, ChannelState.USED, author.display_name)
     except (discord.NotFound, discord.Forbidden):
         pass
     await session.commit()
