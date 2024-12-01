@@ -712,7 +712,6 @@ def register_action(cls: Type[T]) -> Type[T]:
 
 
 @registry.mapped
-@register_action
 class NoteTicket(Ticket):
     __mapper_args__ = {"polymorphic_identity": TicketType.NOTE}
 
