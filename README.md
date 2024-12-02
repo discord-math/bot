@@ -362,21 +362,30 @@ The bot requires:
  - PostgreSQL 12+
  - Libraries listed in `requirements.txt`
 
-You will need to create a static config file called `bot.conf` in the working
-directory of the bot, see `bot.conf.example`.
-
-Next you will need to do a little bit of initial configuration so that the bot can respond to your commands. From the directory containing `bot.conf` run the following (adjust `PYTHONPATH` so that the necessary module is in scope):
+It is recommended to use Docker Compose to satisfy these dependencies. To setup the Docker containers run:
 ```sh
-python -m util.setup
+docker-compose build
+```
+Next you will need to create a static config file called `bot.conf` in the root directory, based on `bot.conf.example`.
+
+Next you will need to do a little bit of initial configuration so that the bot can respond to your commands:
+```sh
+docker-compose run bot python -m util.setup
 ```
 This will prompt you for your Discord user ID, and the command prefix.
 
-Now you can run the bot by executing `main.py`. You can continue the configuration over Discord, for example:
+Now you can run the bot with:
+```sh
+docker-compose up
+```
+
+You can continue the configuration over Discord, for example:
 ```
 .load discord_log
 .config syslog 268882890576756737
 .config autoload add discord_log 0
 ```
+(replace `.` with the command prefix you chose).
 
 If you'd like to use your own plugins from a different repository, say from
 `$DIR`, you can put it on the `PYTHONPATH`, and the bot will look for plugins in

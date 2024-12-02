@@ -1,0 +1,28 @@
+version: '3'
+services:
+  bot:
+    build: docker
+    volumes:
+      - type: bind
+        source: $PWD
+        target: /opt/bot/
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:12.20-alpine
+    environment:
+      POSTGRES_USER: bot
+      POSTGRES_PASSWORD: bot
+      POSTGRES_DB: discord
+    volumes:
+      - db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bot -d discord"]
+      start_interval: 1s
+      start_period: 1m
+      interval: 10m
+
+volumes:
+  db:
