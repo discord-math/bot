@@ -271,7 +271,27 @@ async def process_messages(msgs: Iterable[Message]) -> None:
                     if any(role.id in exempt_roles for role in msg.author.roles):
                         continue
                 if (rule := active_rules.get(index)) is not None:
-                    reason = "Automatic action: message matches pattern {}".format(index)
+                    # include a portion of the message content for context
+                    # we can't include the whole message if it's too long
+                    # we limit the context to 128 characters, for safety
+                    MAX_CONTEXT_LEN = 128 - 6 # include space for ... at start and end
+                    ban_context: str = None
+                    if len(msg.content) < MAX_CONTEXT_LEN:
+                        ban_context = msg.content
+                    else:
+                        # try to find the relevant section using `match` and `value`
+                        # value is the offending piece
+                        if len(value) >= MAX_CONTEXT_LEN:
+                            # we can't even include all of it
+                            ban_context = "..." + value[:MAX_CONTEXT_LEN] + "..."
+                        else:
+                            # extract a piece of the message centred on the offending bit
+                            context_len: int = MAX_CONTEXT_LEN - len(value)
+                            start_idx: int = match.start() - context_len // 2
+                            ban_context = "..." + msg.content[start_idx : start_idx + MAX_CONTEXT_LEN] + "..."
+                    assert ban_context is not None
+
+                    reason = format("Automatic action: message matches pattern {}\n||{!i}||", index, ban_context)
                     duration = rule.action_duration
 
                     if rule.action == ActionType.DELETE:
