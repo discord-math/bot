@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 import sqlalchemy.orm
 from sqlalchemy.orm import Mapped, mapped_column
 
+from bot.acl import privileged
 from bot.client import client
 from bot.cogs import Cog, cog
 from bot.commands import Context
@@ -85,6 +86,7 @@ class KeepVanity(Cog):
 
 @plugin_config_command
 @group("keepvanity", invoke_without_command=True)
+@privileged
 async def config(ctx: Context) -> None:
     async with sessionmaker() as session:
         stmt = select(GuildConfig)
@@ -95,6 +97,7 @@ async def config(ctx: Context) -> None:
 
 
 @config.command("add")
+@privileged
 async def config_add(ctx: Context, server: PartialGuildConverter, vanity: str) -> None:
     async with sessionmaker() as session:
         session.add(GuildConfig(guild_id=server.id, vanity=vanity))
@@ -103,6 +106,7 @@ async def config_add(ctx: Context, server: PartialGuildConverter, vanity: str) -
 
 
 @config.command("remove")
+@privileged
 async def config_remove(ctx: Context, server: PartialGuildConverter) -> None:
     async with sessionmaker() as session:
         await session.delete(await session.get(GuildConfig, server.id))

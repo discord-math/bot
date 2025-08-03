@@ -26,6 +26,7 @@ from sqlalchemy.schema import CreateSchema
 from sqlalchemy.sql.functions import current_timestamp
 
 import bot.client
+from bot.acl import privileged
 from bot.cogs import Cog, cog
 from bot.commands import Context
 from bot.config import plugin_config_command
@@ -306,11 +307,13 @@ class GuildContext(Context):
 
 @plugin_config_command
 @group("modmail")
+@privileged
 async def config(ctx: GuildContext, server: PartialGuildConverter) -> None:
     ctx.guild_id = server.id
 
 
 @config.command("new")
+@privileged
 async def config_new(
     ctx: GuildContext,
     token: str,
@@ -335,6 +338,7 @@ async def get_conf(session: AsyncSession, ctx: GuildContext) -> GuildConfig:
 
 
 @config.command("token")
+@privileged
 async def config_token(ctx: GuildContext, token: Optional[str]) -> None:
     async with sessionmaker() as session:
         conf = await get_conf(session, ctx)
@@ -347,6 +351,7 @@ async def config_token(ctx: GuildContext, token: Optional[str]) -> None:
 
 
 @config.command("channel")
+@privileged
 async def config_channel(ctx: GuildContext, channel: Optional[PartialChannelConverter]) -> None:
     async with sessionmaker() as session:
         conf = await get_conf(session, ctx)
@@ -359,6 +364,7 @@ async def config_channel(ctx: GuildContext, channel: Optional[PartialChannelConv
 
 
 @config.command("role")
+@privileged
 async def config_role(ctx: GuildContext, role: Optional[PartialRoleConverter]) -> None:
     async with sessionmaker() as session:
         conf = await get_conf(session, ctx)
@@ -371,6 +377,7 @@ async def config_role(ctx: GuildContext, role: Optional[PartialRoleConverter]) -
 
 
 @config.command("thread_expiry")
+@privileged
 async def config_thread_expiry(ctx: GuildContext, thread_expiry: Optional[DurationConverter]) -> None:
     async with sessionmaker() as session:
         conf = await get_conf(session, ctx)

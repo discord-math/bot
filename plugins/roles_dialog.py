@@ -10,6 +10,7 @@ import sqlalchemy.orm
 from sqlalchemy.orm import Mapped, mapped_column, raiseload, relationship
 from sqlalchemy.schema import CreateSchema
 
+from bot.acl import privileged
 from bot.commands import Context
 from bot.config import plugin_config_command
 from bot.interactions import command as app_command, persistent_view
@@ -228,6 +229,7 @@ async def roles_command(interaction: Interaction) -> None:
 
 @plugin_config_command
 @group("roles_dialog", invoke_without_command=True)
+@privileged
 async def config(ctx: Context) -> None:
     async with sessionmaker() as session:
         stmt = select(SelectField).order_by(SelectField.index)
@@ -247,6 +249,7 @@ async def config(ctx: Context) -> None:
 
 
 @config.command("new")
+@privileged
 async def config_new(ctx: Context, index: int) -> None:
     async with sessionmaker() as session:
         if not await session.get(SelectField, index, options=[raiseload(SelectField.items)]):
@@ -259,6 +262,7 @@ async def config_new(ctx: Context, index: int) -> None:
 
 
 @config.command("remove")
+@privileged
 async def config_remove(ctx: Context, id: int) -> None:
     async with sessionmaker() as session:
         item = await session.get(SelectItem, id)
@@ -278,6 +282,7 @@ async def config_remove(ctx: Context, id: int) -> None:
 
 
 @config.command("mode")
+@privileged
 async def config_mode(ctx: Context, index: int, mode: Optional[Literal["choice", "multi"]]) -> None:
     async with sessionmaker() as session:
         select = await session.get(SelectField, index, options=[raiseload(SelectField.items)])
@@ -292,6 +297,7 @@ async def config_mode(ctx: Context, index: int, mode: Optional[Literal["choice",
 
 
 @config.command("role")
+@privileged
 async def config_role(ctx: Context, id: int, role: Optional[Union[Literal["None"], PartialRoleConverter]]) -> None:
     async with sessionmaker() as session:
         item = await session.get(SelectItem, id)
@@ -309,6 +315,7 @@ async def config_role(ctx: Context, id: int, role: Optional[Union[Literal["None"
 
 
 @config.command("label")
+@privileged
 async def config_label(
     ctx: Context, id: int, label: Optional[Union[Literal["None"], CodeBlock, Inline, Quoted]]
 ) -> None:
@@ -325,6 +332,7 @@ async def config_label(
 
 
 @config.command("description")
+@privileged
 async def config_description(
     ctx: Context, id: int, description: Optional[Union[Literal["None"], CodeBlock, Inline, Quoted]]
 ) -> None:

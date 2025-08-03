@@ -103,6 +103,7 @@ async def sql_command(ctx: Context, args: Greedy[Union[CodeBlock, Inline, str]])
 
 @plugin_config_command
 @command("prefix")
+@privileged
 async def config_prefix(ctx: Context, prefix: Optional[str]) -> None:
     async with AsyncSession(util.db.engine) as session:
         conf = await session.get(bot.commands.GlobalConfig, 0)
@@ -390,6 +391,7 @@ async def acl_meta(ctx: Context, acl: str, meta: Optional[str]) -> None:
 
 @plugin_config_command
 @group("autoload", invoke_without_command=True)
+@privileged
 async def config_autoload(ctx: Context) -> None:
     order = defaultdict(list)
     stmt = select(bot.autoload.AutoloadedPlugin).order_by(bot.autoload.AutoloadedPlugin.order)
@@ -406,6 +408,7 @@ async def config_autoload(ctx: Context) -> None:
 
 
 @config_autoload.command("add")
+@privileged
 async def config_autoload_add(ctx: Context, plugin: PluginConverter, order: int) -> None:
     async with AsyncSession(util.db.engine) as session:
         session.add(bot.autoload.AutoloadedPlugin(name=plugin, order=order))
@@ -414,6 +417,7 @@ async def config_autoload_add(ctx: Context, plugin: PluginConverter, order: int)
 
 
 @config_autoload.command("remove")
+@privileged
 async def config_autoload_remove(ctx: Context, plugin: PluginConverter) -> None:
     async with AsyncSession(util.db.engine) as session:
         await session.delete(await session.get(bot.autoload.AutoloadedPlugin, plugin))

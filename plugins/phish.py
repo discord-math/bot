@@ -366,11 +366,13 @@ async def init() -> None:
 
 @plugin_config_command
 @group("phish")
+@privileged
 async def config(ctx: Context) -> None:
     pass
 
 
 @config.command("api_url")
+@privileged
 async def config_api_url(ctx: Context, api_url: Optional[str]) -> None:
     global conf
     async with sessionmaker() as session:
@@ -386,6 +388,7 @@ async def config_api_url(ctx: Context, api_url: Optional[str]) -> None:
 
 
 @config.command("identity")
+@privileged
 async def config_identity(ctx: Context, identity: Optional[str]) -> None:
     global conf
     async with sessionmaker() as session:
@@ -401,6 +404,7 @@ async def config_identity(ctx: Context, identity: Optional[str]) -> None:
 
 
 @config.command("submit_url")
+@privileged
 async def config_submit_url(ctx: Context, submit_url: Optional[str]) -> None:
     global conf
     async with sessionmaker() as session:
@@ -416,6 +420,7 @@ async def config_submit_url(ctx: Context, submit_url: Optional[str]) -> None:
 
 
 @config.command("submit_token")
+@privileged
 async def config_submit_token(ctx: Context, submit_token: Optional[str]) -> None:
     global conf
     async with sessionmaker() as session:
@@ -431,6 +436,7 @@ async def config_submit_token(ctx: Context, submit_token: Optional[str]) -> None
 
 
 @config.group("shortener", invoke_without_command=True)
+@privileged
 async def config_shortener(ctx: Context) -> None:
     async with sessionmaker() as session:
         stmt = select(ResolvedDomain)
@@ -439,6 +445,7 @@ async def config_shortener(ctx: Context) -> None:
 
 
 @config_shortener.command("add")
+@privileged
 async def config_shortener_add(ctx: Context, domain: str) -> None:
     async with sessionmaker() as session:
         session.add(ResolvedDomain(domain=domain))
@@ -447,6 +454,7 @@ async def config_shortener_add(ctx: Context, domain: str) -> None:
 
 
 @config_shortener.command("remove")
+@privileged
 async def config_shortener_remove(ctx: Context, domain: str) -> None:
     async with sessionmaker() as session:
         await session.delete(await session.get(ResolvedDomain, domain))

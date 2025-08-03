@@ -5,6 +5,7 @@ from threading import Lock
 from types import FrameType
 from typing import TYPE_CHECKING, Iterator, List, Literal, Optional, Union, cast
 
+from bot.acl import privileged
 from discord import Client
 from discord.ext.commands import command
 from sqlalchemy import BigInteger, Computed
@@ -126,6 +127,7 @@ async def init() -> None:
 
 @plugin_config_command
 @command("syslog")
+@privileged
 async def config(ctx: Context, channel: Optional[Union[Literal["None"], PartialTextChannelConverter]]) -> None:
     global conf
     async with sessionmaker() as session:

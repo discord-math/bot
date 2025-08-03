@@ -673,11 +673,13 @@ class RoleContext(Context):
 
 @plugin_config_command
 @group("roles_review")
+@privileged
 async def config(ctx: RoleContext, role: PartialRoleConverter) -> None:
     ctx.role_id = role.id
 
 
 @config.command("new")
+@privileged
 async def config_new(
     ctx: RoleContext,
     review_channel: PartialChannelConverter,
@@ -708,6 +710,7 @@ async def get_review(session: AsyncSession, ctx: RoleContext) -> ReviewedRole:
 
 
 @config.command("review_channel")
+@privileged
 async def config_review_channel(ctx: RoleContext, channel: Optional[PartialChannelConverter]) -> None:
     async with sessionmaker() as session:
         review = await get_review(session, ctx)
@@ -720,6 +723,7 @@ async def config_review_channel(ctx: RoleContext, channel: Optional[PartialChann
 
 
 @config.command("upvote_limit")
+@privileged
 async def config_upvote_limit(ctx: RoleContext, limit: Optional[int]) -> None:
     async with sessionmaker() as session:
         review = await get_review(session, ctx)
@@ -732,6 +736,7 @@ async def config_upvote_limit(ctx: RoleContext, limit: Optional[int]) -> None:
 
 
 @config.command("downvote_limit")
+@privileged
 async def config_downvote_limit(ctx: RoleContext, limit: Optional[int]) -> None:
     async with sessionmaker() as session:
         review = await get_review(session, ctx)
@@ -744,6 +749,7 @@ async def config_downvote_limit(ctx: RoleContext, limit: Optional[int]) -> None:
 
 
 @config.command("invitation")
+@privileged
 async def config_invitation(ctx: RoleContext, text: Optional[Union[CodeBlock, Inline, Quoted]]) -> None:
     async with sessionmaker() as session:
         review = await get_review(session, ctx)
@@ -756,6 +762,7 @@ async def config_invitation(ctx: RoleContext, text: Optional[Union[CodeBlock, In
 
 
 @config.command("prompt")
+@privileged
 async def config_prompt(ctx: RoleContext, *text: Union[CodeBlock, Inline, Quoted]) -> None:
     async with sessionmaker() as session:
         review = await get_review(session, ctx)
@@ -768,6 +775,7 @@ async def config_prompt(ctx: RoleContext, *text: Union[CodeBlock, Inline, Quoted
 
 
 @config.command("pending_role")
+@privileged
 async def config_pending_role(ctx: RoleContext, role: Optional[Union[Literal["None"], PartialRoleConverter]]) -> None:
     async with sessionmaker() as session:
         review = await get_review(session, ctx)
@@ -780,6 +788,7 @@ async def config_pending_role(ctx: RoleContext, role: Optional[Union[Literal["No
 
 
 @config.command("denied_role")
+@privileged
 async def config_denied_role(ctx: RoleContext, role: Optional[Union[Literal["None"], PartialRoleConverter]]) -> None:
     async with sessionmaker() as session:
         review = await get_review(session, ctx)

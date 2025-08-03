@@ -9,6 +9,7 @@ import sqlalchemy.orm
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.schema import CreateSchema
 
+from bot.acl import privileged
 from bot.cogs import Cog, cog
 from bot.commands import Context
 from bot.config import plugin_config_command
@@ -111,6 +112,7 @@ async def drop_persistent_role(*, user_id: int, role_id: int) -> None:
 
 @plugin_config_command
 @group("persistence", invoke_without_command=True)
+@privileged
 async def config(ctx: Context) -> None:
     async with sessionmaker() as session:
         stmt = select(PersistedRole.id)
@@ -122,6 +124,7 @@ async def config(ctx: Context) -> None:
 
 
 @config.command("add")
+@privileged
 async def config_add(ctx: Context, role: PartialRoleConverter) -> None:
     async with sessionmaker() as session:
         session.add(PersistedRole(id=role.id))
@@ -131,6 +134,7 @@ async def config_add(ctx: Context, role: PartialRoleConverter) -> None:
 
 
 @config.command("remove")
+@privileged
 async def config_remove(ctx: Context, role: PartialRoleConverter) -> None:
     async with sessionmaker() as session:
         await session.delete(await session.get(PersistedRole, role.id))

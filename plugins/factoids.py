@@ -443,11 +443,13 @@ def validate_name(name: str) -> str:
 
 @plugin_config_command
 @group("factoids")
+@privileged
 async def config(ctx: Context) -> None:
     pass
 
 
 @config.command("prefix")
+@privileged
 async def config_prefix(ctx: Context, prefix: Optional[Union[Literal["None"], CodeBlock, Inline, Quoted]]) -> None:
     async with sessionmaker() as session:
         conf = await session.get(GlobalConfig, 0)

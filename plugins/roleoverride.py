@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 import sqlalchemy.orm
 from sqlalchemy.orm import Mapped, mapped_column
 
+from bot.acl import privileged
 from bot.cogs import Cog, cog
 from bot.commands import Context
 from bot.config import plugin_config_command
@@ -68,6 +69,7 @@ class RoleOverride(Cog):
 
 @plugin_config_command
 @group("roleoverride", invoke_without_command=True)
+@privileged
 async def config(ctx: Context) -> None:
     async with sessionmaker() as session:
         overrides: Dict[int, Set[int]] = defaultdict(set)
@@ -86,6 +88,7 @@ async def config(ctx: Context) -> None:
 
 
 @config.command("add")
+@privileged
 async def config_add(ctx: Context, retained_role: PartialRoleConverter, excluded_role: PartialRoleConverter) -> None:
     async with sessionmaker() as session:
         session.add(Override(retained_role_id=retained_role.id, excluded_role_id=excluded_role.id))
@@ -94,6 +97,7 @@ async def config_add(ctx: Context, retained_role: PartialRoleConverter, excluded
 
 
 @config.command("remove")
+@privileged
 async def config_remove(ctx: Context, retained_role: PartialRoleConverter, excluded_role: PartialRoleConverter) -> None:
     async with sessionmaker() as session:
         await session.delete(await session.get(Override, (retained_role.id, excluded_role.id)))

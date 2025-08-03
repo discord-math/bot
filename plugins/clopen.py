@@ -1007,11 +1007,13 @@ class GuildContext(Context):
 
 @plugin_config_command
 @group("clopen")
+@privileged
 async def config(ctx: GuildContext, server: PartialGuildConverter) -> None:
     ctx.guild_id = server.id
 
 
 @config.command("new")
+@privileged
 async def config_new(
     ctx: GuildContext,
     available_category: PartialCategoryChannelConverter,
@@ -1054,6 +1056,7 @@ async def get_conf(session: AsyncSession, ctx: GuildContext, load_channels: bool
 
 
 @config.command("available")
+@privileged
 async def config_available(ctx: GuildContext, category: Optional[PartialCategoryChannelConverter]) -> None:
     async with sessionmaker() as session:
         conf = await get_conf(session, ctx)
@@ -1066,6 +1069,7 @@ async def config_available(ctx: GuildContext, category: Optional[PartialCategory
 
 
 @config.command("used")
+@privileged
 async def config_used(ctx: GuildContext, category: Optional[PartialCategoryChannelConverter]) -> None:
     async with sessionmaker() as session:
         conf = await get_conf(session, ctx)
@@ -1078,6 +1082,7 @@ async def config_used(ctx: GuildContext, category: Optional[PartialCategoryChann
 
 
 @config.command("hidden")
+@privileged
 async def config_hidden(ctx: GuildContext, category: Optional[PartialCategoryChannelConverter]) -> None:
     async with sessionmaker() as session:
         conf = await get_conf(session, ctx)
@@ -1090,6 +1095,7 @@ async def config_hidden(ctx: GuildContext, category: Optional[PartialCategoryCha
 
 
 @config.command("timeout")
+@privileged
 async def config_timeout(ctx: GuildContext, duration: Optional[DurationConverter]) -> None:
     async with sessionmaker() as session:
         conf = await get_conf(session, ctx)
@@ -1102,6 +1108,7 @@ async def config_timeout(ctx: GuildContext, duration: Optional[DurationConverter
 
 
 @config.command("owner_timeout")
+@privileged
 async def config_owner_timeout(ctx: GuildContext, duration: Optional[DurationConverter]) -> None:
     async with sessionmaker() as session:
         conf = await get_conf(session, ctx)
@@ -1114,6 +1121,7 @@ async def config_owner_timeout(ctx: GuildContext, duration: Optional[DurationCon
 
 
 @config.command("min_avail")
+@privileged
 async def config_min_avail(ctx: GuildContext, number: Optional[int]) -> None:
     async with sessionmaker() as session:
         conf = await get_conf(session, ctx)
@@ -1126,6 +1134,7 @@ async def config_min_avail(ctx: GuildContext, number: Optional[int]) -> None:
 
 
 @config.command("max_avail")
+@privileged
 async def config_max_avail(ctx: GuildContext, number: Optional[int]) -> None:
     async with sessionmaker() as session:
         conf = await get_conf(session, ctx)
@@ -1138,6 +1147,7 @@ async def config_max_avail(ctx: GuildContext, number: Optional[int]) -> None:
 
 
 @config.command("max_channels")
+@privileged
 async def config_max_channels(ctx: GuildContext, number: Optional[int]) -> None:
     async with sessionmaker() as session:
         conf = await get_conf(session, ctx)
@@ -1150,6 +1160,7 @@ async def config_max_channels(ctx: GuildContext, number: Optional[int]) -> None:
 
 
 @config.command("limit")
+@privileged
 async def config_limit(ctx: GuildContext, number: Optional[int]) -> None:
     async with sessionmaker() as session:
         conf = await get_conf(session, ctx)
@@ -1162,6 +1173,7 @@ async def config_limit(ctx: GuildContext, number: Optional[int]) -> None:
 
 
 @config.command("limit_role")
+@privileged
 async def config_limit_role(ctx: GuildContext, role: Optional[PartialRoleConverter]) -> None:
     async with sessionmaker() as session:
         conf = await get_conf(session, ctx)
@@ -1174,6 +1186,7 @@ async def config_limit_role(ctx: GuildContext, role: Optional[PartialRoleConvert
 
 
 @config.command("forum")
+@privileged
 async def config_forum(ctx: GuildContext, forum: Optional[PartialForumChannelConverter]) -> None:
     async with sessionmaker() as session:
         conf = await get_conf(session, ctx)
@@ -1186,6 +1199,7 @@ async def config_forum(ctx: GuildContext, forum: Optional[PartialForumChannelCon
 
 
 @config.group("pinned", invoke_without_command=True)
+@privileged
 async def config_pinned(ctx: GuildContext) -> None:
     async with sessionmaker() as session:
         conf = await get_conf(session, ctx)
@@ -1193,6 +1207,7 @@ async def config_pinned(ctx: GuildContext) -> None:
 
 
 @config_pinned.command("add")
+@privileged
 async def config_pinned_add(ctx: GuildContext, post_id: int) -> None:
     async with sessionmaker() as session:
         conf = await get_conf(session, ctx)
@@ -1202,6 +1217,7 @@ async def config_pinned_add(ctx: GuildContext, post_id: int) -> None:
 
 
 @config_pinned.command("remove")
+@privileged
 async def config_pinned_remove(ctx: GuildContext, post_id: int) -> None:
     async with sessionmaker() as session:
         conf = await get_conf(session, ctx)
@@ -1211,6 +1227,7 @@ async def config_pinned_remove(ctx: GuildContext, post_id: int) -> None:
 
 
 @config.command("solved_tag")
+@privileged
 async def config_solved_tag(ctx: GuildContext, tag_id: Optional[int]) -> None:
     async with sessionmaker() as session:
         conf = await get_conf(session, ctx)
@@ -1223,6 +1240,7 @@ async def config_solved_tag(ctx: GuildContext, tag_id: Optional[int]) -> None:
 
 
 @config.command("unsolved_tag")
+@privileged
 async def config_unsolved_tag(ctx: GuildContext, tag_id: Optional[int]) -> None:
     async with sessionmaker() as session:
         conf = await get_conf(session, ctx)
@@ -1235,6 +1253,7 @@ async def config_unsolved_tag(ctx: GuildContext, tag_id: Optional[int]) -> None:
 
 
 @config.group("channels", invoke_without_command=True)
+@privileged
 async def config_channels(ctx: GuildContext) -> None:
     async with sessionmaker() as session:
         conf = await get_conf(session, ctx, load_channels=True)
@@ -1247,6 +1266,7 @@ async def config_channels(ctx: GuildContext) -> None:
 
 
 @config_channels.command("add")
+@privileged
 async def config_channels_add(ctx: GuildContext, channel: PartialTextChannelConverter) -> None:
     async with sessionmaker() as session:
         conf = await get_conf(session, ctx, load_channels=True)

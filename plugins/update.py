@@ -80,6 +80,7 @@ async def update_command(ctx: Context, bot_directory: Optional[str]) -> None:
 
 @plugin_config_command
 @group("update", invoke_without_command=True)
+@privileged
 async def config(ctx: Context) -> None:
     async with sessionmaker() as session:
         stmt = select(GitDirectory)
@@ -91,6 +92,7 @@ async def config(ctx: Context) -> None:
 
 
 @config.command("add")
+@privileged
 async def config_add(ctx: Context, name: str, directory: str) -> None:
     async with sessionmaker() as session:
         session.add(GitDirectory(name=name, directory=directory))
@@ -99,6 +101,7 @@ async def config_add(ctx: Context, name: str, directory: str) -> None:
 
 
 @config.command("remove")
+@privileged
 async def config_remove(ctx: Context, name: str) -> None:
     async with sessionmaker() as session:
         await session.delete(await session.get(GitDirectory, name))
