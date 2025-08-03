@@ -5,7 +5,6 @@ from threading import Lock
 from types import FrameType
 from typing import TYPE_CHECKING, Iterator, List, Literal, Optional, Union, cast
 
-from bot.acl import privileged
 from discord import Client
 from discord.ext.commands import command
 from sqlalchemy import BigInteger, Computed
@@ -13,6 +12,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 import sqlalchemy.orm
 from sqlalchemy.orm import Mapped, mapped_column
 
+from bot.acl import privileged
 from bot.client import client
 from bot.commands import Context
 from bot.config import plugin_config_command

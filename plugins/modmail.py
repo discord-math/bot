@@ -25,8 +25,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.schema import CreateSchema
 from sqlalchemy.sql.functions import current_timestamp
 
-import bot.client
 from bot.acl import privileged
+import bot.client
 from bot.cogs import Cog, cog
 from bot.commands import Context
 from bot.config import plugin_config_command
