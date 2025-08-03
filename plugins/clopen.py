@@ -48,7 +48,7 @@ from bot.config import plugin_config_command
 import bot.message_tracker
 from bot.tasks import task
 import plugins
-import util.db.kv
+import util.db
 from util.discord import (
     DurationConverter,
     PartialCategoryChannelConverter,
@@ -292,51 +292,6 @@ async def scheduler_task() -> None:
 async def init() -> None:
     global scheduler_task
     await util.db.init(util.db.get_ddl(CreateSchema("clopen"), registry.metadata.create_all))
-
-    async with sessionmaker() as session:
-        conf = await util.db.kv.load(__name__)
-        guild_id = None
-        for id in cast(List[int], conf.channels):
-            if isinstance(channel := await client.fetch_channel(id), TextChannel):
-                guild_id = channel.guild.id
-                break
-        if guild_id is not None:
-            guild = GuildConfig(
-                guild_id=guild_id,
-                available_category_id=cast(int, conf.available_category),
-                used_category_id=cast(int, conf.used_category),
-                hidden_category_id=cast(int, conf.hidden_category),
-                timeout=timedelta(seconds=cast(int, conf.timeout)),
-                owner_timeout=timedelta(seconds=cast(int, conf.owner_timeout)),
-                min_avail=cast(int, conf.min_avail),
-                max_avail=cast(int, conf.max_avail),
-                max_channels=cast(int, conf.max_channels),
-                limit=cast(int, conf.limit),
-                limit_role_id=cast(int, conf.limit_role),
-                forum_id=cast(int, conf.forum),
-                pinned_posts_ids=list(cast(List[int], conf.pinned_posts)),
-                solved_tag_id=cast(int, conf.solved_tag),
-                unsolved_tag_id=cast(int, conf.unsolved_tag),
-            )
-            session.add(guild)
-            for i, id in enumerate(cast(List[int], conf.channels), start=1):
-                expiry = cast(Optional[float], conf[id, "expiry"])
-                session.add(
-                    Channel(
-                        guild_id=guild_id,
-                        id=id,
-                        index=i,
-                        state=ChannelState(conf[id, "state"]),
-                        extension=cast(Optional[int], conf[id, "extension"]) or 1,
-                        owner_id=cast(Optional[int], conf[id, "owner"]),
-                        prompt_id=cast(Optional[int], conf[id, "prompt_id"]),
-                        op_id=cast(Optional[int], conf[id, "op_id"]),
-                        expiry=datetime.utcfromtimestamp(expiry) if expiry is not None else None,
-                    )
-                )
-            await session.commit()
-            conf.channels = []
-            await conf
 
     scheduler_task.run_coalesced(0)
 
