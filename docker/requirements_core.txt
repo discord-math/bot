@@ -2,7 +2,7 @@ aiohttp
 aiohttp-session
 asyncpg
 datrie
-pyright==1.1.378
+pyright==1.1.403
 PyYAML 
 sqlalchemy >= 2
 types-requests

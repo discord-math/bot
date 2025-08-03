@@ -1,5 +1,5 @@
 [tool.pyright]
-exclude = ["discord", "discord.py"]
+exclude = ["discord", "discord.py", ".venv"]
 pythonVersion = "3.9"
 
 reportUnnecessaryCast = "warning"
