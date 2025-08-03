@@ -62,7 +62,6 @@ from discord.ext.commands import (
 )
 import discord.ext.commands.view
 from discord.ext.commands.view import StringView
-import discord.state
 
 from bot.client import client
 

@@ -275,7 +275,7 @@ async def process_messages(msgs: Iterable[Message]) -> None:
                     # we can't include the whole message if it's too long
                     # we limit the context to 128 characters, for safety
                     MAX_CONTEXT_LEN = 128 - 6  # include space for ... at start and end
-                    ban_context: str = None
+                    ban_context: Optional[str] = None
                     if len(msg.content) < MAX_CONTEXT_LEN:
                         ban_context = msg.content
                     else:

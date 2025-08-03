@@ -125,15 +125,15 @@ class LoggingConnection(Connection):
         logger.debug("{} fetch: {}".format(id(self), fmt_query_single(query, log_data, args)))
         return await super().fetch(query, *args, **kwargs)
 
-    async def fetchrow(  # type: ignore
+    async def fetchrow(
         self, query: str, *args: object, log_data: Union[bool, Collection[int]] = True, **kwargs: object
     ) -> Optional[Record]:
         logger.debug("{} fetchrow: {}".format(id(self), fmt_query_single(query, log_data, args)))
         return await super().fetchrow(query, *args, **kwargs)
 
-    async def fetchval(  # type: ignore
+    async def fetchval(
         self, query: str, *args: object, log_data: Union[bool, Collection[int]] = True, **kwargs: Any
-    ) -> Optional[Record]:
+    ) -> Optional[Any]:
         logger.debug("{} fetchval: {}".format(id(self), fmt_query_single(query, log_data, args)))
         return await super().fetchval(query, *args, **kwargs)
 

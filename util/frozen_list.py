@@ -17,7 +17,7 @@ class FrozenList(Generic[T]):
     __slots__ = (
         "___iter__",
         "__getitem__",
-        "__len__",
+        "___len__",
         "__str__",
         "__repr__",
         "__gt__",
@@ -62,7 +62,7 @@ class FrozenList(Generic[T]):
         def __len__() -> int:
             return lst.__len__()
 
-        self.__len__ = __len__
+        self.___len__ = __len__
 
         def __str__() -> str:
             return "FrozenList({})".format(lst.__str__())
@@ -168,6 +168,9 @@ class FrozenList(Generic[T]):
 
     def __iter__(self) -> Iterator[T]:
         return self.___iter__()
+
+    def __len__(self) -> int:
+        return self.___len__()
 
 
 yaml.add_representer(FrozenList, lambda dumper, data: dumper.represent_list(data))

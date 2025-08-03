@@ -12,7 +12,6 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 import bot.main_tasks
 import plugins
-import util.asyncio
 import util.db.kv
 
 

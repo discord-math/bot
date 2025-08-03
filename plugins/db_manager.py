@@ -29,7 +29,6 @@ from bot.config import plugin_config_command
 from bot.reactions import get_reaction
 from plugins.bot_manager import PluginConverter
 import util.db
-import util.db.kv
 from util.discord import CodeBlock, Inline, Typing, UserError, format
 
 

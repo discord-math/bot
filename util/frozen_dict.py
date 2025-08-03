@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Dict, Generic, Iterable, Iterator, Optional, Tuple, TypeVar, Union, overload
+from typing import Any, Dict, Generic, Iterable, Iterator, Mapping, Optional, Tuple, TypeVar, Union, overload
 
 import yaml
 
@@ -35,8 +35,15 @@ class FrozenDict(Generic[K, V]):
         "values",
     )
 
-    def __init__(self, *args: object, **kwargs: object):
-        dct: Dict[K, V] = dict(*args, **kwargs)
+    @overload
+    def __init__(self, **kwargs: V) -> None: ...
+    @overload
+    def __init__(self, map: Mapping[K, V], **kwargs: V) -> None: ...
+    @overload
+    def __init__(self, iterable: Iterable[Tuple[K, V]], **kwargs: V) -> None: ...
+
+    def __init__(self, *args: Any, **kwargs: Any):
+        dct: Dict[K, V] = dict[K, V](*args, **kwargs)
 
         def __iter__() -> Iterator[K]:
             return dct.__iter__()
