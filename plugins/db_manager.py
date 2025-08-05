@@ -181,9 +181,11 @@ async def acl_set(ctx: Context, acl: str, formula: CodeBlock) -> None:
         raise UserError(str(exc))
 
     async with AsyncSession(util.db.engine, expire_on_commit=False) as session:
-        obj = await session.get(bot.acl.ACL, acl)
-        assert obj
-        obj.data = data
+        if obj := await session.get(bot.acl.ACL, acl):
+            obj.data = data
+        else:
+            obj = bot.acl.ACL(name=acl, data=data)
+            session.add(obj)
         await session.commit()
         bot.acl.acls[acl] = obj
 
