@@ -29,7 +29,7 @@ from bot.config import plugin_config_command
 from bot.reactions import get_reaction
 from plugins.bot_manager import PluginConverter
 import util.db
-from util.discord import CodeBlock, Inline, Typing, UserError, format
+from util.discord import CodeBlock, Inline, PlainItem, Typing, UserError, chunk_messages, format
 
 
 @plugin_command
@@ -205,23 +205,32 @@ async def acl_commands(ctx: Context) -> None:
         for cmd in (await session.execute(stmt)).scalars():
             acls[cmd.acl].add(cmd.name)
             seen.add(cmd.name)
-    output = "\n".join(
-        format(
-            "- {} require the {!i} ACL",
-            ", ".join(format("{!i}", prefix + command) for command in sorted(commands)),
-            acl,
+
+    output = [
+        PlainItem(
+            format(
+                "- {} require the {!i} ACL\n",
+                ", ".join(format("{!i}", prefix + command) for command in sorted(commands)),
+                acl,
+            )
         )
         for acl, commands in acls.items()
-    )
+    ]
 
     used: Set[str] = set()
     for cmd in client.walk_commands():
         if any(isinstance(check, ACLCheck) for check in cmd.checks):
             used.add(cmd.qualified_name)
     if len(used - seen):
-        output += "\n- Inaccessible: " + ", ".join(format("{!i}", prefix + command) for command in used - seen)
+        output.append(
+            PlainItem("- Inaccessible: " + ", ".join(format("{!i}", prefix + command) for command in used - seen))
+        )
 
-    await ctx.send(output or "No commands found")
+    if not output:
+        output.append(PlainItem("No commands found"))
+
+    for content, files in chunk_messages(output):
+        await ctx.send(content, files=files)
 
 
 @acl_command.command("command")
