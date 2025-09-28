@@ -438,17 +438,16 @@ async def close(session: AsyncSession, channel: Channel, reason: str, *, reopen:
     old_owner_id = channel.owner_id
     if not reopen:
         channel.owner_id = None
-    if old_owner_id is not None:
-        assert (conf := await session.get(GuildConfig, channel.guild_id))
-        await session.refresh(conf, attribute_names=("channels",))
-        await update_owner_limit(conf, old_owner_id)
-    if not reopen:
         # Clearing out all pins
         try:
             for msg in await chan.pins():
                 await msg.unpin()
         except:
             pass
+    if old_owner_id is not None:
+        assert (conf := await session.get(GuildConfig, channel.guild_id))
+        await session.refresh(conf, attribute_names=("channels",))
+        await update_owner_limit(conf, old_owner_id)
     try:
         if channel.prompt_id is not None:
             assert client.user is not None
