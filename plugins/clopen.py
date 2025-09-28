@@ -7,8 +7,6 @@ import enum
 import logging
 from typing import TYPE_CHECKING, Dict, Iterable, List, Optional, Union, cast
 
-from sqlalchemy.dialects.postgresql.types import CITEXT
-
 import discord
 from discord import (
     AllowedMentions,
@@ -36,6 +34,7 @@ from discord.ext.commands import group
 from discord.ui import Button, Modal, Select, TextInput, View
 from sqlalchemy import ARRAY, TIMESTAMP, BigInteger, Enum, ForeignKey, select
 from sqlalchemy.dialects.postgresql import INTERVAL
+from sqlalchemy.dialects.postgresql.types import CITEXT
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 import sqlalchemy.orm
 from sqlalchemy.orm import Mapped, mapped_column, raiseload, relationship
