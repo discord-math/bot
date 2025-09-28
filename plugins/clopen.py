@@ -394,7 +394,7 @@ async def enact_occupied(
     # Clearing out all pins
     try:
         for msg in await channel.pins():
-                await msg.unpin()
+            await msg.unpin()
     except:
         pass
     # Pinning OP
