@@ -975,7 +975,11 @@ class ClopenCog(Cog):
                         if channel.owner_id is not None:
                             await reopen(session, channel)
                             if channel.op_id is not None:
-                                await ctx.send("\u2705 Original question: {}".format(PartialMessage(channel=ctx.channel, id=channel.op_id).jump_url))
+                                await ctx.send(
+                                    "\u2705 Original question: {}".format(
+                                        PartialMessage(channel=ctx.channel, id=channel.op_id).jump_url
+                                    )
+                                )
                             else:
                                 await ctx.send("\u2705")
 
