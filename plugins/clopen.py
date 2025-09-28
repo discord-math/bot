@@ -7,6 +7,8 @@ import enum
 import logging
 from typing import TYPE_CHECKING, Dict, Iterable, List, Optional, Union, cast
 
+from sqlalchemy.dialects.postgresql.types import CITEXT
+
 import discord
 from discord import (
     AllowedMentions,
@@ -972,7 +974,10 @@ class ClopenCog(Cog):
                     if channel.state in (ChannelState.CLOSED, ChannelState.AVAILABLE):
                         if channel.owner_id is not None:
                             await reopen(session, channel)
-                            await ctx.send("\u2705")
+                            if channel.op_id is not None:
+                                await ctx.send("\u2705 Original question: {}".format(PartialMessage(channel=ctx.channel, id=channel.op_id).jump_url))
+                            else:
+                                await ctx.send("\u2705")
 
     @privileged
     @command("clopen_sync")
