@@ -34,6 +34,7 @@ from discord.ext.commands import group
 from discord.ui import Button, Modal, Select, TextInput, View
 from sqlalchemy import ARRAY, TIMESTAMP, BigInteger, Enum, ForeignKey, select
 from sqlalchemy.dialects.postgresql import INTERVAL
+from sqlalchemy.dialects.postgresql.types import CITEXT
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 import sqlalchemy.orm
 from sqlalchemy.orm import Mapped, mapped_column, raiseload, relationship
@@ -375,12 +376,11 @@ async def occupy(session: AsyncSession, channel: Channel, msg_id: int, author: U
     await session.refresh(conf, attribute_names=("channels",))
     channel.state = ChannelState.USED
     channel.owner_id = author.id
-    old_op_id = channel.op_id
     channel.op_id = msg_id
     channel.extension = 1
     channel.expiry = datetime.utcnow() + channel.guild.owner_timeout
     await session.commit()
-    await enact_occupied(conf, chan, author, op_id=msg_id, old_op_id=old_op_id)
+    await enact_occupied(conf, chan, author, op_id=msg_id)
     scheduler_task.run_coalesced(0)
 
 
@@ -390,14 +390,15 @@ async def enact_occupied(
     owner: Union[User, Member],
     *,
     op_id: Optional[int],
-    old_op_id: Optional[int],
 ) -> None:
     reached_limit = await update_owner_limit(conf, owner.id)
+    # Clearing out all pins
     try:
-        if old_op_id is not None:
-            await PartialMessage(channel=channel, id=old_op_id).unpin()
-    except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+        for msg in await channel.pins():
+            await msg.unpin()
+    except:
         pass
+    # Pinning OP
     try:
         if op_id is not None:
             await PartialMessage(channel=channel, id=op_id).pin()
@@ -435,20 +436,19 @@ async def close(session: AsyncSession, channel: Channel, reason: str, *, reopen:
         now + timedelta(seconds=60),
         last_rename.get(channel.id, now) + timedelta(seconds=600),  # channel rename ratelimit
     )
-    old_op_id = channel.op_id
     old_owner_id = channel.owner_id
     if not reopen:
         channel.owner_id = None
-        channel.op_id = None
+        # Clearing out all pins
+        try:
+            for msg in await chan.pins():
+                await msg.unpin()
+        except:
+            pass
     if old_owner_id is not None:
         assert (conf := await session.get(GuildConfig, channel.guild_id))
         await session.refresh(conf, attribute_names=("channels",))
         await update_owner_limit(conf, old_owner_id)
-    try:
-        if not reopen and old_op_id is not None:
-            await PartialMessage(channel=chan, id=old_op_id).unpin()
-    except (discord.NotFound, discord.Forbidden, discord.HTTPException):
-        pass
     try:
         if channel.prompt_id is not None:
             assert client.user is not None
@@ -634,7 +634,7 @@ async def synchronize_channels() -> List[str]:
                         await close(session, channel, "The original message is missing!", reopen=False)
                     elif chan.category is None or chan.category.id != conf.used_category_id:
                         output.append(format("{!c} moved to the used category", channel.id))
-                        await enact_occupied(conf, chan, owner, op_id=op_id, old_op_id=None)
+                        await enact_occupied(conf, chan, owner, op_id=op_id)
                 elif channel.state == ChannelState.CLOSED:
                     if chan.category is None or chan.category.id != conf.used_category_id:
                         output.append(format("{!c} moved to the used category", channel.id))
@@ -973,7 +973,14 @@ class ClopenCog(Cog):
                     if channel.state in (ChannelState.CLOSED, ChannelState.AVAILABLE):
                         if channel.owner_id is not None:
                             await reopen(session, channel)
-                            await ctx.send("\u2705")
+                            if channel.op_id is not None:
+                                await ctx.send(
+                                    "\u2705 Original question: {}".format(
+                                        PartialMessage(channel=ctx.channel, id=channel.op_id).jump_url
+                                    )
+                                )
+                            else:
+                                await ctx.send("\u2705")
 
     @privileged
     @command("clopen_sync")
