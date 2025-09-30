@@ -34,7 +34,6 @@ from discord.ext.commands import group
 from discord.ui import Button, Modal, Select, TextInput, View
 from sqlalchemy import ARRAY, TIMESTAMP, BigInteger, Enum, ForeignKey, select
 from sqlalchemy.dialects.postgresql import INTERVAL
-from sqlalchemy.dialects.postgresql.types import CITEXT
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 import sqlalchemy.orm
 from sqlalchemy.orm import Mapped, mapped_column, raiseload, relationship
@@ -80,7 +79,7 @@ def available_embed() -> Embed:
             "Remember:\n"
             "• **Ask** your math question in a clear, concise manner.\n"
             "• **Show** your work, and if possible, explain where you are stuck.\n"
-            "• **After 15 minutes**, feel free to ping {!M}.\n"
+            "• **Do not** immediately ping people or roles. After 15 minutes, feel free to ping {!M} once.\n"
             "• Type the command {!i} to free the channel when you're done.\n"
             "• Be polite and have a nice day!\n\n"
             "Read {!c} for further information on how to ask a good question, "
