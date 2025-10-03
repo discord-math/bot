@@ -48,7 +48,8 @@ logger: logging.Logger = logging.getLogger(__name__)
 
 
 class LoggerConf(Protocol):
-    temp_channel: int
+    temp_channel_edited: int
+    temp_channel_deleted: int
     perm_channel: int
     keep: int
     file_path: str
@@ -219,8 +220,10 @@ async def clean_old_messages() -> None:
         await session.execute(stmt)
 
         await session.commit()
-
-    if isinstance(channel := client.get_channel(conf.temp_channel), TextChannel):
+    # Clearing logs_edited and logs_deleted
+    if isinstance(channel := client.get_channel(conf.temp_channel_edited), TextChannel):
+        await channel.purge(before=Object(cutoff), limit=None)
+    if isinstance(channel := client.get_channel(conf.temp_channel_deleted), TextChannel):
         await channel.purge(before=Object(cutoff), limit=None)
 
 
@@ -287,7 +290,7 @@ async def process_message_edit(update: RawMessageUpdateEvent) -> None:
                     ]
                     + list(format_word_diff(old_content, new_content))
                 ):
-                    await client.get_partial_messageable(conf.temp_channel).send(
+                    await client.get_partial_messageable(conf.temp_channel_edited).send(
                         content, allowed_mentions=AllowedMentions.none()
                     )
             # TODO: attachment edits
@@ -313,7 +316,7 @@ async def process_message_delete(delete: RawMessageDeleteEvent) -> None:
                 ]
                 + [PlainItem("\n**Attachment: <{}>**".format(url)) for url in file_urls]
             ):
-                await client.get_partial_messageable(conf.temp_channel).send(
+                await client.get_partial_messageable(conf.temp_channel_deleted).send(
                     content, allowed_mentions=AllowedMentions.none()
                 )
 
@@ -457,13 +460,13 @@ class MessageLog(Cog):
 
     @Cog.listener()
     async def on_raw_message_delete(self, delete: RawMessageDeleteEvent) -> None:
-        if delete.channel_id == conf.temp_channel:
+        if delete.channel_id in (conf.temp_channel_edited, conf.temp_channel_deleted):
             return
         bot.message_tracker.schedule(process_message_delete(delete))
 
     @Cog.listener()
     async def on_raw_bulk_message_delete(self, deletes: RawBulkMessageDeleteEvent) -> None:
-        if deletes.channel_id == conf.temp_channel:
+        if deletes.channel_id in (conf.temp_channel_edited, conf.temp_channel_deleted):
             return
         bot.message_tracker.schedule(process_message_bulk_delete(deletes))
 
