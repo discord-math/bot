@@ -13,7 +13,7 @@ from bot.commands import Context, plugin_command
 from discord.ext.commands import command
 import aiohttp
 
-from sqlalchemy import TEXT
+from sqlalchemy import TEXT, BigInteger, Computed
 from sqlalchemy.orm import Mapped, mapped_column
 import sqlalchemy.orm
 from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -26,10 +26,7 @@ CAT_API_ROOT = 'https://api.thecatapi.com/v1/images/search'
 DOG_API_ROOT = 'https://api.thedogapi.com/v1/images/search'
 TIMEOUT = 10  # seconds
 
-logger = logging.getLogger(__name__)
 
-cat_api: Optional['AnimalApi'] = None
-dog_api: Optional['AnimalApi'] = None
 
 http = aiohttp.ClientSession()
 plugins.finalizer(http.close)
@@ -42,9 +39,21 @@ class GlobalConfig:
     __tablename__ = "config"
     __table_args__ = {"schema": "animals"}
 
-    id: Mapped[int] = mapped_column(primary_key=True, default=0)
+    id: Mapped[int] = mapped_column(BigInteger, Computed("0"), primary_key=True)
     cat_api_key: Mapped[str] = mapped_column(TEXT)
     dog_api_key: Mapped[str] = mapped_column(TEXT)
+
+    def __str__(self) -> str:
+        out = 'Animal plugin configuration:\n'
+        out += f'Cat API key: {"set" if self.cat_api_key else "not set"}\n'
+        out += f'Dog API key: {"set" if self.dog_api_key else "not set"}\n'
+        return out  
+
+conf: GlobalConfig
+logger = logging.getLogger(__name__)
+
+cat_api: Optional['AnimalApi'] = None
+dog_api: Optional['AnimalApi'] = None
 
 class AnimalRequest(abc.ABC):
     @abc.abstractmethod
@@ -224,22 +233,22 @@ async def random_dog(ctx: Context) -> None:
 
 @plugins.init
 async def init() -> None:
-    global cat_api, dog_api
+    global cat_api, dog_api, conf
     await util.db.init(util.db.get_ddl(registry.metadata.create_all))
 
     async with sessionmaker() as session:
-        conf = await session.get(GlobalConfig, 0)
-        if conf:
-            cat_api = AnimalApi(
-                CAT_API_ROOT,
-                conf.cat_api_key
-            )
-            dog_api = AnimalApi(
-                DOG_API_ROOT,
-                conf.dog_api_key
-            )
-        else:
-            raise UserError('No configuration found for animals plugin.')
+        c = await session.get(GlobalConfig, 0)
+        assert c, 'No configuration found for animals plugin.'
+        conf = c
+        logger.info(f'Loaded animal plugin configuration: {conf.cat_api_key=}, {conf.dog_api_key=}')
+        cat_api = AnimalApi(
+            CAT_API_ROOT,
+            conf.cat_api_key
+        )
+        dog_api = AnimalApi(
+            DOG_API_ROOT,
+            conf.dog_api_key
+        )
 
 @plugin_config_command
 @group("animals")
