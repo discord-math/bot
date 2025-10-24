@@ -11,7 +11,7 @@ import sqlalchemy.orm
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql.functions import current_timestamp
 
-from bot.acl import privileged
+from bot.acl import EvalResult, evaluate_ctx, privileged, register_action
 from bot.client import client
 from bot.commands import Context, cleanup, plugin_command
 from bot.tasks import task
@@ -44,6 +44,7 @@ class Reminder:
 
 
 logger = logging.getLogger(__name__)
+manage_reminders = register_action("manage_reminders")  # For use in removing reminders
 
 
 def format_msg(guild_id: int, channel_id: int, msg_id: int) -> str:
@@ -191,6 +192,10 @@ async def reminder_remove(ctx: Context, id: int) -> None:
     """Delete a reminder."""
     async with sessionmaker() as session:
         if reminder := await session.get(Reminder, id):
+            # To remove another user's reminders you need elevated permissions
+            if reminder.user_id != ctx.author.id:
+                if manage_reminders.evaluate(*evaluate_ctx(ctx)) != EvalResult.TRUE:
+                    raise UserError("Reminder {} is owned by a different user.".format(id))
             await session.delete(reminder)
             await session.commit()
             await ctx.send(
