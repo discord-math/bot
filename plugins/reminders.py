@@ -192,9 +192,8 @@ async def reminder_remove(ctx: Context, id: int) -> None:
     """Delete a reminder."""
     async with sessionmaker() as session:
         if reminder := await session.get(Reminder, id):
-            # Checking if reminder creator and author are different users
+            # To remove another user's reminders you need elevated permissions
             if reminder.user_id != ctx.author.id:
-                # If different users, checking if author has permission anyway
                 if manage_reminders.evaluate(*evaluate_ctx(ctx)) != EvalResult.TRUE:
                     raise UserError("Reminder {} is owned by a different user.".format(id))
             await session.delete(reminder)
