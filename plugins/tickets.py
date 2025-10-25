@@ -67,7 +67,7 @@ from sqlalchemy.orm import Mapped, joinedload, mapped_column, relationship
 from sqlalchemy.schema import DDL, CreateSchema
 
 import bot.acl
-from bot.acl import EvalResult, privileged
+from bot.acl import EvalResult, evaluate_ctx, privileged
 from bot.client import client
 from bot.cogs import Cog, cog, command, group
 import bot.commands
@@ -110,6 +110,7 @@ class TicketsConf(Awaitable[None], Protocol):
 conf: TicketsConf
 
 auto_approve_tickets = bot.acl.register_action("auto_approve_tickets")
+ticket_review = bot.acl.register_action("ticket_review")
 
 cleanup_exempt: Set[int] = set()
 
@@ -1721,7 +1722,7 @@ class Tickets(Cog):
                     note,
                     modid=ctx.author.id,
                     targetid=target.id,
-                    approved=auto_approve_tickets.evaluate(ctx.author, None) == EvalResult.TRUE,
+                    approved=True,
                 )
                 if not ticket.approved:
                     update_unapproved_list.run_coalesced(30)
@@ -1821,6 +1822,10 @@ class Tickets(Cog):
         async with sessionmaker() as session:
             tkt = await resolve_ticket(ctx.message.reference, ticket, session)
 
+            if tkt.modid != ctx.author.id:
+                if ticket_review.evaluate(*evaluate_ctx(ctx)) == EvalResult.FALSE:
+                    raise UserError("Insufficient permissions to set a ticket you do not own.")
+
             duration, have_duration, comment = TicketMod.parse_duration_comment(duration_comment)
             duration, have_duration, message = tkt.duration_message(duration, have_duration)
             if have_duration:
@@ -1852,6 +1857,10 @@ class Tickets(Cog):
         """Append to a ticket's comment."""
         async with sessionmaker() as session:
             tkt = await resolve_ticket(ctx.message.reference, ticket, session)
+
+            if tkt.modid != ctx.author.id:
+                if ticket_review.evaluate(*evaluate_ctx(ctx)) == EvalResult.FALSE:
+                    raise UserError("Insufficient permissions to append to a ticket you do not own.")
             if len(tkt.comment or "") + len(comment) > 2000:
                 raise UserError("Cannot append, exceeds maximum comment length!")
 
@@ -1868,6 +1877,10 @@ class Tickets(Cog):
         """Manually revert a ticket."""
         async with sessionmaker() as session:
             tkt = await resolve_ticket(ctx.message.reference, ticket, session)
+
+            if tkt.modid != ctx.author.id:
+                if ticket_review.evaluate(*evaluate_ctx(ctx)) == EvalResult.FALSE:
+                    raise UserError("Insufficient permissions to revert a ticket you do not own.")
             if not tkt.can_revert:
                 raise UserError("This ticket type ({}) cannot be reverted!".format(tkt.type.value))
             if not tkt.status in (TicketStatus.IN_EFFECT, TicketStatus.EXPIRE_FAILED):
