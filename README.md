@@ -101,10 +101,10 @@ Manage infractions and administrative actions on a server. Administrative action
 
 Upon doing an action, the responsible moderator will DM'ed with a prompt to enter a duration and a comment for their action. The response should be a duration (if omitted -- permanent) followed by a comment. Durations are specified by a numbed followed by: `s`/`sec`/`second`, `m`/`min`,`minute`, `h`/`hr`/`hour`, `d`/`day`, `w`/`wk`/`week`, `M`/`month`, `y`/`yr`/`year`; or `p`/`perm`/`permanent`. If multiple actions are taken, they are put into a queue and prompted one at a time.
 
-If the responsible moderator doesn't match the `auto_approve_tickets` action, the ticket will be marked as "unapproved".
+If the responsible moderator doesn't match the `auto_approve_tickets` action, the ticket will be marked as "unapproved". The `ticket_review` action enables qualifying moderators to use with `set`, `append`, and `revert` on tickets they do not own.
 
 Commands:
-- `note <target> [comment]` -- create a "note" ticket, not associated with any action, merely bearing a comment. If a duration is set, after it expires the ticket is hidden.
+- `note <target> [comment]` -- create a "note" ticket, not associated with any action, merely bearing a comment. If a duration is set, after it expires the ticket is hidden. Notes are automatically approved.
 - `ticket top` -- re-deliver the prompt for comment for the first ticket in your queue.
 - `ticket queue [mod]` -- display the ticket queue of the specified moderator (or yourself).
 - `ticket take <ticket>` -- assign the specified ticket to yourself.
