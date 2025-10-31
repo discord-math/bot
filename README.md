@@ -1,4 +1,3 @@
-
 # Mathematics Server Discord Bot
 
 This is the open source repository for the utility bot that manages various kinds of things on the Mathematics Discord server. With that purpose in mind, see `CONTRIBUTING.md` if you want to contribute to the bot. If you'd like to run this bot on your own server, that's fine too, but don't expect support.
@@ -40,6 +39,7 @@ Commands:
 - `acl` -- edit Access Control Lists: permission settings for commands and other miscellaneous actions. An ACL is a formula involving users, roles, channels, categories, and boolean connectives. A command or an action can be mapped to an ACL, which will restrict who can use the command/action and where.
     - `acl list` -- list ACL formulas.
     - `acl show <acl>` -- display the formula for the given ACL in YAML format.
+    - `acl show [--pretty|-p] <acl>` -- display YAML for the given ACL using Markdown formatting with mention tags.
     - ``acl set <acl> ```formula``` `` -- set the formula for the given ACL. The formula must be a code-block containing YAML.
     - `acl commands` -- show all commands that are assigned to ACLs.
     - `acl command <command> [acl]` -- assign the given command (fully qualified name) to the given ACL, restricting its usage to the users/channels specified in that ACL. If the ACL is omitted the command can never be used.

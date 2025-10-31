@@ -2,6 +2,7 @@ from collections import defaultdict
 from typing import Dict, List, Optional, Set, Union, cast
 
 import asyncpg
+from discord import AllowedMentions
 from discord.ext.commands import Greedy, command, group
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -95,7 +96,7 @@ async def sql_command(ctx: Context, args: Greedy[Union[CodeBlock, Inline, str]])
         if not has_tx:
             return
 
-        if await get_reaction(reply, ctx.author, {"\u21A9": False, "\u2705": True}, timeout=60):
+        if await get_reaction(reply, ctx.author, {"\u21a9": False, "\u2705": True}, timeout=60):
             await tx.commit()
         else:
             await tx.rollback()
@@ -147,15 +148,28 @@ async def acl_list(ctx: Context) -> None:
     await ctx.send(output)
 
 
-@acl_command.command("show")
+@acl_command.group("show", invoke_without_command=True)
 @privileged
-async def acl_show(ctx: Context, acl: str) -> None:
+async def acl_show_group(ctx: Context, acl: Optional[str] = None) -> None:
     """Show the formula for the given ACL."""
     async with AsyncSession(util.db.engine) as session:
         if (data := await session.get(bot.acl.ACL, acl)) is None:
             raise UserError(format("No such ACL: {!i}", acl))
 
     await ctx.send(format("{!b:yaml}", yaml.dump(data.data)))
+
+
+@acl_show_group.command("--pretty", aliases=["-p"])
+@privileged
+async def acl_show_pretty(ctx: Context, acl: str) -> None:
+    """
+    Show the given ACL using Markdown formatting and mention tags.
+    """
+    async with AsyncSession(util.db.engine, expire_on_commit=False) as session:
+        if (acl_obj := await session.get(bot.acl.ACL, acl)) is None:
+            raise UserError(format("No such ACL: {!i}", acl))
+
+    await ctx.send(ACL.format_markdown(acl_obj.data), allowed_mentions=AllowedMentions.none())
 
 
 acl_override = register_action("acl_override")
@@ -255,9 +269,9 @@ async def acl_command_cmd(ctx: Context, command: str, acl: Optional[str]) -> Non
         else:
             reason = format("you do not match the meta-ACL {!i} of the new ACL", meta)
         prompt = await ctx.send(
-            "\u26A0 You will not be able to edit this command anymore, as {}, continue?".format(reason)
+            "\u26a0 You will not be able to edit this command anymore, as {}, continue?".format(reason)
         )
-        if await get_reaction(prompt, ctx.author, {"\u274C": False, "\u2705": True}, timeout=60) != True:
+        if await get_reaction(prompt, ctx.author, {"\u274c": False, "\u2705": True}, timeout=60) != True:
             return
 
     async with AsyncSession(util.db.engine) as session:
@@ -323,9 +337,9 @@ async def acl_action(ctx: Context, action: str, acl: Optional[str]) -> None:
         else:
             reason = format("you do not match the meta-ACL {!i} of the new ACL", meta)
         prompt = await ctx.send(
-            "\u26A0 You will not be able to edit this action anymore, as {}, continue?".format(reason)
+            "\u26a0 You will not be able to edit this action anymore, as {}, continue?".format(reason)
         )
-        if await get_reaction(prompt, ctx.author, {"\u274C": False, "\u2705": True}, timeout=60) != True:
+        if await get_reaction(prompt, ctx.author, {"\u274c": False, "\u2705": True}, timeout=60) != True:
             return
 
     async with AsyncSession(util.db.engine) as session:
@@ -386,8 +400,8 @@ async def acl_meta(ctx: Context, acl: str, meta: Optional[str]) -> None:
             reason = "the meta is to be removed and you do not match the `acl_override` action"
         else:
             reason = format("you do not match the new meta-ACL {!i}", meta)
-        prompt = await ctx.send("\u26A0 You will not be able to edit this ACL anymore, as {}, continue?".format(reason))
-        if await get_reaction(prompt, ctx.author, {"\u274C": False, "\u2705": True}, timeout=60) != True:
+        prompt = await ctx.send("\u26a0 You will not be able to edit this ACL anymore, as {}, continue?".format(reason))
+        if await get_reaction(prompt, ctx.author, {"\u274c": False, "\u2705": True}, timeout=60) != True:
             return
 
     async with AsyncSession(util.db.engine, expire_on_commit=False) as session:
