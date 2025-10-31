@@ -104,6 +104,36 @@ class ACL:
             return NestedACL(data["acl"])
         raise ValueError("Invalid ACL data: {!r}".format(data))
 
+    @staticmethod
+    def format_markdown(data: ACLData, indent: int = 0) -> str:
+        """
+        Return a markdown-formatted string representation of the ACL's data,
+        converting IDs into Discord mentions where possible.
+        """
+        pad = "  " * indent + "- "
+
+        if "role" in data:
+            return f"{pad}role: <@&{data['role']}>"
+        elif "user" in data:
+            return f"{pad}user: <@{data['user']}>"
+        elif "channel" in data:
+            return f"{pad}channel: <#{data['channel']}>"
+        elif "category" in data:
+            cat = data["category"]
+            return f"{pad}category: {f'<#{cat}>' if cat else '*(none)*'}"
+        elif "not" in data:
+            inner = ACL.format_markdown(data["not"], indent + 1)
+            return f"{pad}not:\n{inner}"
+        elif "and" in data:
+            parts = [ACL.format_markdown(d, indent + 1) for d in data["and"]]
+            return f"{pad}and:\n" + "\n".join(parts)
+        elif "or" in data:
+            parts = [ACL.format_markdown(d, indent + 1) for d in data["or"]]
+            return f"{pad}or:\n" + "\n".join(parts)
+        elif "acl" in data:
+            return f"{pad}acl: `{data['acl']}`"
+        raise ValueError(f"Invalid ACL data: {data!r}")
+
     def parse(self) -> ACLExpr:
         return ACL.parse_data(self.data)
 

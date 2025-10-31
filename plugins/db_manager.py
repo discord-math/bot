@@ -2,6 +2,7 @@ from collections import defaultdict
 from typing import Dict, List, Optional, Set, Union, cast
 
 import asyncpg
+import discord
 from discord.ext.commands import Greedy, command, group
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -149,13 +150,24 @@ async def acl_list(ctx: Context) -> None:
 
 @acl_command.command("show")
 @privileged
-async def acl_show(ctx: Context, acl: str) -> None:
-    """Show the formula for the given ACL."""
-    async with AsyncSession(util.db.engine) as session:
-        if (data := await session.get(bot.acl.ACL, acl)) is None:
-            raise UserError(format("No such ACL: {!i}", acl))
+async def acl_show(ctx: Context, *args: str) -> None:
+    """
+    Show the formula for the given ACL. Use --pretty or -p for Discord Markdown formatting with mention tags.
+    """
+    pretty = any(arg in ("--pretty", "-p") for arg in args)
+    try:
+        acl_name = next(arg for arg in args if not arg.startswith("-"))
+    except StopIteration:
+        raise UserError("Usage: `.acl show [--pretty|-p] <acl_name>`")
 
-    await ctx.send(format("{!b:yaml}", yaml.dump(data.data)))
+    async with AsyncSession(util.db.engine) as session:
+        if (acl_obj := await session.get(bot.acl.ACL, acl_name)) is None:
+            raise UserError(format("No such ACL: {!i}", acl_name))
+
+    if pretty:
+        await ctx.send(ACL.format_markdown(acl_obj.data), allowed_mentions=discord.AllowedMentions.none())
+    else:
+        await ctx.send(format("{!b:yaml}", yaml.dump(acl_obj.data)))
 
 
 acl_override = register_action("acl_override")
