@@ -39,7 +39,7 @@ Commands:
 - ``sql ```query``` `` -- execute arbitrary SQL on the database. The queries must be wrapped in code blocks or inlines. Queries that result in changes always prompt for confirmation.
 - `acl` -- edit Access Control Lists: permission settings for commands and other miscellaneous actions. An ACL is a formula involving users, roles, channels, categories, and boolean connectives. A command or an action can be mapped to an ACL, which will restrict who can use the command/action and where.
     - `acl list` -- list ACL formulas.
-    - `acl show <acl>` -- display the formula for the given ACL in YAML format.
+    - `acl show [--pretty|-p] <acl>` -- display the formula for the given ACL in YAML format. Add `--pretty` (or `-p`) to display the formula as Markdown with Discord mention tags (e.g. `<@&role>`, `<#channel>`).
     - ``acl set <acl> ```formula``` `` -- set the formula for the given ACL. The formula must be a code-block containing YAML.
     - `acl commands` -- show all commands that are assigned to ACLs.
     - `acl command <command> [acl]` -- assign the given command (fully qualified name) to the given ACL, restricting its usage to the users/channels specified in that ACL. If the ACL is omitted the command can never be used.
