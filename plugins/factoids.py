@@ -1,6 +1,6 @@
 from datetime import datetime
 import json
-from typing import TYPE_CHECKING, Literal, Mapping, Optional, TypedDict, Union, cast, overload
+from typing import TYPE_CHECKING, Literal, Mapping, Optional, Sequence, TypedDict, Union, cast, overload
 from typing_extensions import NotRequired
 
 from discord import AllowedMentions, Embed, Message, MessageReference, Thread
@@ -16,7 +16,7 @@ from bot.acl import EvalResult, evaluate_acl, evaluate_ctx, privileged, register
 from bot.cogs import Cog, cog, group
 from bot.commands import Context, cleanup
 from bot.config import plugin_config_command
-from bot.reactions import get_input, get_reaction
+from bot.reactions import ReactionMonitor, get_input, get_reaction
 import plugins
 import util.db
 import util.db.kv
@@ -130,6 +130,12 @@ class Alias:
 
 
 prefix: Optional[str]
+
+# Emoji constants
+EMOJI_LEFT = "\u25c0\ufe0f"
+EMOJI_RIGHT = "\u25b6\ufe0f"
+EMOJI_CONFIRM = "\u2705"
+EMOJI_CANCEL = "\u274c"
 
 use_tags = register_action("use_tags")
 manage_tag_flags = register_action("manage_tag_flags")
@@ -386,6 +392,22 @@ class Factoids(Cog):
             await ctx.send("\n".join(format("{!i}: {} uses", prefix + name, uses) for name, uses in results))
 
     @privileged
+    @tag_command.command("list")
+    async def tag_list(self, ctx: Context) -> None:
+        """List paginated factoids with aliases, navigable via reactions."""
+        assert prefix is not None
+        async with sessionmaker() as session:
+            stmt = select(Alias.id, Alias.name, Alias.created_at)
+            result = await session.execute(stmt)
+            rows = result.tuples().all()
+            if not rows:
+                await ctx.send("No factoids found.")
+                return
+
+            pages = build_tag_list_pages(prefix, rows)
+            await display_embed_navigation(ctx, pages)
+
+    @privileged
     @tag_command.command("flags")
     async def tag_flags(self, ctx: Context, name: str, flags: Optional[Union[CodeBlock, Inline, Quoted]]) -> None:
         """
@@ -404,12 +426,12 @@ class Factoids(Cog):
             else:
                 alias.factoid.flags = json.loads(flags.text)
                 await session.commit()
-                await ctx.send("\u2705")
+                await ctx.send(EMOJI_CONFIRM)
 
 
 async def prompt_contents(ctx: Context) -> Optional[Union[str, Embed]]:
     prompt = await ctx.send("Please enter the factoid contents:")
-    response = await get_input(prompt, ctx.author, {"\u274C": None}, timeout=300)
+    response = await get_input(prompt, ctx.author, {EMOJI_CANCEL: None}, timeout=300)
     if response is None:
         return None
 
@@ -426,11 +448,101 @@ async def prompt_contents(ctx: Context) -> Optional[Union[str, Embed]]:
             raise InvocationError("Could not parse embed data: {!r}".format(exc))
 
         prompt = await ctx.channel.send("Embed preview:", embed=embed)
-        if not await get_reaction(prompt, ctx.author, {"\u2705": True, "\u274C": False}):
+        if not await get_reaction(prompt, ctx.author, {EMOJI_CONFIRM: True, EMOJI_CANCEL: False}):
             await ctx.send("Cancelled.")
             return None
         return embed
     return response.content
+
+
+def build_tag_list_pages(prefix: str, rows: Sequence[tuple[int, str, datetime]]) -> list[Embed]:
+    """
+    Build embeds from DB rows. Canonical = earliest-created alias; others sorted alphabetically.
+    """
+    # Group aliases by factoid id
+    aliases_by_factoid: dict[int, list[tuple[str, datetime]]] = {}
+    for fact_id, name, created_at in rows:
+        aliases_by_factoid.setdefault(fact_id, []).append((name, created_at))
+
+    entries: list[tuple[str, list[str]]] = []
+    for aliases in aliases_by_factoid.values():
+        canonical_name = min(aliases, key=lambda nu: nu[1])[0]
+        other_aliases = sorted(n for n, _ in aliases if n != canonical_name)
+        entries.append((canonical_name, other_aliases))
+
+    entries.sort(key=lambda e: e[0])
+
+    # Paginate into embeds (10 factoids per page)
+    page_size = 10
+    pages: list[Embed] = []
+    total_pages = (len(entries) + page_size - 1) // page_size or 1
+    for i in range(0, len(entries), page_size):
+        page_index = i // page_size
+        embed = Embed(title=f"Factoids (Page {page_index + 1} of {total_pages})")
+        for canonical_name, other_aliases in entries[i : i + page_size]:
+            name_disp = format("{!i}", prefix + canonical_name)
+            if other_aliases:
+                aliases_disp = ", ".join(format("{!i}", prefix + n) for n in other_aliases)
+            else:
+                aliases_disp = format("{!i}", "none")
+            embed.add_field(name=name_disp, value=f"Aliases: {aliases_disp}", inline=False)
+        pages.append(embed)
+    return pages
+
+
+async def display_embed_navigation(ctx: Context, pages: list[Embed]) -> None:
+    """
+    Sends factoid list embeds with pagination and navigation. Message is deleted on timeout or cancel.
+    """
+    msg = await ctx.send(embed=pages[0])
+    if len(pages) == 1:
+        return
+
+    try:
+        await msg.add_reaction(EMOJI_LEFT)
+        await msg.add_reaction(EMOJI_RIGHT)
+        await msg.add_reaction(EMOJI_CANCEL)
+    except Exception:
+        pass
+
+    reacts = {EMOJI_LEFT, EMOJI_RIGHT, EMOJI_CANCEL}
+    current = 0
+    with ReactionMonitor(
+        event="add",
+        channel_id=msg.channel.id,
+        message_id=msg.id,
+        author_id=ctx.author.id,
+        timeout_each=60,
+        filter=lambda _, p: getattr(p.emoji, "name", None) in reacts,
+    ) as mon:
+        while True:
+            try:
+                _, payload = await mon
+            except Exception:
+                break
+
+            emoji_name = getattr(payload.emoji, "name", None) or payload.emoji
+            if emoji_name == EMOJI_CANCEL:
+                break
+            elif emoji_name == EMOJI_LEFT:
+                current = (current - 1) % len(pages)
+            elif emoji_name == EMOJI_RIGHT:
+                current = (current + 1) % len(pages)
+            else:
+                continue
+
+            try:
+                await msg.edit(embed=pages[current])
+            except Exception:
+                break
+            try:
+                await msg.remove_reaction(payload.emoji, ctx.author)
+            except Exception:
+                pass
+    try:
+        await msg.delete()
+    except Exception:
+        pass
 
 
 def validate_name(name: str) -> str:
@@ -459,4 +571,4 @@ async def config_prefix(ctx: Context, prefix: Optional[Union[Literal["None"], Co
         else:
             conf.prefix = None if prefix == "None" else prefix.text
             await session.commit()
-            await ctx.send("\u2705")
+            await ctx.send(EMOJI_CONFIRM)
