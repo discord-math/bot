@@ -16,7 +16,8 @@ from bot.acl import EvalResult, evaluate_acl, evaluate_ctx, privileged, register
 from bot.cogs import Cog, cog, group
 from bot.commands import Context, cleanup
 from bot.config import plugin_config_command
-from bot.reactions import ReactionMonitor, get_input, get_reaction
+from bot.embeds import PagedEmbeds
+from bot.reactions import get_input, get_reaction
 import plugins
 import util.db
 import util.db.kv
@@ -132,8 +133,6 @@ class Alias:
 prefix: Optional[str]
 
 # Emoji constants
-EMOJI_LEFT = "\u25c0\ufe0f"
-EMOJI_RIGHT = "\u25b6\ufe0f"
 EMOJI_CONFIRM = "\u2705"
 EMOJI_CANCEL = "\u274c"
 
@@ -405,7 +404,7 @@ class Factoids(Cog):
                 return
 
             pages = build_tag_list_pages(prefix, rows)
-            await display_embed_navigation(ctx, pages)
+            await PagedEmbeds(ctx, pages).run()
 
     @privileged
     @tag_command.command("flags")
@@ -457,7 +456,8 @@ async def prompt_contents(ctx: Context) -> Optional[Union[str, Embed]]:
 
 def build_tag_list_pages(prefix: str, rows: Sequence[tuple[int, str, datetime]]) -> list[Embed]:
     """
-    Build embeds from DB rows. Canonical = earliest-created alias; others sorted alphabetically.
+    Build embeds from DB rows. Canonical = earliest-created alias; others sorted alphabetically. Canonical
+    names are also sorted alphabetically.
     """
     # Group aliases by factoid id
     aliases_by_factoid: dict[int, list[tuple[str, datetime]]] = {}
@@ -472,7 +472,6 @@ def build_tag_list_pages(prefix: str, rows: Sequence[tuple[int, str, datetime]])
 
     entries.sort(key=lambda e: e[0])
 
-    # Paginate into embeds (10 factoids per page)
     page_size = 10
     pages: list[Embed] = []
     total_pages = (len(entries) + page_size - 1) // page_size or 1
@@ -488,61 +487,6 @@ def build_tag_list_pages(prefix: str, rows: Sequence[tuple[int, str, datetime]])
             embed.add_field(name=name_disp, value=f"Aliases: {aliases_disp}", inline=False)
         pages.append(embed)
     return pages
-
-
-async def display_embed_navigation(ctx: Context, pages: list[Embed]) -> None:
-    """
-    Sends factoid list embeds with pagination and navigation. Message is deleted on timeout or cancel.
-    """
-    msg = await ctx.send(embed=pages[0])
-    if len(pages) == 1:
-        return
-
-    try:
-        await msg.add_reaction(EMOJI_LEFT)
-        await msg.add_reaction(EMOJI_RIGHT)
-        await msg.add_reaction(EMOJI_CANCEL)
-    except Exception:
-        pass
-
-    reacts = {EMOJI_LEFT, EMOJI_RIGHT, EMOJI_CANCEL}
-    current = 0
-    with ReactionMonitor(
-        event="add",
-        channel_id=msg.channel.id,
-        message_id=msg.id,
-        author_id=ctx.author.id,
-        timeout_each=60,
-        filter=lambda _, p: getattr(p.emoji, "name", None) in reacts,
-    ) as mon:
-        while True:
-            try:
-                _, payload = await mon
-            except Exception:
-                break
-
-            emoji_name = getattr(payload.emoji, "name", None) or payload.emoji
-            if emoji_name == EMOJI_CANCEL:
-                break
-            elif emoji_name == EMOJI_LEFT:
-                current = (current - 1) % len(pages)
-            elif emoji_name == EMOJI_RIGHT:
-                current = (current + 1) % len(pages)
-            else:
-                continue
-
-            try:
-                await msg.edit(embed=pages[current])
-            except Exception:
-                break
-            try:
-                await msg.remove_reaction(payload.emoji, ctx.author)
-            except Exception:
-                pass
-    try:
-        await msg.delete()
-    except Exception:
-        pass
 
 
 def validate_name(name: str) -> str:
