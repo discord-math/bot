@@ -169,7 +169,7 @@ async def acl_show_pretty(ctx: Context, acl: str) -> None:
         if (acl_obj := await session.get(bot.acl.ACL, acl)) is None:
             raise UserError(format("No such ACL: {!i}", acl))
 
-    await ctx.send(ACL.format_markdown(acl_obj.data), allowed_mentions=AllowedMentions.none())
+    await ctx.send(acl_obj.format_markdown(), allowed_mentions=AllowedMentions.none())
 
 
 acl_override = register_action("acl_override")

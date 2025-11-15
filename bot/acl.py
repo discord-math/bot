@@ -104,38 +104,11 @@ class ACL:
             return NestedACL(data["acl"])
         raise ValueError("Invalid ACL data: {!r}".format(data))
 
-    @staticmethod
-    def format_markdown(data: ACLData, indent: int = 0) -> str:
-        """
-        Return a markdown-formatted string representation of the ACL's data,
-        converting IDs into Discord mentions where possible.
-        """
-        pad = "  " * indent + "- "
-
-        if "role" in data:
-            return f"{pad}role: <@&{data['role']}>"
-        elif "user" in data:
-            return f"{pad}user: <@{data['user']}>"
-        elif "channel" in data:
-            return f"{pad}channel: <#{data['channel']}>"
-        elif "category" in data:
-            cat = data["category"]
-            return f"{pad}category: {f'<#{cat}>' if cat else '*(none)*'}"
-        elif "not" in data:
-            inner = ACL.format_markdown(data["not"], indent + 1)
-            return f"{pad}not:\n{inner}"
-        elif "and" in data:
-            parts = [ACL.format_markdown(d, indent + 1) for d in data["and"]]
-            return f"{pad}and:\n" + "\n".join(parts)
-        elif "or" in data:
-            parts = [ACL.format_markdown(d, indent + 1) for d in data["or"]]
-            return f"{pad}or:\n" + "\n".join(parts)
-        elif "acl" in data:
-            return f"{pad}acl: `{data['acl']}`"
-        raise ValueError(f"Invalid ACL data: {data!r}")
-
     def parse(self) -> ACLExpr:
         return ACL.parse_data(self.data)
+
+    def format_markdown(self) -> str:
+        return self.parse().format_markdown()
 
     if TYPE_CHECKING:
 
@@ -230,6 +203,14 @@ class ACLExpr(ABC):
     def serialize(self) -> ACLData:
         raise NotImplemented
 
+    @abstractmethod
+    def format_markdown(self, indent: int = 0) -> str:
+        raise NotImplemented
+
+    @staticmethod
+    def _pad(indent: int) -> str:
+        return "  " * indent + "- "
+
 
 class RoleACL(ACLExpr):
     role: int
@@ -248,6 +229,9 @@ class RoleACL(ACLExpr):
     def serialize(self) -> ACLData:
         return {"role": self.role}
 
+    def format_markdown(self, indent: int = 0) -> str:
+        return f"{self._pad(indent)}role: <@&{self.role}>"
+
 
 class UserACL(ACLExpr):
     user: int
@@ -265,6 +249,9 @@ class UserACL(ACLExpr):
 
     def serialize(self) -> ACLData:
         return {"user": self.user}
+
+    def format_markdown(self, indent: int = 0) -> str:
+        return f"{self._pad(indent)}user: <@{self.user}>"
 
 
 class ChannelACL(ACLExpr):
@@ -287,6 +274,10 @@ class ChannelACL(ACLExpr):
     def serialize(self) -> ACLData:
         return {"channel": self.channel}
 
+    def format_markdown(self, indent: int = 0) -> str:
+        pad = self._pad(indent)
+        return f"{pad}channel: <#{self.channel}>"
+
 
 class CategoryACL(ACLExpr):
     category: Optional[int]
@@ -307,6 +298,11 @@ class CategoryACL(ACLExpr):
 
     def serialize(self) -> ACLData:
         return {"category": self.category}
+
+    def format_markdown(self, indent: int = 0) -> str:
+        pad = self._pad(indent)
+        category = f"<#{self.category}>" if self.category else "*(none)*"
+        return f"{pad}category: {category}"
 
 
 class NotACL(ACLExpr):
@@ -329,6 +325,10 @@ class NotACL(ACLExpr):
     def serialize(self) -> ACLData:
         return {"not": self.acl.serialize()}
 
+    def format_markdown(self, indent: int = 0) -> str:
+        inner = self.acl.format_markdown(indent + 1)
+        return f"{self._pad(indent)}not:\n{inner}"
+
 
 class AndACL(ACLExpr):
     acls: List[ACLExpr]
@@ -343,6 +343,10 @@ class AndACL(ACLExpr):
 
     def serialize(self) -> ACLData:
         return {"and": [acl.serialize() for acl in self.acls]}
+
+    def format_markdown(self, indent: int = 0) -> str:
+        parts = [acl.format_markdown(indent + 1) for acl in self.acls]
+        return f"{self._pad(indent)}and:\n" + "\n".join(parts)
 
 
 class OrACL(ACLExpr):
@@ -359,6 +363,10 @@ class OrACL(ACLExpr):
     def serialize(self) -> ACLData:
         return {"or": [acl.serialize() for acl in self.acls]}
 
+    def format_markdown(self, indent: int = 0) -> str:
+        parts = [acl.format_markdown(indent + 1) for acl in self.acls]
+        return f"{self._pad(indent)}or:\n" + "\n".join(parts)
+
 
 class NestedACL(ACLExpr):
     acl: str
@@ -373,6 +381,9 @@ class NestedACL(ACLExpr):
 
     def serialize(self) -> ACLData:
         return {"acl": self.acl}
+
+    def format_markdown(self, indent: int = 0) -> str:
+        return f"{self._pad(indent)}acl: `{self.acl}`"
 
 
 def evaluate_acl(
