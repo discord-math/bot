@@ -871,8 +871,11 @@ class ClopenCog(Cog):
             if payload.message_id != channel.op_id:
                 return
             async with channel_locks[payload.channel_id]:
-                if channel.state in (ChannelState.USED, ChannelState.PENDING):
+                if channel.state == ChannelState.USED:
                     await make_pending(session, channel)
+                elif channel.state == ChannelState.PENDING:
+                    # if the channel is already pending, make no changes
+                    pass
                 else:
                     channel.owner_id = None
                     await session.commit()
