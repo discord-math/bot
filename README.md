@@ -1,6 +1,6 @@
 # Mathematics Server Discord Bot
 
-This is the open source repository for the utility bot that manages various kinds of things on the Mathematics Discord server. With that purpose in mind, see `CONTRIBUTING.md` if you want to contribute to the bot. If you'd like to run this bot on your own server, that's fine too, but don't expect support.
+This is the open source repository for the utility bot that manages various kinds of things on the Mathematics Discord server. With that purpose in mind, see [CONTRIBUTING.md](CONTRIBUTING.md) if you want to contribute to the bot. If you'd like to run this bot on your own server, that's fine too, but don't expect support.
 
 ## Plugins
 
@@ -360,7 +360,7 @@ A `/whois <user>` slash-command for locating users and printing useful informati
 The bot requires:
  - Python 3.9+
  - PostgreSQL 12+
- - Libraries listed in `requirements.txt`
+ - Libraries listed in [requirements.txt](requirements.txt)
 
 It is recommended to use Docker Compose to satisfy these dependencies. To setup the Docker containers run:
 ```sh
