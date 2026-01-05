@@ -222,6 +222,7 @@ class Factoids(Cog):
                     )
                 ):
                     await msg.add_reaction("\u231B")
+                    return
 
             embed = Embed.from_dict(alias.factoid.embed_data) if alias.factoid.embed_data is not None else None
             if msg.reference is not None and msg.reference.message_id is not None:
