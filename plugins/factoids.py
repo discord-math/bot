@@ -1,10 +1,9 @@
-import asyncio
 from datetime import datetime
 import json
 from typing import Any, TYPE_CHECKING, Literal, Mapping, Optional, TypedDict, Union, cast, overload
 from typing_extensions import NotRequired
 
-from discord import AllowedMentions, Embed, Message, MessageReference, NotFound, Thread
+from discord import AllowedMentions, Embed, Message, MessageReference, Thread
 from discord.abc import GuildChannel
 from sqlalchemy import TEXT, TIMESTAMP, BigInteger, Computed, ForeignKey, Integer, delete, func, select
 from sqlalchemy.dialects.postgresql import JSONB
@@ -216,13 +215,6 @@ class Factoids(Cog):
                     evaluate_acl(cooldown["applies_for"], msg.author, msg.channel) == EvalResult.TRUE and \
                     self.cd_mapping.update_cooldown((msg.channel.id, alias.factoid.id), cooldown["length"], int(msg.created_at.timestamp())):
                     await msg.add_reaction("\u231B")
-                    await asyncio.sleep(5)
-                    try:
-                        await msg.delete()
-                    except NotFound:
-                        # the message was already deleted
-                        pass
-                    return
 
             embed = Embed.from_dict(alias.factoid.embed_data) if alias.factoid.embed_data is not None else None
             if msg.reference is not None and msg.reference.message_id is not None:
