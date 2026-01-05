@@ -1,6 +1,6 @@
 from datetime import datetime
 import json
-from typing import Any, TYPE_CHECKING, Literal, Mapping, Optional, TypedDict, Union, cast, overload
+from typing import TYPE_CHECKING, Any, Literal, Mapping, Optional, TypedDict, Union, cast, overload
 from typing_extensions import NotRequired
 
 from discord import AllowedMentions, Embed, Message, MessageReference, Thread
@@ -44,6 +44,7 @@ class GlobalConfig:
 class CooldownInfo(TypedDict):
     length: int
     applies_for: str
+
 
 class Flags(TypedDict):
     mentions: NotRequired[bool]
@@ -172,9 +173,11 @@ class CooldownMap:
             return False
         return True
 
+
 @cog
 class Factoids(Cog):
     """Manage factoids."""
+
     def __init__(self):
         super().__init__()
         self.cd_mapping = CooldownMap()
@@ -211,9 +214,13 @@ class Factoids(Cog):
 
                 cooldown = flags.get("cooldown", None)
                 # has a cooldown, acl evalutes to true and currently on cooldown
-                if cooldown and \
-                    evaluate_acl(cooldown["applies_for"], msg.author, msg.channel) == EvalResult.TRUE and \
-                    self.cd_mapping.update_cooldown((msg.channel.id, alias.factoid.id), cooldown["length"], int(msg.created_at.timestamp())):
+                if (
+                    cooldown
+                    and evaluate_acl(cooldown["applies_for"], msg.author, msg.channel) == EvalResult.TRUE
+                    and self.cd_mapping.update_cooldown(
+                        (msg.channel.id, alias.factoid.id), cooldown["length"], int(msg.created_at.timestamp())
+                    )
+                ):
                     await msg.add_reaction("\u231B")
 
             embed = Embed.from_dict(alias.factoid.embed_data) if alias.factoid.embed_data is not None else None
