@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 import enum
 import logging
 import re
-from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Literal, Optional, Set, Union, cast
+from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Literal, Optional, Set, Tuple, Union, cast
 
 import discord
 from discord import AllowedMentions, Guild, Member, Message
@@ -126,27 +126,117 @@ async def rehash_rules(session: AsyncSession) -> None:
     regex = re.compile("|".join(parts), re.I) if parts else re.compile("(?!)")
 
 
-async def do_create_automod_note(target_id: int, comment: str) -> None:
-    async with plugins.tickets.sessionmaker() as session:
-        assert client.user is not None
+AUTOMOD_NOTE_COMMENT_LIMIT = 2000
+AUTOMOD_NOTE_RENDERED_CONTEXT_LIMIT = 128
+AUTOMOD_NOTE_RECENT_HEADER = "Recent matches:"
 
-        await plugins.tickets.create_note(
-            session,
-            comment,
-            modid=client.user.id,
-            targetid=target_id,
-            approved=True,
-        )
+automod_note_locks: Dict[Tuple[int, int], asyncio.Lock] = {}
 
-        async with plugins.tickets.Ticket.publish_all(session):
+
+def automod_note_prefix(rule_id: int) -> str:
+    return "Automatic action: message matches pattern {}\n".format(rule_id)
+
+
+def get_automod_note_lock(target_id: int, rule_id: int) -> asyncio.Lock:
+    key = (target_id, rule_id)
+
+    if key not in automod_note_locks:
+        automod_note_locks[key] = asyncio.Lock()
+
+    return automod_note_locks[key]
+
+
+def parse_automod_note(rule_id: int, comment: Optional[str]) -> Tuple[int, List[str]]:
+    prefix = automod_note_prefix(rule_id)
+    if comment is None or not comment.startswith(prefix):
+        return 0, []
+
+    body = comment[len(prefix) :]
+    lines = body.splitlines()
+    if not lines or not lines[0].startswith("Occurrences: "):
+        return 0, []
+
+    try:
+        count = int(lines[0].removeprefix("Occurrences: "))
+    except ValueError:
+        count = 0
+
+    contexts: List[str] = []
+    in_recent_matches = False
+
+    for line in lines[1:]:
+        if line == AUTOMOD_NOTE_RECENT_HEADER:
+            in_recent_matches = True
+            continue
+        if in_recent_matches and line.startswith("- "):
+            contexts.append(line[2:])
+
+    return count, contexts
+
+
+def write_automod_note(rule_id: int, count: int, contexts: List[str]) -> str:
+    prefix = automod_note_prefix(rule_id)
+    header = "{}Occurrences: {}\n\n{}\n".format(prefix, count, AUTOMOD_NOTE_RECENT_HEADER)
+    retained_contexts = list(contexts)
+
+    while True:
+        rendered_contexts = "\n".join("- {}".format(context) for context in retained_contexts)
+        comment = header + rendered_contexts if rendered_contexts else header.rstrip()
+
+        if len(comment) <= AUTOMOD_NOTE_COMMENT_LIMIT:
+            return comment
+        if not retained_contexts:
+            return header.rstrip()[:AUTOMOD_NOTE_COMMENT_LIMIT]
+        retained_contexts.pop(0)
+
+
+async def do_create_automod_note(target_id: int, rule_id: int, context: str) -> None:
+    lock = get_automod_note_lock(target_id, rule_id)
+
+    async with lock:
+        async with plugins.tickets.sessionmaker() as session:
+            assert client.user is not None
+
+            prefix = automod_note_prefix(rule_id)
+            notes = await plugins.tickets.find_notes_prefix(
+                session,
+                prefix,
+                modid=client.user.id,
+                targetid=target_id,
+            )
+
+            ticket = next((note for note in reversed(notes) if not note.hidden), None)
+
+            # remove linebreks: each retained context = one ticket line for parseability
+            context = " ".join(context.split())
+
+            if len(context) > AUTOMOD_NOTE_RENDERED_CONTEXT_LIMIT:
+                context = context[: AUTOMOD_NOTE_RENDERED_CONTEXT_LIMIT - 3] + "..."
+            rendered_context = format("||{!i}||", context)
+
+            if ticket is None:
+                await plugins.tickets.create_note(
+                    session,
+                    write_automod_note(rule_id, 1, [rendered_context]),
+                    modid=client.user.id,
+                    targetid=target_id,
+                    approved=True,
+                )
+            else:
+                count, contexts = parse_automod_note(rule_id, ticket.comment)
+                contexts.append(rendered_context)
+                ticket.comment = write_automod_note(rule_id, count + 1, contexts)
+                ticket.modified_by = client.user.id
+
+            async with plugins.tickets.Ticket.publish_all(session):
+                await session.commit()
             await session.commit()
-        await session.commit()
 
 
-def fork_create_automod_note(target_id: int, comment: str) -> None:
+def fork_create_automod_note(target_id: int, rule_id: int, context: str) -> None:
     asyncio.create_task(
-        do_create_automod_note(target_id, comment),
-        name=format("Automod note {!m}", target_id),
+        do_create_automod_note(target_id, rule_id, context),
+        name=format("Automod note {!m} pattern {}", target_id, rule_id),
     )
 
 
@@ -286,7 +376,7 @@ async def process_messages(msgs: Iterable[Message]) -> None:
 
                     elif rule.action == ActionType.NOTE:
                         fork_delete_message(msg)
-                        fork_create_automod_note(msg.author.id, reason)
+                        fork_create_automod_note(msg.author.id, index, automod_context)
 
                     elif rule.action == ActionType.MUTE:
                         fork_delete_message(msg)
