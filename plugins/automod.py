@@ -1,16 +1,17 @@
 import asyncio
 from datetime import datetime, timedelta
 import enum
+import hashlib
 import logging
 import re
-from typing import TYPE_CHECKING, Dict, Iterable, List, Literal, Optional, Set, Union, cast
+from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Literal, Optional, Set, Tuple, Union, cast
 
 import discord
 from discord import AllowedMentions, Guild, Member, Message
 from discord.abc import Snowflake
 from discord.ext.commands import Greedy, group
 import discord.utils
-from sqlalchemy import ARRAY, TEXT, BigInteger, Enum, select
+from sqlalchemy import ARRAY, TEXT, BigInteger, Enum, func, select
 from sqlalchemy.dialects.postgresql import INTERVAL
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 import sqlalchemy.orm
@@ -71,15 +72,16 @@ class Rule:
     action_duration: Mapped[Optional[timedelta]] = mapped_column(INTERVAL)
 
     if TYPE_CHECKING:
+        _missing: Any = ...
 
         def __init__(
             self,
             *,
             keywords: List[str],
             type: MatchType,
-            id: int = ...,
-            action: Optional[ActionType] = ...,
-            action_duration: Optional[timedelta] = ...,
+            id: int = _missing,
+            action: Optional[ActionType] = None,
+            action_duration: Optional[timedelta] = None,
         ) -> None: ...
 
 
@@ -125,42 +127,109 @@ async def rehash_rules(session: AsyncSession) -> None:
     regex = re.compile("|".join(parts), re.I) if parts else re.compile("(?!)")
 
 
-def parse_note(text: Optional[str]) -> Dict[int, int]:
-    data = {}
-    if text is not None:
-        for line in text.splitlines()[1:]:
-            words = line.split()
-            if len(words) == 5 and words[0] == "pattern" and words[2] == "matched" and words[4] == "times":
-                try:
-                    data[int(words[1])] = int(words[3])
-                except ValueError:
-                    pass
-    return data
+# embed field can hold 4000 chars - reserve room for prefixes etc.
+AUTOMOD_CONTEXT_LIMIT = 390
+AUTOMOD_NOTE_COMMENT_LIMIT = 3900
+AUTOMOD_NOTE_RECENT_HEADER = "Recent matches:"
 
 
-def serialize_note(data: Dict[int, int]) -> str:
-    return "Automod:\n" + "\n".join("pattern {} matched {} times".format(index, value) for index, value in data.items())
+def automod_note_prefix(rule_id: int) -> str:
+    return "Automatic action: message matches pattern {}\n".format(rule_id)
 
 
-async def do_create_automod_note(target_id: int, index: int) -> None:
+def parse_automod_note(rule_id: int, comment: Optional[str]) -> Tuple[int, List[str]]:
+    prefix = automod_note_prefix(rule_id)
+    if comment is None or not comment.startswith(prefix):
+        return 0, []
+
+    body = comment[len(prefix) :]
+    lines = body.splitlines()
+    if not lines or not lines[0].startswith("Occurrences: "):
+        return 0, []
+
+    try:
+        count = int(lines[0].removeprefix("Occurrences: "))
+    except ValueError:
+        count = 0
+
+    contexts: List[str] = []
+    in_recent_matches = False
+
+    for line in lines[1:]:
+        if line == AUTOMOD_NOTE_RECENT_HEADER:
+            in_recent_matches = True
+            continue
+        if in_recent_matches and line.startswith("- "):
+            contexts.append(line[2:])
+
+    return count, contexts
+
+
+def write_automod_note(rule_id: int, count: int, contexts: List[str]) -> str:
+    prefix = automod_note_prefix(rule_id)
+    header = "{}Occurrences: {}\n\n{}\n".format(prefix, count, AUTOMOD_NOTE_RECENT_HEADER)
+    retained_contexts = list(contexts)
+
+    while True:
+        rendered_contexts = "\n".join("- {}".format(context) for context in retained_contexts)
+        comment = header + rendered_contexts if rendered_contexts else header.rstrip()
+
+        if len(comment) <= AUTOMOD_NOTE_COMMENT_LIMIT:
+            return comment
+        if not retained_contexts:
+            return header.rstrip()[:AUTOMOD_NOTE_COMMENT_LIMIT]
+        retained_contexts.pop(0)
+
+
+async def lock_automod_note(session: AsyncSession, mod_id: int, target_id: int, rule_id: int) -> None:
+    # serialise lookup/create/update for this logical automod note; a row-level lock
+    # would not cover the first-create case where no matching row exists yet.
+    key = "{}:{}:{}".format(mod_id, target_id, rule_id).encode()
+    hashed_key = int.from_bytes(hashlib.blake2b(key, digest_size=8).digest(), "big", signed=True)
+    await session.execute(select(func.pg_advisory_xact_lock(hashed_key)))
+
+
+async def do_create_automod_note(target_id: int, rule_id: int, context: str) -> None:
     async with plugins.tickets.sessionmaker() as session:
         assert client.user is not None
-        notes = await plugins.tickets.find_notes_prefix(session, "Automod:\n", modid=client.user.id, targetid=target_id)
-        if len(notes) == 0:
+
+        mod_id = client.user.id
+        await lock_automod_note(session, mod_id, target_id, rule_id)
+
+        prefix = automod_note_prefix(rule_id)
+        notes = await plugins.tickets.find_notes_prefix(
+            session,
+            prefix,
+            modid=mod_id,
+            targetid=target_id,
+        )
+
+        ticket = next((note for note in reversed(notes) if not note.hidden), None)
+
+        if ticket is None:
             await plugins.tickets.create_note(
-                session, serialize_note({index: 1}), modid=client.user.id, targetid=target_id, approved=True
+                session,
+                write_automod_note(rule_id, 1, [context]),
+                modid=mod_id,
+                targetid=target_id,
+                approved=True,
             )
         else:
-            data = parse_note(notes[-1].comment)
-            data[index] = 1 + data.get(index, 0)
-            notes[-1].comment = serialize_note(data)
+            count, contexts = parse_automod_note(rule_id, ticket.comment)
+            contexts.append(context)
+            ticket.comment = write_automod_note(rule_id, count + 1, contexts)
+            ticket.modified_by = mod_id
+
         async with plugins.tickets.Ticket.publish_all(session):
             await session.commit()
         await session.commit()
 
 
-def fork_create_automod_note(target_id: int, index: int) -> None:
-    asyncio.create_task(do_create_automod_note(target_id, index), name=format("Automod note {!m}", target_id))
+def fork_create_automod_note(target_id: int, rule_id: int, context: str) -> None:
+    asyncio.create_task(
+        do_create_automod_note(target_id, rule_id, context),
+        name=format("Automod note {!m} pattern {}", target_id, rule_id),
+    )
 
 
 URL_regex: re.Pattern[str] = re.compile(r"https?://([^/]*)/?\S*", re.I)
@@ -240,6 +309,42 @@ async def resolve_link(msg: Message, link: str) -> None:
                 phish_match(msg, format("{!i} -> {!i}", link, match.group(1)))
 
 
+def extract_automod_context(content: str, match: re.Match[str], value: str) -> str:
+    # Include message content for context, trimming long messages around the match.
+    if len(content) <= AUTOMOD_CONTEXT_LIMIT:
+        return content
+
+    # leave space for ... at start and end
+    max_context_len = AUTOMOD_CONTEXT_LIMIT - 6
+
+    # try to find the relevant section using `match` and `value`
+    # value is the offending piece
+    if len(value) >= max_context_len:
+        # we can't even include all of it
+        return "..." + value[:max_context_len] + "..."
+
+    # extract a piece of the message centred on the match
+    context_len = max_context_len - len(value)
+
+    # clamp slice bounds so matches near the start of a long message
+    # don't produce a negative start index and slice from the end.
+    start_idx = max(0, match.start() - context_len // 2)
+    end_idx = min(len(content), start_idx + max_context_len)
+
+    if end_idx - start_idx < max_context_len:
+        start_idx = max(0, end_idx - max_context_len)
+
+    prefix = "..." if start_idx > 0 else ""
+    suffix = "..." if end_idx < len(content) else ""
+
+    return prefix + content[start_idx:end_idx] + suffix
+
+
+def format_automod_context(context: str) -> str:
+    # remove linebreaks: each retained context = one ticket line for parseability.
+    return format("||{!i}||", " ".join(context.split()))
+
+
 async def process_messages(msgs: Iterable[Message]) -> None:
     for msg in msgs:
         if msg.guild is None:
@@ -271,27 +376,9 @@ async def process_messages(msgs: Iterable[Message]) -> None:
                     if any(role.id in exempt_roles for role in msg.author.roles):
                         continue
                 if (rule := active_rules.get(index)) is not None:
-                    # include a portion of the message content for context
-                    # we can't include the whole message if it's too long
-                    # we limit the context to 128 characters, for safety
-                    MAX_CONTEXT_LEN = 128 - 6  # include space for ... at start and end
-                    ban_context: Optional[str] = None
-                    if len(msg.content) < MAX_CONTEXT_LEN:
-                        ban_context = msg.content
-                    else:
-                        # try to find the relevant section using `match` and `value`
-                        # value is the offending piece
-                        if len(value) >= MAX_CONTEXT_LEN:
-                            # we can't even include all of it
-                            ban_context = "..." + value[:MAX_CONTEXT_LEN] + "..."
-                        else:
-                            # extract a piece of the message centred on the offending bit
-                            context_len: int = MAX_CONTEXT_LEN - len(value)
-                            start_idx: int = match.start() - context_len // 2
-                            ban_context = "..." + msg.content[start_idx : start_idx + MAX_CONTEXT_LEN] + "..."
-                    assert ban_context is not None
-
-                    reason = format("Automatic action: message matches pattern {}\n||{!i}||", index, ban_context)
+                    raw_context = extract_automod_context(msg.content, match, value)
+                    automod_context = format_automod_context(raw_context)
+                    reason = "Automatic action: message matches pattern {}\n{}".format(index, automod_context)
                     duration = rule.action_duration
 
                     if rule.action == ActionType.DELETE:
@@ -299,7 +386,7 @@ async def process_messages(msgs: Iterable[Message]) -> None:
 
                     elif rule.action == ActionType.NOTE:
                         fork_delete_message(msg)
-                        fork_create_automod_note(msg.author.id, index)
+                        fork_create_automod_note(msg.author.id, index, automod_context)
 
                     elif rule.action == ActionType.MUTE:
                         fork_delete_message(msg)

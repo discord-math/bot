@@ -6,24 +6,28 @@ jobs:
   pyright:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v1
-    - name: checkout submodules
-      run: git submodule update --init --recursive
-    - uses: actions/setup-python@v1
+    - uses: actions/checkout@v6
       with:
-        python-version: 3.9
+        submodules: recursive
+    - uses: actions/setup-python@v6
+      with:
+        python-version: "3.9"
+        cache: pip
+        cache-dependency-path: requirements_core.txt
     - name: pip
       run: pip install -r requirements_core.txt
     - run: pyright
   format:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v1
-    - name: checkout submodules
-      run: git submodule update --init --recursive
-    - uses: actions/setup-python@v1
+    - uses: actions/checkout@v6
       with:
-        python-version: 3.9
+        submodules: recursive
+    - uses: actions/setup-python@v6
+      with:
+        python-version: "3.9"
+        cache: pip
+        cache-dependency-path: requirements_linting.txt
     - name: pip
       run: pip install -r requirements_linting.txt
     - name: black
