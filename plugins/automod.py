@@ -126,8 +126,9 @@ async def rehash_rules(session: AsyncSession) -> None:
     regex = re.compile("|".join(parts), re.I) if parts else re.compile("(?!)")
 
 
-AUTOMOD_NOTE_COMMENT_LIMIT = 2000
-AUTOMOD_NOTE_RENDERED_CONTEXT_LIMIT = 128
+# embed field can hold 4000 chars - reserve room for prefixes etc.
+AUTOMOD_CONTEXT_LIMIT = 390
+AUTOMOD_NOTE_COMMENT_LIMIT = 3900
 AUTOMOD_NOTE_RECENT_HEADER = "Recent matches:"
 
 automod_note_locks: Dict[Tuple[int, int], asyncio.Lock] = {}
@@ -208,11 +209,7 @@ async def do_create_automod_note(target_id: int, rule_id: int, context: str) -> 
             ticket = next((note for note in reversed(notes) if not note.hidden), None)
 
             # remove linebreks: each retained context = one ticket line for parseability
-            context = " ".join(context.split())
-
-            if len(context) > AUTOMOD_NOTE_RENDERED_CONTEXT_LIMIT:
-                context = context[: AUTOMOD_NOTE_RENDERED_CONTEXT_LIMIT - 3] + "..."
-            rendered_context = format("||{!i}||", context)
+            rendered_context = format("||{!i}||", " ".join(context.split()))
 
             if ticket is None:
                 await plugins.tickets.create_note(
@@ -317,6 +314,37 @@ async def resolve_link(msg: Message, link: str) -> None:
                 phish_match(msg, format("{!i} -> {!i}", link, match.group(1)))
 
 
+def extract_automod_context(content: str, match: re.Match[str], value: str) -> str:
+    # include a portion of the message content for context, however we can't include the whole message
+    if len(content) <= AUTOMOD_CONTEXT_LIMIT:
+        return content
+
+    # leave space for ... at start and end
+    max_context_len = AUTOMOD_CONTEXT_LIMIT - 6
+
+    # try to find the relevant section using `match` and `value`
+    # value is the offending piece
+    if len(value) >= max_context_len:
+        # we can't even include all of it
+        return "..." + value[:max_context_len] + "..."
+
+    # extract a piece of the message centred on the match
+    context_len = max_context_len - len(value)
+
+    # clamp slice bounds so matches near the start of a long message
+    # don't produce a negative start index and slice from the end.
+    start_idx = max(0, match.start() - context_len // 2)
+    end_idx = min(len(content), start_idx + max_context_len)
+
+    if end_idx - start_idx < max_context_len:
+        start_idx = max(0, end_idx - max_context_len)
+
+    prefix = "..." if start_idx > 0 else ""
+    suffix = "..." if end_idx < len(content) else ""
+
+    return prefix + content[start_idx:end_idx] + suffix
+
+
 async def process_messages(msgs: Iterable[Message]) -> None:
     for msg in msgs:
         if msg.guild is None:
@@ -348,26 +376,7 @@ async def process_messages(msgs: Iterable[Message]) -> None:
                     if any(role.id in exempt_roles for role in msg.author.roles):
                         continue
                 if (rule := active_rules.get(index)) is not None:
-                    # include a portion of the message content for context
-                    # we can't include the whole message if it's too long
-                    # we limit the context to 128 characters, for safety
-                    MAX_CONTEXT_LEN = 128 - 6  # include space for ... at start and end
-                    automod_context: Optional[str] = None
-                    if len(msg.content) < MAX_CONTEXT_LEN:
-                        automod_context = msg.content
-                    else:
-                        # try to find the relevant section using `match` and `value`
-                        # value is the offending piece
-                        if len(value) >= MAX_CONTEXT_LEN:
-                            # we can't even include all of it
-                            automod_context = "..." + value[:MAX_CONTEXT_LEN] + "..."
-                        else:
-                            # extract a piece of the message centred on the offending bit
-                            context_len: int = MAX_CONTEXT_LEN - len(value)
-                            start_idx: int = match.start() - context_len // 2
-                            automod_context = "..." + msg.content[start_idx : start_idx + MAX_CONTEXT_LEN] + "..."
-                    assert automod_context is not None
-
+                    automod_context = extract_automod_context(msg.content, match, value)
                     reason = format("Automatic action: message matches pattern {}\n||{!i}||", index, automod_context)
                     duration = rule.action_duration
 
