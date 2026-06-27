@@ -182,8 +182,8 @@ def write_automod_note(rule_id: int, count: int, contexts: List[str]) -> str:
 
 
 async def lock_automod_note(session: AsyncSession, mod_id: int, target_id: int, rule_id: int) -> None:
-    # lock the logical automod note identity. required to cover a first-create race condition
-    # where SELECT FOR UPDATE has no existing row to lock.
+    # serialise lookup/create/update for this logical automod note; a row-level lock
+    # would not cover the first-create case where no matching row exists yet.
     key = "{}:{}:{}".format(mod_id, target_id, rule_id).encode()
     hashed_key = int.from_bytes(hashlib.blake2b(key, digest_size=8).digest(), "big", signed=True)
     await session.execute(select(func.pg_advisory_xact_lock(hashed_key)))
@@ -206,20 +206,17 @@ async def do_create_automod_note(target_id: int, rule_id: int, context: str) -> 
 
         ticket = next((note for note in reversed(notes) if not note.hidden), None)
 
-        # remove linebreks: each retained context = one ticket line for parseability
-        rendered_context = format("||{!i}||", " ".join(context.split()))
-
         if ticket is None:
             await plugins.tickets.create_note(
                 session,
-                write_automod_note(rule_id, 1, [rendered_context]),
+                write_automod_note(rule_id, 1, [context]),
                 modid=mod_id,
                 targetid=target_id,
                 approved=True,
             )
         else:
             count, contexts = parse_automod_note(rule_id, ticket.comment)
-            contexts.append(rendered_context)
+            contexts.append(context)
             ticket.comment = write_automod_note(rule_id, count + 1, contexts)
             ticket.modified_by = mod_id
 
@@ -313,7 +310,7 @@ async def resolve_link(msg: Message, link: str) -> None:
 
 
 def extract_automod_context(content: str, match: re.Match[str], value: str) -> str:
-    # include a portion of the message content for context, however we can't include the whole message
+    # Include message content for context, trimming long messages around the match.
     if len(content) <= AUTOMOD_CONTEXT_LIMIT:
         return content
 
@@ -341,6 +338,11 @@ def extract_automod_context(content: str, match: re.Match[str], value: str) -> s
     suffix = "..." if end_idx < len(content) else ""
 
     return prefix + content[start_idx:end_idx] + suffix
+
+
+def format_automod_context(context: str) -> str:
+    # remove linebreaks: each retained context = one ticket line for parseability.
+    return format("||{!i}||", " ".join(context.split()))
 
 
 async def process_messages(msgs: Iterable[Message]) -> None:
@@ -374,8 +376,9 @@ async def process_messages(msgs: Iterable[Message]) -> None:
                     if any(role.id in exempt_roles for role in msg.author.roles):
                         continue
                 if (rule := active_rules.get(index)) is not None:
-                    automod_context = extract_automod_context(msg.content, match, value)
-                    reason = format("Automatic action: message matches pattern {}\n||{!i}||", index, automod_context)
+                    raw_context = extract_automod_context(msg.content, match, value)
+                    automod_context = format_automod_context(raw_context)
+                    reason = "Automatic action: message matches pattern {}\n{}".format(index, automod_context)
                     duration = rule.action_duration
 
                     if rule.action == ActionType.DELETE:
