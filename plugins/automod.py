@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 import enum
 import logging
 import re
-from typing import TYPE_CHECKING, Dict, Iterable, List, Literal, Optional, Set, Union, cast
+from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Literal, Optional, Set, Union, cast
 
 import discord
 from discord import AllowedMentions, Guild, Member, Message
@@ -71,15 +71,16 @@ class Rule:
     action_duration: Mapped[Optional[timedelta]] = mapped_column(INTERVAL)
 
     if TYPE_CHECKING:
+        _missing: Any = ...
 
         def __init__(
             self,
             *,
             keywords: List[str],
             type: MatchType,
-            id: int = ...,
-            action: Optional[ActionType] = ...,
-            action_duration: Optional[timedelta] = ...,
+            id: int = _missing,
+            action: Optional[ActionType] = None,
+            action_duration: Optional[timedelta] = None,
         ) -> None: ...
 
 
@@ -125,42 +126,28 @@ async def rehash_rules(session: AsyncSession) -> None:
     regex = re.compile("|".join(parts), re.I) if parts else re.compile("(?!)")
 
 
-def parse_note(text: Optional[str]) -> Dict[int, int]:
-    data = {}
-    if text is not None:
-        for line in text.splitlines()[1:]:
-            words = line.split()
-            if len(words) == 5 and words[0] == "pattern" and words[2] == "matched" and words[4] == "times":
-                try:
-                    data[int(words[1])] = int(words[3])
-                except ValueError:
-                    pass
-    return data
-
-
-def serialize_note(data: Dict[int, int]) -> str:
-    return "Automod:\n" + "\n".join("pattern {} matched {} times".format(index, value) for index, value in data.items())
-
-
-async def do_create_automod_note(target_id: int, index: int) -> None:
+async def do_create_automod_note(target_id: int, comment: str) -> None:
     async with plugins.tickets.sessionmaker() as session:
         assert client.user is not None
-        notes = await plugins.tickets.find_notes_prefix(session, "Automod:\n", modid=client.user.id, targetid=target_id)
-        if len(notes) == 0:
-            await plugins.tickets.create_note(
-                session, serialize_note({index: 1}), modid=client.user.id, targetid=target_id, approved=True
-            )
-        else:
-            data = parse_note(notes[-1].comment)
-            data[index] = 1 + data.get(index, 0)
-            notes[-1].comment = serialize_note(data)
+
+        await plugins.tickets.create_note(
+            session,
+            comment,
+            modid=client.user.id,
+            targetid=target_id,
+            approved=True,
+        )
+
         async with plugins.tickets.Ticket.publish_all(session):
             await session.commit()
         await session.commit()
 
 
-def fork_create_automod_note(target_id: int, index: int) -> None:
-    asyncio.create_task(do_create_automod_note(target_id, index), name=format("Automod note {!m}", target_id))
+def fork_create_automod_note(target_id: int, comment: str) -> None:
+    asyncio.create_task(
+        do_create_automod_note(target_id, comment),
+        name=format("Automod note {!m}", target_id),
+    )
 
 
 URL_regex: re.Pattern[str] = re.compile(r"https?://([^/]*)/?\S*", re.I)
@@ -275,23 +262,23 @@ async def process_messages(msgs: Iterable[Message]) -> None:
                     # we can't include the whole message if it's too long
                     # we limit the context to 128 characters, for safety
                     MAX_CONTEXT_LEN = 128 - 6  # include space for ... at start and end
-                    ban_context: Optional[str] = None
+                    automod_context: Optional[str] = None
                     if len(msg.content) < MAX_CONTEXT_LEN:
-                        ban_context = msg.content
+                        automod_context = msg.content
                     else:
                         # try to find the relevant section using `match` and `value`
                         # value is the offending piece
                         if len(value) >= MAX_CONTEXT_LEN:
                             # we can't even include all of it
-                            ban_context = "..." + value[:MAX_CONTEXT_LEN] + "..."
+                            automod_context = "..." + value[:MAX_CONTEXT_LEN] + "..."
                         else:
                             # extract a piece of the message centred on the offending bit
                             context_len: int = MAX_CONTEXT_LEN - len(value)
                             start_idx: int = match.start() - context_len // 2
-                            ban_context = "..." + msg.content[start_idx : start_idx + MAX_CONTEXT_LEN] + "..."
-                    assert ban_context is not None
+                            automod_context = "..." + msg.content[start_idx : start_idx + MAX_CONTEXT_LEN] + "..."
+                    assert automod_context is not None
 
-                    reason = format("Automatic action: message matches pattern {}\n||{!i}||", index, ban_context)
+                    reason = format("Automatic action: message matches pattern {}\n||{!i}||", index, automod_context)
                     duration = rule.action_duration
 
                     if rule.action == ActionType.DELETE:
@@ -299,7 +286,7 @@ async def process_messages(msgs: Iterable[Message]) -> None:
 
                     elif rule.action == ActionType.NOTE:
                         fork_delete_message(msg)
-                        fork_create_automod_note(msg.author.id, index)
+                        fork_create_automod_note(msg.author.id, reason)
 
                     elif rule.action == ActionType.MUTE:
                         fork_delete_message(msg)
