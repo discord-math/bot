@@ -871,16 +871,10 @@ class ClopenCog(Cog):
             if payload.message_id != channel.op_id:
                 return
             async with channel_locks[payload.channel_id]:
-                if channel.state in (ChannelState.USED, ChannelState.PENDING):
-                    await close(
-                        session,
-                        channel,
-                        "Channel closed due to the original message being deleted. \n"
-                        "If you did not intend to do this, please **open a new help channel**, \n"
-                        "as this action is irreversible, and this channel may abruptly lock.",
-                        reopen=False,
-                    )
-                else:
+                if channel.state == ChannelState.USED:
+                    await make_pending(session, channel)
+                # if the channel is already pending, make no changes
+                elif channel.state != ChannelState.PENDING:
                     channel.owner_id = None
                     await session.commit()
 
