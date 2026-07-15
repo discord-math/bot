@@ -29,6 +29,7 @@ from bot.commands import Context, cleanup, plugin_command
 from bot.config import plugin_config_command
 from bot.reactions import get_reaction
 from plugins.bot_manager import PluginConverter
+from plugins.factoids import Factoid
 import util.db
 from util.discord import CodeBlock, Inline, PlainItem, Typing, UserError, chunk_messages, format
 
@@ -142,6 +143,10 @@ async def acl_list(ctx: Context) -> None:
         stmt = select(bot.acl.ActionPermissions.acl)
         for acl in (await session.execute(stmt)).scalars():
             used.add(acl)
+        stmt = select(Factoid.flags)
+        for flag in (await session.execute(stmt)).scalars():
+            if flag is not None:
+                used.add(flag.get("acl"))
     output = "ACLs: {}".format(", ".join(format("{!i}", name) for name in acls if name in used))
     if len(acls - used):
         output += "\nUnused: {}".format(", ".join(format("{!i}", name) for name in acls if name not in used))
