@@ -2048,7 +2048,7 @@ class Tickets(Cog):
             await ctx.send(embed=Embed(description="[#{}]({}): Ticket approved.".format(tkt.id, tkt.jump_link)))
 
     @Cog.listener("on_message")
-    async def bot_ticket_message(self, msg: Message) -> None:
+    async def process_bot_ticket_message(self, msg: Message) -> None:
         if not msg.author.bot or msg.author == client.user or msg.webhook_id is not None:
             return
         if msg.guild is None:
