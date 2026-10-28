@@ -103,6 +103,8 @@ Upon doing an action, the responsible moderator will DM'ed with a prompt to ente
 
 If the responsible moderator doesn't match the `auto_approve_tickets` action, the ticket will be marked as "unapproved". The `ticket_review` action enables qualifying moderators to use with `set`, `append`, and `revert` on tickets they do not own.
 
+The `bot_ticket_show` action allows qualifying bots to invoke `ticket show` (also `tickets show`) in server channels. Bind it to an ACL restricted to the calling bot and the intended channels. The normal `ticket` and `ticket show` command ACLs must also allow the caller. Other commands, DMs, webhooks, and this bot's own messages are ignored by this listener.
+
 Commands:
 - `note <target> [comment]` -- create a "note" ticket, not associated with any action, merely bearing a comment. If a duration is set, after it expires the ticket is hidden. Notes are automatically approved.
 - `ticket top` -- re-deliver the prompt for comment for the first ticket in your queue.

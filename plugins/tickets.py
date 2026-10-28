@@ -111,6 +111,7 @@ conf: TicketsConf
 
 auto_approve_tickets = bot.acl.register_action("auto_approve_tickets")
 ticket_review = bot.acl.register_action("ticket_review")
+bot_ticket_show = bot.acl.register_action("bot_ticket_show")
 
 cleanup_exempt: Set[int] = set()
 
@@ -2045,6 +2046,25 @@ class Tickets(Cog):
             await session.commit()
 
             await ctx.send(embed=Embed(description="[#{}]({}): Ticket approved.".format(tkt.id, tkt.jump_link)))
+
+    @Cog.listener("on_message")
+    async def process_bot_ticket_message(self, msg: Message) -> None:
+        if not msg.author.bot or msg.author == client.user or msg.webhook_id is not None:
+            return
+        if msg.guild is None:
+            return
+        ctx = await client.get_context(msg)
+        if ctx.command != self.ticket_command:
+            return
+        if bot_ticket_show.evaluate(*evaluate_ctx(ctx)) != EvalResult.TRUE:
+            return
+        index = ctx.view.index
+        ctx.view.skip_ws()
+        subcommand = ctx.view.get_word()
+        ctx.view.index = index
+        if self.ticket_command.get_command(subcommand) != self.ticket_show:
+            return
+        await client.invoke(ctx)
 
     @Cog.listener("on_member_ban")
     @Cog.listener("on_member_unban")
